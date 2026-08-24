@@ -13,6 +13,8 @@ const NET_CHANNELS = new Set([
   'self:appearance',
   'self:inventory',
   'self:settings',
+  'self:update',
+  'net:history',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -33,6 +35,8 @@ contextBridge.exposeInMainWorld('overlay', {
   setChatColor: (value: string) => ipcRenderer.send('set-chat-color', value),
   getNetState: (): Promise<unknown> => ipcRenderer.invoke('net-state'),
   getChatHistory: (): Promise<unknown[]> => ipcRenderer.invoke('chat-history'),
+  getUpdateState: (): Promise<unknown> => ipcRenderer.invoke('update-state'),
+  installUpdate: () => ipcRenderer.send('install-update'),
   sendMove: (data: { x: number; dir: -1 | 1; walking: boolean }) => ipcRenderer.send('move', data),
   sendChat: (text: string) => ipcRenderer.send('chat-send', text),
   sendAction: (command: string) => ipcRenderer.send('action-send', command),

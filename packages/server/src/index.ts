@@ -5,6 +5,9 @@ import * as path from 'path';
 import { Server } from 'socket.io';
 import {
   ACTION_IDS,
+  CHAT_HISTORY_MAX,
+  CHAT_RETENTION_DAYS,
+  ChatMessage,
   ClientToServerEvents,
   DEFAULT_PORT,
   IMAGE_MAX_BYTES,
@@ -35,6 +38,39 @@ const EXT_MIME: Record<string, string> = {
   png: 'image/png',
   webp: 'image/webp',
 };
+
+// ---- 채팅 내역 보관 (이미지와 동일하게 3일, 볼륨에 저장) ----
+
+const HISTORY_PATH = path.join(UPLOAD_DIR, 'chat-history.json');
+let chatHistory: ChatMessage[] = [];
+
+function pruneHistory(): void {
+  const cutoff = Date.now() - CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  chatHistory = chatHistory.filter((m) => m.ts >= cutoff).slice(-CHAT_HISTORY_MAX);
+}
+
+function loadHistory(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8'));
+    if (Array.isArray(raw)) chatHistory = raw.filter((m) => m && typeof m.ts === 'number');
+    pruneHistory();
+    console.log(`[history] ${chatHistory.length}개 채팅 내역 로드`);
+  } catch {
+    chatHistory = [];
+  }
+}
+
+function recordChat(msg: ChatMessage): void {
+  chatHistory.push(msg);
+  pruneHistory();
+  try {
+    fs.writeFileSync(HISTORY_PATH, JSON.stringify(chatHistory), 'utf8');
+  } catch (err) {
+    console.log('[history] 저장 실패:', String(err));
+  }
+}
+
+loadHistory();
 
 function cleanupUploads(): void {
   const cutoff = Date.now() - IMAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -110,6 +146,7 @@ io.on('connection', (socket) => {
     };
     players.set(socket.id, player);
     socket.emit('welcome', { selfId: socket.id, players: [...players.values()] });
+    socket.emit('chat-history', chatHistory.slice(-100));
     socket.broadcast.emit('player-joined', player);
     console.log(`+ ${nickname}#${tag} [${appearance.race.name}] — ${players.size}명 접속중`);
   });
@@ -139,14 +176,17 @@ io.on('connection', (socket) => {
     const text = String(data?.text ?? '')
       .trim()
       .slice(0, MAX_CHAT_LEN);
-    io.emit('chat', {
+    const msg: ChatMessage = {
       id: socket.id,
       nickname: player.nickname,
       tag: player.tag,
       text,
       ts: now,
       action: action as (typeof ACTION_IDS)[number],
-    });
+      senderAppearance: player.appearance,
+    };
+    io.emit('chat', msg);
+    recordChat(msg);
     console.log(`[action] ${player.nickname}#${player.tag}: ${action} "${text}"`);
   });
 
@@ -167,13 +207,16 @@ io.on('connection', (socket) => {
     const clean = text.trim().slice(0, MAX_CHAT_LEN);
     if (!clean) return;
     lastChatAt.set(socket.id, now);
-    io.emit('chat', {
+    const msg: ChatMessage = {
       id: socket.id,
       nickname: player.nickname,
       tag: player.tag,
       text: clean,
       ts: now,
-    });
+      senderAppearance: player.appearance,
+    };
+    io.emit('chat', msg);
+    recordChat(msg);
     console.log(`[chat] ${player.nickname}#${player.tag}: ${clean}`);
   });
 
@@ -216,14 +259,17 @@ io.on('connection', (socket) => {
     const name = `${randomBytes(8).toString('hex')}.${ext}`;
     fs.writeFileSync(path.join(UPLOAD_DIR, name), buf);
     times.push(now);
-    io.emit('chat', {
+    const msg: ChatMessage = {
       id: socket.id,
       nickname: player.nickname,
       tag: player.tag,
       text: '',
       ts: now,
       image: { url: `/i/${name}`, thumb, w, h },
-    });
+      senderAppearance: player.appearance,
+    };
+    io.emit('chat', msg);
+    recordChat(msg);
     console.log(`[image] ${player.nickname}#${player.tag} → ${name} (${Math.round(buf.length / 1024)}KB)`);
     reply({ ok: true });
   });

@@ -101,7 +101,13 @@ export interface ChatMessage {
   image?: ChatImage;
   /** 액션 명령어 — 수신 클라이언트가 해당 캐릭터의 애니메이션 재생 */
   action?: ActionId;
+  /** 보낸 시점의 외형 스냅샷 (채팅창 아바타용, 서버가 첨부) */
+  senderAppearance?: Appearance;
 }
+
+/** 채팅 내역 서버 보관 기간/최대 개수 */
+export const CHAT_RETENTION_DAYS = 3;
+export const CHAT_HISTORY_MAX = 300;
 
 export interface ClientToServerEvents {
   hello: (data: { nickname: string; tag: string; appearance: Appearance }) => void;
@@ -125,6 +131,8 @@ export interface ServerToClientEvents {
   'player-left': (id: string) => void;
   'player-appearance': (data: { id: string; appearance: Appearance }) => void;
   chat: (msg: ChatMessage) => void;
+  /** 접속 직후 최근 채팅 내역 (서버 보관분) */
+  'chat-history': (msgs: ChatMessage[]) => void;
 }
 
 /** 서버측 외형 검증/정제 — 알 수 없는 키 제거, 문자열 길이 제한, 수치 클램프 */

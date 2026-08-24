@@ -73,6 +73,27 @@
       header button:hover {
         background: var(--header-hover);
       }
+      #update-bell {
+        position: relative;
+        animation: bell-wiggle 2.4s ease-in-out infinite;
+      }
+      #update-bell::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        right: 4px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ff5a5a;
+        border: 1px solid #fffdf7;
+      }
+      @keyframes bell-wiggle {
+        0%, 84%, 100% { transform: rotate(0deg); }
+        88% { transform: rotate(14deg); }
+        92% { transform: rotate(-12deg); }
+        96% { transform: rotate(8deg); }
+      }
       #messages {
         flex: 1;
         overflow-y: auto;
@@ -425,6 +446,7 @@
       <span class="title">DotChat</span>
       <span class="online" id="online">접속 확인 중…</span>
       <span class="spacer"></span>
+      <button id="update-bell" title="새 업데이트" hidden>🔔</button>
       <button id="appearance-btn" title="외모 변경">👕</button>
       <button id="options-btn" title="옵션">⚙️</button>
       <button id="close-btn" title="닫기">✕</button>

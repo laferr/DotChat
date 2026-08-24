@@ -516,7 +516,29 @@
   sendBtn.addEventListener('click', send);
   closeBtn.addEventListener('click', () => window.overlay.closeChat());
 
+  // ---- 업데이트 알림 벨 ----
+
+  const updateBell = document.getElementById('update-bell') as HTMLButtonElement;
+  let pendingUpdate: { version: string } | null = null;
+
+  function showUpdateBell(info: { version: string }): void {
+    pendingUpdate = info;
+    updateBell.hidden = false;
+    updateBell.title = `새 업데이트 v${info.version} 준비됨 — 클릭하여 재시작·설치`;
+  }
+
+  updateBell.addEventListener('click', () => {
+    if (!pendingUpdate) return;
+    if (window.confirm(`새 버전 v${pendingUpdate.version}가 준비됐어요.\n지금 재시작하여 설치할까요?`)) {
+      window.overlay.installUpdate();
+    }
+  });
+  window.overlay.on('self:update', (data) => showUpdateBell(data as { version: string }));
+
   // ---- 초기 상태 + 이벤트 구독 ----
+
+  const updateState = (await window.overlay.getUpdateState()) as { version: string } | null;
+  if (updateState) showUpdateBell(updateState);
 
   applyChatTheme((await window.overlay.getSettings()).chatColor ?? currentChatColor);
 
@@ -528,6 +550,11 @@
   for (const msg of history) addMessage(msg);
 
   window.overlay.on('net:chat', (data) => addMessage(data as NetChatMessage));
+  // 서버 보관 내역 도착(접속/재접속) 시 목록 갱신
+  window.overlay.on('net:history', (data) => {
+    messagesEl.innerHTML = '';
+    for (const msg of data as NetChatMessage[]) addMessage(msg);
+  });
   window.overlay.on('net:welcome', (data) => {
     chatSelfId = (data as { selfId: string }).selfId;
   });

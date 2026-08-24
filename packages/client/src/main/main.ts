@@ -213,9 +213,7 @@ const SERVER_URL =
 let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 let selfId: string | null = null;
 const players = new Map<string, PlayerState>();
-// 채팅창 아바타용으로 보낸 사람 외형 스냅샷을 붙여서 중계
-type RelayedChat = ChatMessage & { senderAppearance?: Appearance };
-const chatLog: RelayedChat[] = [];
+const chatLog: ChatMessage[] = [];
 
 function broadcast(channel: string, payload?: unknown): void {
   for (const win of [overlayWindow, chatWindow]) {
@@ -289,10 +287,20 @@ function connect(): void {
 
   socket.on('chat', (msg) => {
     if (msg.image) msg.image = { ...msg.image, url: `${SERVER_URL}${msg.image.url}` };
-    const enriched: RelayedChat = { ...msg, senderAppearance: players.get(msg.id)?.appearance };
-    chatLog.push(enriched);
-    if (chatLog.length > 100) chatLog.shift();
-    broadcast('net:chat', enriched);
+    // 서버가 외형 스냅샷을 못 붙였으면(구버전 서버) 접속자 정보로 보강
+    msg.senderAppearance ??= players.get(msg.id)?.appearance;
+    chatLog.push(msg);
+    if (chatLog.length > 150) chatLog.shift();
+    broadcast('net:chat', msg);
+  });
+
+  socket.on('chat-history', (msgs) => {
+    chatLog.length = 0;
+    for (const msg of msgs) {
+      if (msg.image) msg.image = { ...msg.image, url: `${SERVER_URL}${msg.image.url}` };
+      chatLog.push(msg);
+    }
+    broadcast('net:history', chatLog);
   });
 }
 
@@ -716,10 +724,28 @@ ipcMain.on('setup-cancel', () => setupWindow?.close());
 // ---- 자동 업데이트 ----
 
 // 패키징 + publish 설정(GitHub Releases 등)이 있을 때만 실제로 동작 — 없으면 조용히 스킵
+let updateReady: { version: string } | null = null;
+let updaterRef: { quitAndInstall: () => void } | null = null;
+
 function setupAutoUpdate(): void {
-  if (!app.isPackaged) return;
+  // 개발 모드 UI 테스트용: DOTCHAT_FAKE_UPDATE=1 이면 5초 뒤 가짜 업데이트 알림
+  if (!app.isPackaged) {
+    if (process.env.DOTCHAT_FAKE_UPDATE) {
+      setTimeout(() => {
+        updateReady = { version: '9.9.9' };
+        broadcast('self:update', updateReady);
+      }, 5000);
+    }
+    return;
+  }
   try {
     const { autoUpdater } = require('electron-updater');
+    updaterRef = autoUpdater;
+    autoUpdater.on('update-downloaded', (info: { version?: string }) => {
+      updateReady = { version: String(info?.version ?? '') };
+      broadcast('self:update', updateReady);
+      console.log('[update] downloaded:', updateReady.version);
+    });
     const check = () =>
       autoUpdater
         .checkForUpdatesAndNotify()
@@ -731,6 +757,12 @@ function setupAutoUpdate(): void {
     console.log('[update] electron-updater unavailable');
   }
 }
+
+ipcMain.handle('update-state', () => updateReady);
+
+ipcMain.on('install-update', () => {
+  if (updateReady && updaterRef) updaterRef.quitAndInstall();
+});
 
 // ---- 앱 라이프사이클 ----
 
