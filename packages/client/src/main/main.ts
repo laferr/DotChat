@@ -720,9 +720,13 @@ function setupAutoUpdate(): void {
   if (!app.isPackaged) return;
   try {
     const { autoUpdater } = require('electron-updater');
-    autoUpdater
-      .checkForUpdatesAndNotify()
-      .catch((err: unknown) => console.log('[update] check skipped:', String(err)));
+    const check = () =>
+      autoUpdater
+        .checkForUpdatesAndNotify()
+        .catch((err: unknown) => console.log('[update] check skipped:', String(err)));
+    check();
+    // 실행 중에도 30분마다 확인 (다운로드 후 알림, 설치는 종료 시 적용)
+    setInterval(check, 30 * 60 * 1000);
   } catch {
     console.log('[update] electron-updater unavailable');
   }
