@@ -134,6 +134,29 @@ function phAdjustPixels(data: Uint8ClampedArray, hue: number, sat: number, val: 
   }
 }
 
+// 프레임에서 캐릭터가 실제로 시작되는 최상단을 찾아 얼굴 32x32 크롭 (아바타/트레이 공용)
+function phMakeFace(frame: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = frame.getContext('2d')!;
+  const data = ctx.getImageData(0, 0, frame.width, frame.height).data;
+  let top = 0;
+  outer: for (let y = 0; y < frame.height; y++) {
+    for (let x = 8; x < frame.width - 8; x++) {
+      if (data[(y * frame.width + x) * 4 + 3] > 0) {
+        top = y;
+        break outer;
+      }
+    }
+  }
+  const cropY = Math.min(Math.max(0, top - 1), frame.height - 32);
+  const face = document.createElement('canvas');
+  face.width = 32;
+  face.height = 32;
+  const fctx = face.getContext('2d')!;
+  fctx.imageSmoothingEnabled = false;
+  fctx.drawImage(frame, 16, cropY, 32, 32, 0, 0, 32, 32);
+  return face;
+}
+
 class PartComposer {
   private tintCache = new Map<string, Promise<HTMLCanvasElement | null>>();
   private frameCache = new Map<string, Promise<ComposedFrames | null>>();

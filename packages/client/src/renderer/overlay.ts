@@ -791,13 +791,7 @@ window.addEventListener('mousedown', () => {
 
 function sendTrayIcon(): void {
   if (!me.frames) return;
-  const icon = document.createElement('canvas');
-  icon.width = 32;
-  icon.height = 32;
-  const ctx = icon.getContext('2d')!;
-  ctx.imageSmoothingEnabled = false;
-  // 64x64 셀에서 캐릭터 상반신 근처(16,16)-(48,48) 크롭
-  ctx.drawImage(me.frames.idle[0], 16, 16, 32, 32, 0, 0, 32, 32);
+  const icon = phMakeFace(me.frames.idle[0]);
   window.overlay.setTrayIcon(icon.toDataURL('image/png'));
 }
 

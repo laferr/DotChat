@@ -6,10 +6,17 @@
     <style>
       :root {
         --accent: #d94f63;
-        --accent-hover: #e86a7c;
-        --header: #4a2837;
-        --header-hover: #6b3b52;
-        --self-bubble: #5c3247;
+        --accent-hover: hsl(351 64% 66%);
+        --header: hsl(351 30% 25%);
+        --header-hover: hsl(351 30% 34%);
+        --self-bubble: hsl(351 25% 32%);
+        --bg: hsl(351 12% 16%);
+        --bg-input: hsl(351 14% 12%);
+        --bubble-other: hsl(351 10% 23%);
+        --text: hsl(351 15% 92%);
+        --text-dim: hsl(351 10% 55%);
+        --nick: hsl(351 55% 75%);
+        --nick-self: hsl(36 65% 72%);
       }
       * {
         box-sizing: border-box;
@@ -27,8 +34,8 @@
         position: relative;
         display: flex;
         flex-direction: column;
-        background: #2b2230;
-        color: #f0e8ec;
+        background: var(--bg);
+        color: var(--text);
         border: 1px solid var(--header);
         border-radius: 10px;
       }
@@ -48,7 +55,7 @@
       }
       header .online {
         font-size: 11px;
-        color: #f2a6b4;
+        color: var(--nick);
       }
       header .spacer {
         flex: 1;
@@ -57,7 +64,7 @@
         -webkit-app-region: no-drag;
         border: 0;
         background: transparent;
-        color: #f0e8ec;
+        color: var(--text);
         font-size: 14px;
         cursor: pointer;
         padding: 2px 8px;
@@ -78,7 +85,7 @@
         width: 8px;
       }
       #messages::-webkit-scrollbar-thumb {
-        background: #4a2837;
+        background: var(--header);
         border-radius: 4px;
       }
       .msg {
@@ -93,7 +100,7 @@
         width: 26px;
         height: 26px;
         border-radius: 7px;
-        background: #3a2f40;
+        background: var(--bubble-other);
         image-rendering: pixelated;
         flex-shrink: 0;
         margin-top: 2px;
@@ -115,17 +122,17 @@
       .msg .nick {
         font-size: 12px;
         font-weight: 700;
-        color: #f2a6b4;
+        color: var(--nick);
       }
       .msg.self .nick {
-        color: #ffd66e;
+        color: var(--nick-self);
       }
       .msg .time {
         font-size: 10px;
-        color: #8d7d88;
+        color: var(--text-dim);
       }
       .msg .text {
-        background: #3a2f40;
+        background: var(--bubble-other);
         border-radius: 8px;
         padding: 6px 10px;
         width: fit-content;
@@ -140,19 +147,19 @@
       .sysmsg {
         text-align: center;
         font-size: 11px;
-        color: #8d7d88;
+        color: var(--text-dim);
       }
       footer {
         display: flex;
         gap: 8px;
         padding: 10px 12px;
-        border-top: 1px solid #4a2837;
+        border-top: 1px solid var(--header);
       }
       #chat-input {
         flex: 1;
-        border: 1px solid #4a2837;
-        background: #221a26;
-        color: #f0e8ec;
+        border: 1px solid var(--header);
+        background: var(--bg-input);
+        color: var(--text);
         border-radius: 7px;
         padding: 8px 10px;
         font-size: 13px;
@@ -179,15 +186,15 @@
       }
       #img-btn {
         border: 0;
-        background: #3a2f40;
-        color: #f0e8ec;
+        background: var(--bubble-other);
+        color: var(--text);
         border-radius: 7px;
         padding: 0 10px;
         cursor: pointer;
         font-size: 14px;
       }
       #img-btn:hover:enabled {
-        background: #6b3b52;
+        background: var(--header-hover);
       }
       #img-btn:disabled {
         opacity: 0.5;
@@ -209,8 +216,8 @@
         bottom: 55px;
         display: none;
         flex-direction: column;
-        background: #221a26;
-        border-top: 1px solid #4a2837;
+        background: var(--bg-input);
+        border-top: 1px solid var(--header);
         z-index: 5;
       }
       #appearance-panel.open,
@@ -225,19 +232,19 @@
       }
       .options-body label {
         font-size: 12px;
-        color: #f2a6b4;
+        color: var(--nick);
         font-weight: 700;
       }
       #opacity-val {
-        color: #f0e8ec;
+        color: var(--text);
       }
       #opacity-slider {
         width: 100%;
-        accent-color: #d94f63;
+        accent-color: var(--accent);
       }
       .options-body .hint {
         font-size: 11px;
-        color: #8d7d88;
+        color: var(--text-dim);
         line-height: 1.5;
         margin: 0;
       }
@@ -247,16 +254,16 @@
       }
       #scale-btns button {
         flex: 1;
-        border: 1px solid #4a2837;
-        background: #2b2230;
-        color: #f0e8ec;
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
         border-radius: 6px;
         padding: 6px 0;
         cursor: pointer;
         font-weight: 700;
       }
       #scale-btns button:hover {
-        border-color: #d94f63;
+        border-color: var(--accent);
       }
       #scale-btns button.active {
         background: var(--self-bubble);
@@ -286,9 +293,9 @@
       #chat-color {
         width: 30px;
         height: 26px;
-        border: 1px solid #4a2837;
+        border: 1px solid var(--header);
         border-radius: 6px;
-        background: #221a26;
+        background: var(--bg-input);
         padding: 2px;
         cursor: pointer;
       }
@@ -298,21 +305,21 @@
         align-items: center;
         padding: 8px 12px;
         font-weight: 700;
-        color: #f2a6b4;
+        color: var(--nick);
       }
       .panel-head button {
         border: 0;
         background: transparent;
-        color: #f0e8ec;
+        color: var(--text);
         cursor: pointer;
         border-radius: 5px;
         padding: 2px 8px;
       }
       .panel-head button:hover {
-        background: #6b3b52;
+        background: var(--header-hover);
       }
       #owned-count {
-        color: #8d7d88;
+        color: var(--text-dim);
         font-weight: 400;
         font-size: 11px;
       }
@@ -323,20 +330,20 @@
         padding: 0 12px 8px;
       }
       .slot-tab {
-        border: 1px solid #4a2837;
-        background: #2b2230;
-        color: #f0e8ec;
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
         border-radius: 6px;
         padding: 3px 8px;
         font-size: 11px;
         cursor: pointer;
       }
       .slot-tab:hover {
-        border-color: #d94f63;
+        border-color: var(--accent);
       }
       .slot-tab.active {
-        background: #5c3247;
-        border-color: #d94f63;
+        background: var(--self-bubble);
+        border-color: var(--accent);
         font-weight: 700;
       }
       #hsv-controls {
@@ -347,14 +354,14 @@
       #hsv-controls label {
         flex: 1;
         font-size: 10px;
-        color: #8d7d88;
+        color: var(--text-dim);
         display: flex;
         flex-direction: column;
         gap: 2px;
       }
       #hsv-controls input {
         width: 100%;
-        accent-color: #d94f63;
+        accent-color: var(--accent);
       }
       #hsv-controls input:disabled {
         opacity: 0.35;
@@ -372,12 +379,12 @@
         width: 8px;
       }
       #char-grid::-webkit-scrollbar-thumb {
-        background: #4a2837;
+        background: var(--header);
         border-radius: 4px;
       }
       .char-cell {
-        border: 2px solid #4a2837;
-        background: #2b2230;
+        border: 2px solid var(--header);
+        background: var(--bg);
         border-radius: 8px;
         padding: 6px 0 3px;
         cursor: pointer;
@@ -387,7 +394,7 @@
         gap: 2px;
       }
       .char-cell:hover {
-        border-color: #d94f63;
+        border-color: var(--accent);
       }
       .char-cell.current {
         border-color: #ffd66e;
@@ -399,7 +406,7 @@
       }
       .char-cell .cname {
         font-size: 9px;
-        color: #8d7d88;
+        color: var(--text-dim);
         max-width: 56px;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -408,7 +415,7 @@
       .char-cell.remove-cell {
         justify-content: center;
         font-size: 18px;
-        color: #8d7d88;
+        color: var(--text-dim);
         min-height: 56px;
       }
     </style>

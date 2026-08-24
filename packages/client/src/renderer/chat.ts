@@ -35,14 +35,7 @@
     if (!cached) {
       cached = chatComposer.compose(appearance).then((frames) => {
         if (!frames) return null;
-        const face = document.createElement('canvas');
-        face.width = 32;
-        face.height = 32;
-        const ctx = face.getContext('2d')!;
-        ctx.imageSmoothingEnabled = false;
-        // 64x64 셀에서 얼굴 근처(16,12)-(48,44) 크롭
-        ctx.drawImage(frames.idle[0], 16, 12, 32, 32, 0, 0, 32, 32);
-        return face;
+        return phMakeFace(frames.idle[0]);
       });
       faceCache.set(key, cached);
     }
@@ -444,6 +437,14 @@
     root.setProperty('--header', `hsl(${h} 30% 25%)`);
     root.setProperty('--header-hover', `hsl(${h} 30% 34%)`);
     root.setProperty('--self-bubble', `hsl(${h} 25% 32%)`);
+    // 배경/폰트도 기준색의 색조를 따라감
+    root.setProperty('--bg', `hsl(${h} 12% 16%)`);
+    root.setProperty('--bg-input', `hsl(${h} 14% 12%)`);
+    root.setProperty('--bubble-other', `hsl(${h} 10% 23%)`);
+    root.setProperty('--text', `hsl(${h} 15% 92%)`);
+    root.setProperty('--text-dim', `hsl(${h} 10% 55%)`);
+    root.setProperty('--nick', `hsl(${h} 55% 75%)`);
+    root.setProperty('--nick-self', `hsl(${(h + 45) % 360} 65% 72%)`);
     colorInput.value = hex;
     for (const el of swatchRow.children) {
       el.classList.toggle('active', (el as HTMLElement).dataset.color === hex);
