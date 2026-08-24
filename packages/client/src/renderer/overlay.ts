@@ -19,8 +19,15 @@ interface NetChatMessage {
   ts: number;
   image?: { url: string; thumb: string; w: number; h: number };
   action?: string;
+  reaction?: number;
   /** 메인 프로세스가 붙여주는 보낸 사람 외형 스냅샷 (채팅창 아바타용) */
   senderAppearance?: Appearance;
+}
+
+interface ExtrasManifest {
+  fish: string[];
+  tools: { frameW: number; frameH: number; strips: Record<string, number>; files: Record<string, string> };
+  reaction: { cell: number; cols: number; rows: number };
 }
 
 interface GiftClaimResult {
@@ -81,6 +88,14 @@ interface OverlayApi {
   getWallet(): Promise<{ coins: number; items: string[] }>;
   buyItem(itemId: string): Promise<unknown>;
   getRanking(): Promise<unknown[]>;
+  getExtras(): Promise<ExtrasManifest | null>;
+  loadExtra(relPath: string): Promise<string | null>;
+  getMinigameState(): Promise<{ runnerRemainSec: number }>;
+  startMinigame(game: string): Promise<{ ok: boolean; error?: string }>;
+  sendFishing(data: { phase: string; fishId?: string }): void;
+  reportFish(fishId: string): Promise<{ ok: boolean; error?: string; isNew?: boolean; delta?: number }>;
+  endRunner(seconds: number): Promise<{ ok: boolean; error?: string; delta?: number }>;
+  sendReaction(index: number): void;
   equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
   toggleChat(): void;
   closeChat(): void;
@@ -174,6 +189,17 @@ interface Actor {
   action: string | null;
   actionStart: number;
   actionUntil: number;
+  /** 낚시 상태 (본인/원격 공용, 원격은 이벤트로 위상 전환) */
+  fishing: {
+    phase: string;
+    phaseStart: number;
+    fishId: string | null;
+    dir: -1 | 1;
+    waitDur?: number;
+    reelDur?: number;
+  } | null;
+  /** 리액션 이모지 표시 */
+  reaction: { index: number; until: number } | null;
 }
 
 // 액션 재생 정의: loop = 반복, hold = 마지막 프레임 유지
@@ -243,6 +269,8 @@ function makeActor(nickname: string, appearance: Appearance, x: number): Actor {
     action: null,
     actionStart: 0,
     actionUntil: 0,
+    fishing: null,
+    reaction: null,
   };
   setAppearance(actor, appearance);
   return actor;
@@ -291,8 +319,17 @@ function updateSelf(dt: number): void {
   if (selfModeTime <= 0) pickNextMode();
 
   me.animClock += dt;
-  // 액션 재생 중엔 이동 정지
-  if (actionActive(me)) {
+  // 러너 모드: 제자리 달리기 (이동/배회 억제)
+  if (runnerState.active) {
+    me.walking = !runnerState.dead;
+    me.dir = 1;
+    updateHop(me, dt);
+    return;
+  }
+  // 낚시/액션 중엔 이동 정지
+  if (me.fishing) {
+    me.walking = false;
+  } else if (actionActive(me)) {
     me.walking = false;
   } else {
     me.walking = selfMode === 'walk';
@@ -362,6 +399,17 @@ function addRemote(p: NetPlayer): void {
 
 function currentFrame(actor: Actor): HTMLCanvasElement | null {
   if (!actor.frames) return null;
+  // 러너 모드 (본인 전용): 점프/엎드리기 포즈
+  if (actor === me && runnerState.active && !runnerState.dead) {
+    if (me.hopY !== 0) {
+      const jump = actor.frames.anims.jump;
+      if (jump) return jump[Math.min(1, jump.length - 1)];
+    }
+    if (runnerDucking(performance.now())) {
+      const crawl = actor.frames.anims.crawl;
+      if (crawl) return crawl[Math.floor(actor.animClock * 8) % crawl.length];
+    }
+  }
   if (actionActive(actor)) {
     const anim = actor.frames.anims[actor.action!];
     const play = ACTION_PLAY[actor.action!];
@@ -529,8 +577,23 @@ function drawActor(actor: Actor, now: number): void {
   } else {
     stageCtx.drawImage(frame, left, Math.round(top), size, size);
   }
+  drawFishing(actor, now);
   drawName(actor);
+  // 원격 낚시꾼 머리 위 '낚시중 ...' 표시
+  if (actor.fishing && actor !== me && !actor.bubble) {
+    const dots = '.'.repeat(1 + (Math.floor(now / 500) % 3));
+    stageCtx.font = NAME_FONT;
+    const label = `낚시중 ${dots}`;
+    const w = stageCtx.measureText(label).width;
+    const box = actorBox(actor);
+    stageCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+    stageCtx.lineWidth = 3;
+    stageCtx.strokeText(label, actor.x - w / 2, box.y - 18);
+    stageCtx.fillStyle = '#9fdcff';
+    stageCtx.fillText(label, actor.x - w / 2, box.y - 18);
+  }
   drawBubble(actor, now);
+  drawReaction(actor, now);
 }
 
 function wrapText(text: string): string[] {
@@ -746,6 +809,342 @@ async function claimGift(): Promise<void> {
   }
 }
 
+// ---- 미니게임 에셋 ----
+
+let extras: ExtrasManifest | null = null;
+const rodStrips: Record<string, HTMLImageElement | null> = {};
+const fishReady = new Map<string, HTMLImageElement | null>();
+let reactionSheet: HTMLImageElement | null = null;
+let arrowImg: HTMLImageElement | null = null;
+let trapImg: HTMLImageElement | null = null;
+
+function loadExtraImage(rel: string): Promise<HTMLImageElement | null> {
+  return window.overlay.loadExtra(rel).then((dataUrl) => {
+    if (!dataUrl) return null;
+    return new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  });
+}
+
+function loadFishImage(id: string): void {
+  if (fishReady.has(id)) return;
+  fishReady.set(id, null);
+  void loadExtraImage(`fish/${id}.png`).then((img) => fishReady.set(id, img));
+}
+
+async function initExtras(): Promise<void> {
+  extras = await window.overlay.getExtras();
+  if (!extras) return;
+  const jobs: Promise<unknown>[] = [
+    loadExtraImage('reaction.png').then((img) => (reactionSheet = img)),
+    loadExtraImage('rungame/Arrow.png').then((img) => (arrowImg = img)),
+    loadExtraImage('rungame/Trap3.png').then((img) => (trapImg = img)),
+  ];
+  for (const [phase, file] of Object.entries(extras.tools.files)) {
+    jobs.push(loadExtraImage(`tools/${file}`).then((img) => (rodStrips[phase] = img)));
+  }
+  await Promise.all(jobs);
+}
+
+// ---- 낚시 ----
+
+const FISHING_PLAY: Record<string, { fps: number; once: boolean }> = {
+  casting: { fps: 12, once: true },
+  waiting: { fps: 6, once: false },
+  reeling: { fps: 12, once: false },
+  caught: { fps: 10, once: true },
+};
+const CAUGHT_DURATION = 1.7;
+
+function setSelfFishingPhase(phase: string, fishId?: string): void {
+  if (!me.fishing) return;
+  me.fishing.phase = phase;
+  me.fishing.phaseStart = performance.now();
+  me.fishing.fishId = fishId ?? null;
+  if (phase === 'waiting') me.fishing.waitDur = 10 + Math.random() * 5;
+  if (phase === 'reeling') me.fishing.reelDur = 1 + Math.random();
+  window.overlay.sendFishing({ phase, fishId });
+}
+
+function startFishing(): void {
+  if (runnerState.active || !extras) return;
+  me.fishing = { phase: 'casting', phaseStart: performance.now(), fishId: null, dir: me.dir };
+  window.overlay.sendFishing({ phase: 'casting' });
+}
+
+function stopFishing(): void {
+  if (!me.fishing) return;
+  me.fishing = null;
+  window.overlay.sendFishing({ phase: 'stop' });
+}
+
+function updateSelfFishing(now: number): void {
+  const f = me.fishing;
+  if (!f || !extras) return;
+  const t = (now - f.phaseStart) / 1000;
+  switch (f.phase) {
+    case 'casting':
+      if (t >= extras.tools.strips.casting / FISHING_PLAY.casting.fps) setSelfFishingPhase('waiting');
+      break;
+    case 'waiting':
+      if (t >= (f.waitDur ?? 12)) setSelfFishingPhase('reeling');
+      break;
+    case 'reeling':
+      if (t >= (f.reelDur ?? 1.5)) {
+        const fishId = extras.fish[Math.floor(Math.random() * extras.fish.length)];
+        loadFishImage(fishId);
+        setSelfFishingPhase('caught', fishId);
+        void window.overlay.reportFish(fishId).then((res) => {
+          if (res.ok) {
+            showBubble(me, `🎣 ${fishId}! ${res.isNew ? 'NEW! ' : ''}+${res.delta}🪙`);
+          }
+        });
+      }
+      break;
+    case 'caught':
+      if (t >= CAUGHT_DURATION) setSelfFishingPhase('casting');
+      break;
+  }
+}
+
+// 낚싯대 + 낚인 물고기 그리기 (본인/원격 공용)
+function drawFishing(actor: Actor, time: number): void {
+  const f = actor.fishing;
+  if (!f || f.phase === 'stop' || !extras) return;
+  const strip = rodStrips[f.phase];
+  const count = extras.tools.strips[f.phase];
+  const play = FISHING_PLAY[f.phase];
+  if (!strip || !count || !play) return;
+  const t = (time - f.phaseStart) / 1000;
+  const raw = Math.floor(t * play.fps);
+  const idx = play.once ? Math.min(raw, count - 1) : raw % count;
+  const vs = viewScale;
+  const fw = extras.tools.frameW;
+  const fh = extras.tools.frameH;
+  const y0 = viewH + 2 * vs - fh * vs;
+
+  stageCtx.save();
+  if (f.dir === -1) {
+    // 왼쪽 보기: 캐릭터 중심 기준 미러
+    stageCtx.translate(2 * actor.x, 0);
+    stageCtx.scale(-1, 1);
+  }
+  stageCtx.drawImage(
+    strip,
+    idx * fw,
+    0,
+    fw,
+    fh,
+    Math.round(actor.x - 16 * vs),
+    Math.round(y0),
+    fw * vs,
+    fh * vs,
+  );
+  if (f.phase === 'caught' && f.fishId) {
+    const fishImg = fishReady.get(f.fishId);
+    if (fishImg) {
+      const p = Math.min(1, t / 1.4);
+      const fx = actor.x + (62 - 30 * p) * vs;
+      const fy = viewH - 4 * vs - 44 * vs * p - Math.sin(p * Math.PI) * 6 * vs;
+      const fs = 16 * 1.5 * vs;
+      stageCtx.drawImage(fishImg, 0, 0, 16, 16, Math.round(fx - fs / 2), Math.round(fy - fs / 2), fs, fs);
+    }
+  }
+  stageCtx.restore();
+}
+
+// 낚시 중 머리 위 그만하기 버튼 (본인 전용)
+let fishStopRect = { x: 0, y: 0, w: 0, h: 0 };
+let fishStopHover = false;
+
+function drawFishingStop(): void {
+  if (!me.fishing) return;
+  const box = actorBox(me);
+  const w = 56;
+  const h = 18;
+  fishStopRect = { x: me.x - w / 2, y: box.y - 40, w, h };
+  stageCtx.globalAlpha = fishStopHover ? 1 : 0.85;
+  stageCtx.fillStyle = fishStopHover ? '#a23352' : '#4a2837';
+  stageCtx.strokeStyle = '#fffdf7';
+  stageCtx.lineWidth = 1;
+  roundRect(fishStopRect.x, fishStopRect.y, w, h, 5);
+  stageCtx.fill();
+  stageCtx.stroke();
+  stageCtx.fillStyle = '#fffdf7';
+  stageCtx.font = '10px "Segoe UI", "Malgun Gothic", sans-serif';
+  stageCtx.fillText('그만하기', fishStopRect.x + 8, fishStopRect.y + 13);
+  stageCtx.globalAlpha = 1;
+}
+
+// ---- 장애물 러너 ----
+
+interface RunnerObstacle {
+  type: 'arrow' | 'trap';
+  x: number;
+}
+
+const runnerState = {
+  active: false,
+  t: 0,
+  spawnIn: 0,
+  obstacles: [] as RunnerObstacle[],
+  duckUntil: 0,
+  dead: false,
+};
+
+function runnerDucking(now: number): boolean {
+  return runnerState.active && now < runnerState.duckUntil && me.hopY === 0;
+}
+
+function startRunner(): void {
+  stopFishing();
+  runnerState.active = true;
+  runnerState.t = 0;
+  runnerState.spawnIn = 1.8;
+  runnerState.obstacles = [];
+  runnerState.duckUntil = 0;
+  runnerState.dead = false;
+  me.dir = 1;
+  me.x = Math.max(120, viewW * 0.22);
+}
+
+function runnerDie(): void {
+  runnerState.dead = true;
+  playAction(me, 'death');
+  const secs = runnerState.t;
+  void window.overlay.endRunner(secs).then((res) => {
+    showBubble(
+      me,
+      res.ok ? `💀 ${secs.toFixed(1)}초 생존! +${res.delta}🪙` : (res.error ?? '기록 정산 실패'),
+    );
+  });
+}
+
+function updateRunner(dt: number, now: number): void {
+  if (!runnerState.active) return;
+  if (runnerState.dead) {
+    if (!actionActive(me)) {
+      runnerState.active = false;
+      pickNextMode();
+    }
+    return;
+  }
+  runnerState.t += dt;
+  const speed = Math.min(520, 240 + runnerState.t * 9);
+  runnerState.spawnIn -= dt;
+  if (runnerState.spawnIn <= 0) {
+    runnerState.obstacles.push({ type: Math.random() < 0.55 ? 'arrow' : 'trap', x: viewW + 60 });
+    runnerState.spawnIn = Math.max(0.55, 1.7 - runnerState.t * 0.02) + Math.random() * 0.8;
+  }
+  const vs = viewScale;
+  const ducking = runnerDucking(now);
+  const charL = me.x - 7 * vs;
+  const charR = me.x + 7 * vs;
+  const charTop = (ducking ? viewH - 14 * vs : viewH - 30 * vs) + me.hopY;
+  const charBottom = viewH + me.hopY;
+  for (let i = runnerState.obstacles.length - 1; i >= 0; i--) {
+    const obs = runnerState.obstacles[i];
+    obs.x -= speed * (obs.type === 'arrow' ? 1.25 : 1) * dt;
+    if (obs.x < -80) {
+      runnerState.obstacles.splice(i, 1);
+      continue;
+    }
+    let oL: number;
+    let oR: number;
+    let oT: number;
+    let oB: number;
+    if (obs.type === 'arrow') {
+      const cy = viewH - 24 * vs;
+      oL = obs.x - 10 * vs;
+      oR = obs.x + 10 * vs;
+      oT = cy - 3 * vs;
+      oB = cy + 3 * vs;
+    } else {
+      oL = obs.x - 8 * vs;
+      oR = obs.x + 8 * vs;
+      oT = viewH - 11 * vs;
+      oB = viewH;
+    }
+    if (charR > oL && charL < oR && charBottom > oT && charTop < oB) {
+      runnerDie();
+      return;
+    }
+  }
+}
+
+function drawRunner(time: number): void {
+  if (!runnerState.active) return;
+  const vs = viewScale;
+  for (const obs of runnerState.obstacles) {
+    if (obs.type === 'arrow' && arrowImg) {
+      // 하단 좌측 프레임(24x24)을 좌우반전 → 왼쪽으로 날아옴
+      const s = 1.1 * vs;
+      const cy = viewH - 24 * vs;
+      stageCtx.save();
+      stageCtx.translate(obs.x, cy);
+      stageCtx.scale(-1, 1);
+      stageCtx.drawImage(arrowImg, 0, 24, 24, 24, -12 * s, -12 * s, 24 * s, 24 * s);
+      stageCtx.restore();
+    } else if (obs.type === 'trap' && trapImg) {
+      const frame = Math.floor(time / 130) % 4;
+      const s = 1.3 * vs;
+      stageCtx.drawImage(trapImg, frame * 16, 0, 16, 16, Math.round(obs.x - 8 * s), Math.round(viewH - 16 * s + 3 * vs), 16 * s, 16 * s);
+    }
+  }
+  // HUD
+  const label = runnerState.dead ? '기록 정산 중...' : `⏱ ${runnerState.t.toFixed(1)}s`;
+  stageCtx.font = 'bold 13px "Segoe UI", sans-serif';
+  stageCtx.strokeStyle = 'rgba(0,0,0,0.75)';
+  stageCtx.lineWidth = 3;
+  stageCtx.strokeText(label, viewW / 2 - 30, 20);
+  stageCtx.fillStyle = '#fffdf7';
+  stageCtx.fillText(label, viewW / 2 - 30, 20);
+  if (runnerState.t < 4 && !runnerState.dead) {
+    const hint = '↑ 점프 (Trap 회피)   ↓ 엎드리기 (화살 회피)';
+    stageCtx.font = '11px "Segoe UI", sans-serif';
+    stageCtx.strokeText(hint, viewW / 2 - 110, 38);
+    stageCtx.fillText(hint, viewW / 2 - 110, 38);
+  }
+}
+
+// ---- 리액션 이모지 (캐릭터 위 말풍선 세트) ----
+
+function drawReaction(actor: Actor, time: number): void {
+  const r = actor.reaction;
+  if (!r || !reactionSheet || !extras) return;
+  if (time >= r.until) {
+    actor.reaction = null;
+    return;
+  }
+  if (actor.bubble) return; // 텍스트 말풍선 우선
+  const cell = extras.reaction.cell;
+  const cols = extras.reaction.cols;
+  const sx = (r.index % cols) * cell;
+  const sy = (extras.reaction.rows + Math.floor(r.index / cols)) * cell; // 두 번째 세트(말풍선 포함)
+  const vs = viewScale;
+  const size = cell * 2 * vs;
+  const box = actorBox(actor);
+  // 등장 애니메이션: 살짝 위로 떠오르며 페이드인
+  const age = (time - (r.until - 3000)) / 1000;
+  stageCtx.globalAlpha = Math.min(1, age * 4) * (r.until - time < 300 ? (r.until - time) / 300 : 1);
+  stageCtx.drawImage(
+    reactionSheet,
+    sx,
+    sy,
+    cell,
+    cell,
+    Math.round(actor.x - size / 2),
+    Math.round(box.y - size - 4),
+    size,
+    size,
+  );
+  stageCtx.globalAlpha = 1;
+}
+
 // ---- 채팅 버튼 (우측 하단) ----
 
 const CHAT_BTN = { w: 38, h: 30, marginX: 10, marginY: 6 };
@@ -822,7 +1221,8 @@ function updateInteractive(): void {
   selfHover = pointIn(actorBox(me), HOVER_PAD);
   chatBtnHover = pointIn(chatBtnRect(), 2);
   giftHover = gift.present && pointIn(giftRect(), 4);
-  const over = selfHover || chatBtnHover || giftHover;
+  fishStopHover = !!me.fishing && pointIn(fishStopRect, 4);
+  const over = selfHover || chatBtnHover || giftHover || fishStopHover;
   if (over !== interactive) {
     interactive = over;
     window.overlay.setInteractive(over);
@@ -831,6 +1231,10 @@ function updateInteractive(): void {
 }
 
 window.addEventListener('mousedown', () => {
+  if (fishStopHover) {
+    stopFishing();
+    return;
+  }
   if (chatBtnHover) {
     window.overlay.toggleChat();
     return;
@@ -897,8 +1301,50 @@ function wireNet(): void {
     const actor = msg.id === selfId ? me : remotes.get(msg.id);
     if (!actor) return;
     if (msg.action) playAction(actor, msg.action);
+    if (msg.reaction != null) {
+      actor.reaction = { index: msg.reaction, until: performance.now() + 3000 };
+      return;
+    }
     if (msg.image) showImageBubble(actor, msg.image);
     else if (msg.text) showBubble(actor, msg.text);
+  });
+
+  window.overlay.on('net:player-fishing', (data) => {
+    const d = data as { id: string; phase: string; fishId?: string };
+    const actor = remotes.get(d.id);
+    if (!actor) return;
+    if (d.phase === 'stop') {
+      actor.fishing = null;
+      return;
+    }
+    if (d.fishId) loadFishImage(d.fishId);
+    actor.fishing = {
+      phase: d.phase,
+      phaseStart: performance.now(),
+      fishId: d.fishId ?? null,
+      dir: actor.fishing?.dir ?? actor.dir,
+    };
+    actor.walking = false;
+  });
+
+  window.overlay.on('self:minigame', (data) => {
+    const d = data as { game: string };
+    if (d.game === 'fishing') {
+      if (me.fishing) stopFishing();
+      else startFishing();
+    } else if (d.game === 'runner' && !runnerState.active) {
+      startRunner();
+    }
+  });
+
+  window.overlay.on('self:runner-key', (data) => {
+    if (!runnerState.active || runnerState.dead) return;
+    const now = performance.now();
+    if (data === 'up' && me.hopY === 0 && now >= runnerState.duckUntil) {
+      me.hopVy = -270;
+    } else if (data === 'down' && me.hopY === 0) {
+      runnerState.duckUntil = now + 560;
+    }
   });
 
   window.overlay.on('net:player-appearance', (data) => {
@@ -940,7 +1386,10 @@ function tick(time: number): void {
   const dt = Math.min((time - lastTime) / 1000, 0.05);
   lastTime = time;
 
+  const nowMs = performance.now();
   updateSelf(dt);
+  updateSelfFishing(nowMs);
+  updateRunner(dt, nowMs);
   updateRemotes(dt);
   updateGift(dt);
   updateHearts(dt);
@@ -950,8 +1399,10 @@ function tick(time: number): void {
   stageCtx.clearRect(0, 0, viewW, viewH);
   const now = performance.now();
   drawGift(time);
+  drawRunner(time);
   for (const actor of remotes.values()) drawActor(actor, now);
   drawActor(me, now);
+  drawFishingStop();
   drawHearts(time);
   drawChatButton();
 
@@ -986,6 +1437,7 @@ async function init(): Promise<void> {
 
   heartCanvas = buildHeartCanvas();
   giftCanvas = buildGiftCanvas();
+  void initExtras();
   console.log(`[overlay] ready, viewport ${viewW}x${viewH}`);
   requestAnimationFrame((t) => {
     lastTime = t;

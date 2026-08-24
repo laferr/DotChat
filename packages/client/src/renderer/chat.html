@@ -389,9 +389,135 @@
         background: var(--self-bubble);
         border-color: #ffd66e;
       }
+      #minigame-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 4px 14px 14px;
+        align-content: start;
+      }
+      .mg-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 10px;
+        padding: 16px 8px;
+        cursor: pointer;
+        color: var(--text);
+      }
+      .mg-card:hover {
+        border-color: var(--accent);
+      }
+      .mg-icon {
+        font-size: 28px;
+      }
+      .mg-name {
+        font-weight: 700;
+        font-size: 13px;
+      }
+      .mg-desc {
+        font-size: 10px;
+        color: var(--text-dim);
+        text-align: center;
+        line-height: 1.5;
+      }
+      #fishdex-wrap {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 10px 12px;
+      }
+      #fishdex-book {
+        width: 100%;
+        aspect-ratio: 256 / 146;
+        background-size: 100% 100%;
+        background-repeat: no-repeat;
+        image-rendering: pixelated;
+        display: flex;
+      }
+      #fishdex-grid {
+        flex: 1;
+        margin: 7% 9% 12% 9%;
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 2px;
+        align-content: start;
+      }
+      .fish-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .fish-cell canvas {
+        width: 24px;
+        height: 24px;
+        image-rendering: pixelated;
+      }
+      .fish-cell.uncaught canvas {
+        opacity: 0.55;
+      }
+      #emoji-popup {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: 58px;
+        display: none;
+        grid-template-columns: repeat(9, 1fr);
+        gap: 4px;
+        background: var(--bg-input);
+        border: 1px solid var(--header);
+        border-radius: 10px;
+        padding: 8px;
+        z-index: 25;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+      }
+      #emoji-popup.open {
+        display: grid;
+      }
+      #emoji-popup button {
+        border: 0;
+        background: transparent;
+        padding: 2px;
+        cursor: pointer;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #emoji-popup button:hover {
+        background: var(--header-hover);
+      }
+      #emoji-popup canvas {
+        width: 22px;
+        height: 22px;
+        image-rendering: pixelated;
+      }
+      #emoji-btn {
+        border: 0;
+        background: var(--bubble-other);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 0 10px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      #emoji-btn:hover {
+        background: var(--header-hover);
+      }
+      .msg-reaction {
+        width: 26px;
+        height: 26px;
+        image-rendering: pixelated;
+        display: block;
+      }
       #appearance-panel,
       #options-panel,
       #shop-panel,
+      #minigame-panel,
+      #fishdex-panel,
       #slot-panel {
         position: absolute;
         left: 0;
@@ -407,6 +533,8 @@
       #appearance-panel.open,
       #options-panel.open,
       #shop-panel.open,
+      #minigame-panel.open,
+      #fishdex-panel.open,
       #slot-panel.open {
         display: flex;
       }
@@ -617,11 +745,38 @@
       <button id="close-btn" title="닫기">✕</button>
     </header>
     <div id="menu-dropdown">
+      <button data-menu="minigame">🕹️ 미니게임</button>
       <button data-menu="slot">🎰 슬롯머신</button>
       <button data-menu="shop">🛒 상점</button>
+      <button data-menu="fishdex">📖 낚시도감</button>
       <button data-menu="appearance">👕 외모 변경</button>
       <button data-menu="ranking">🏆 코인 랭킹</button>
       <button data-menu="options">⚙️ 옵션</button>
+    </div>
+    <div id="minigame-panel">
+      <div class="panel-head">
+        <span>미니게임</span>
+        <button id="minigame-close">✕</button>
+      </div>
+      <div id="minigame-grid">
+        <button class="mg-card" data-game="fishing">
+          <span class="mg-icon">🎣</span>
+          <span class="mg-name">낚시</span>
+          <span class="mg-desc">쿨타임 없음 · 물고기 도감 수집<br />(다시 누르면 시작/중지)</span>
+        </button>
+        <button class="mg-card" data-game="runner">
+          <span class="mg-icon">🏃</span>
+          <span class="mg-name">달리기</span>
+          <span class="mg-desc" id="runner-cd">5분마다 1회 · ↑점프 ↓엎드리기</span>
+        </button>
+      </div>
+    </div>
+    <div id="fishdex-panel">
+      <div class="panel-head">
+        <span>낚시도감 <span id="fishdex-count"></span></span>
+        <button id="fishdex-close">✕</button>
+      </div>
+      <div id="fishdex-wrap"><div id="fishdex-book"><div id="fishdex-grid"></div></div></div>
     </div>
     <div id="shop-panel">
       <div class="panel-head">
@@ -682,9 +837,11 @@
       <div id="char-grid"></div>
     </div>
     <div id="messages"></div>
+    <div id="emoji-popup"></div>
     <footer>
       <button id="img-btn" title="이미지 전송 (Ctrl+V로 붙여넣기도 가능)">📎</button>
       <input id="img-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+      <button id="emoji-btn" title="리액션 이모지">😊</button>
       <input id="chat-input" maxlength="200" placeholder="메시지 입력 후 Enter" autocomplete="off" />
       <button id="send-btn">전송</button>
     </footer>

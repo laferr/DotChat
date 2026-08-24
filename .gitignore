@@ -9,4 +9,5 @@ packages/server/uploads/
 # 유료/재배포 금지 에셋 — 저장소에 포함하지 않음 (README 참고)
 sprite_split/
 assets/
+추가에셋/
 tools/preview-out.png

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, Menu, Tray, ipcMain, nativeImage, screen, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { io, Socket } from 'socket.io-client';
@@ -34,6 +34,11 @@ const GIFT_INTERVAL_SEC = Math.max(5, Number(process.env.DOTCHAT_GIFT_SEC ?? 180
 const ASSETS_DIR = app.isPackaged
   ? path.join(process.resourcesPath, 'pixelheroes')
   : path.join(__dirname, '..', '..', '..', '..', 'assets', 'pixelheroes');
+
+// 미니게임/리액션 에셋 (tools/import-extras.mjs)
+const EXTRAS_DIR = app.isPackaged
+  ? path.join(process.resourcesPath, 'extras')
+  : path.join(__dirname, '..', '..', '..', '..', 'assets', 'extras');
 
 const PRELOAD = path.join(__dirname, '..', 'preload', 'preload.js');
 const RENDERER_DIR = path.join(__dirname, '..', '..', 'src', 'renderer');
@@ -308,8 +313,13 @@ function connect(): void {
   socket.on('wallet', (data) => {
     myCoins = data.coins;
     myItems = data.items;
+    myFish = data.fish ?? [];
     broadcast('self:coins', myCoins);
     broadcast('self:wallet', data);
+  });
+
+  socket.on('player-fishing', (data) => {
+    broadcast('net:player-fishing', data);
   });
 
   socket.on('slot-win', (data) => {
@@ -507,6 +517,53 @@ ipcMain.handle('load-part', (_e, layer: string, name: string) => {
   return result;
 });
 
+// ---- IPC: 미니게임 에셋 ----
+
+interface ExtrasManifest {
+  fish: string[];
+  tools: { frameW: number; frameH: number; strips: Record<string, number>; files: Record<string, string> };
+  reaction: { cell: number; cols: number; rows: number };
+}
+
+function loadExtrasManifest(): ExtrasManifest | null {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(EXTRAS_DIR, 'manifest-extras.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+const extrasManifest = loadExtrasManifest();
+if (!extrasManifest) {
+  console.error(`[main] 미니게임 에셋 없음: ${EXTRAS_DIR} — tools/import-extras.mjs 실행 필요`);
+}
+
+ipcMain.handle('get-extras', () => extrasManifest);
+
+// 엑스트라 파일을 data URL로 (허용 경로만)
+const extraCache = new Map<string, string | null>();
+ipcMain.handle('load-extra', (_e, relPath: string) => {
+  const rel = String(relPath);
+  if (extraCache.has(rel)) return extraCache.get(rel);
+  let result: string | null = null;
+  const allowed =
+    rel === 'reaction.png' ||
+    rel === 'book.png' ||
+    /^tools\/tools_\w+_strip\d+\.png$/.test(rel) ||
+    /^rungame\/(Arrow|Trap3)\.png$/.test(rel) ||
+    (/^fish\/[\w\- ]+\.png$/.test(rel) &&
+      extrasManifest?.fish.includes(rel.slice(5, -4)) === true);
+  if (allowed && extrasManifest) {
+    try {
+      result = `data:image/png;base64,${fs.readFileSync(path.join(EXTRAS_DIR, rel)).toString('base64')}`;
+    } catch {
+      result = null;
+    }
+  }
+  extraCache.set(rel, result);
+  return result;
+});
+
 // ---- IPC: 프로필/설정/네트워크 ----
 
 ipcMain.handle('get-self', () => ({
@@ -680,10 +737,11 @@ ipcMain.handle('claim-gift', (): GiftResult => {
 
 let myCoins = 0;
 let myItems: string[] = [];
+let myFish: string[] = [];
 
 ipcMain.handle('get-coins', () => myCoins);
 
-ipcMain.handle('get-wallet', () => ({ coins: myCoins, items: myItems }));
+ipcMain.handle('get-wallet', () => ({ coins: myCoins, items: myItems, fish: myFish }));
 
 ipcMain.handle('shop-buy', (_e, itemId: string) => {
   return new Promise((resolve) => {
@@ -811,6 +869,108 @@ ipcMain.on('equip', (_e, payload: { slot?: unknown; name?: unknown; h?: unknown;
   pushAppearance();
 });
 
+// ---- 미니게임: 낚시 / 러너 / 리액션 ----
+
+const RUNNER_COOLDOWN_MS = 300 * 1000; // 5분에 1회
+let lastRunnerStart = 0;
+let runnerKeysActive = false;
+
+function registerRunnerKeys(): void {
+  if (runnerKeysActive) return;
+  runnerKeysActive = true;
+  globalShortcut.register('Up', () => broadcast('self:runner-key', 'up'));
+  globalShortcut.register('Down', () => broadcast('self:runner-key', 'down'));
+}
+
+function unregisterRunnerKeys(): void {
+  if (!runnerKeysActive) return;
+  runnerKeysActive = false;
+  globalShortcut.unregister('Up');
+  globalShortcut.unregister('Down');
+}
+
+ipcMain.handle('minigame-state', () => ({
+  runnerRemainSec: Math.max(0, Math.ceil((lastRunnerStart + RUNNER_COOLDOWN_MS - Date.now()) / 1000)),
+}));
+
+ipcMain.handle('minigame-start', (_e, game: string) => {
+  if (game === 'fishing') {
+    broadcast('self:minigame', { game: 'fishing' });
+    return { ok: true };
+  }
+  if (game === 'runner') {
+    const remain = lastRunnerStart + RUNNER_COOLDOWN_MS - Date.now();
+    if (remain > 0) {
+      return { ok: false, error: `달리기는 ${Math.ceil(remain / 1000)}초 후에 다시 할 수 있어요.` };
+    }
+    lastRunnerStart = Date.now();
+    registerRunnerKeys();
+    broadcast('self:minigame', { game: 'runner' });
+    return { ok: true };
+  }
+  return { ok: false, error: '알 수 없는 게임이에요.' };
+});
+
+// 낚시 상태 변화를 서버에 중계 (다른 접속자 화면 동기화)
+ipcMain.on('fishing-send', (_e, data: { phase?: unknown; fishId?: unknown }) => {
+  if (!socket?.connected) return;
+  socket.emit('fishing-state', {
+    phase: String(data?.phase ?? 'stop') as any,
+    fishId: typeof data?.fishId === 'string' ? data.fishId : undefined,
+  });
+});
+
+// 물고기 획득 정산 (서버가 도감 기록 + 코인)
+ipcMain.handle('fish-caught', (_e, fishId: string) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('fish', String(fishId), (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      if (res.ok && res.isNew) {
+        myFish.push(String(fishId));
+        broadcast('self:wallet', { coins: myCoins, items: myItems, fish: myFish });
+      }
+      resolve(res);
+    });
+  });
+});
+
+// 러너 종료 → 생존 시간 정산
+ipcMain.handle('runner-end', (_e, seconds: number) => {
+  unregisterRunnerKeys();
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('runner-score', Number(seconds) || 0, (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      resolve(res);
+    });
+  });
+});
+
+ipcMain.on('reaction-send', (_e, index: number) => {
+  if (socket?.connected && Number.isFinite(Number(index))) socket.emit('reaction', Number(index));
+});
+
 // ---- 프로필 설정 창 (첫 실행) ----
 
 let started = false;
@@ -922,4 +1082,5 @@ if (!gotLock) {
   });
 }
 
+app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());

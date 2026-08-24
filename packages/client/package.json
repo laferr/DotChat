@@ -38,6 +38,10 @@
       {
         "from": "../../assets/pixelheroes",
         "to": "pixelheroes"
+      },
+      {
+        "from": "../../assets/extras",
+        "to": "extras"
       }
     ],
     "publish": [

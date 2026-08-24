@@ -21,6 +21,9 @@ const NET_CHANNELS = new Set([
   'net:history',
   'net:player-read',
   'net:slot-win',
+  'net:player-fishing',
+  'self:minigame',
+  'self:runner-key',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -61,6 +64,14 @@ contextBridge.exposeInMainWorld('overlay', {
   getWallet: (): Promise<unknown> => ipcRenderer.invoke('get-wallet'),
   buyItem: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy', itemId),
   getRanking: (): Promise<unknown[]> => ipcRenderer.invoke('ranking'),
+  getExtras: (): Promise<unknown> => ipcRenderer.invoke('get-extras'),
+  loadExtra: (relPath: string): Promise<string | null> => ipcRenderer.invoke('load-extra', relPath),
+  getMinigameState: (): Promise<unknown> => ipcRenderer.invoke('minigame-state'),
+  startMinigame: (game: string): Promise<unknown> => ipcRenderer.invoke('minigame-start', game),
+  sendFishing: (data: { phase: string; fishId?: string }) => ipcRenderer.send('fishing-send', data),
+  reportFish: (fishId: string): Promise<unknown> => ipcRenderer.invoke('fish-caught', fishId),
+  endRunner: (seconds: number): Promise<unknown> => ipcRenderer.invoke('runner-end', seconds),
+  sendReaction: (index: number) => ipcRenderer.send('reaction-send', index),
   equip: (payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }) =>
     ipcRenderer.send('equip', payload),
   toggleChat: () => ipcRenderer.send('toggle-chat'),

@@ -111,6 +111,8 @@ export interface ChatMessage {
   image?: ChatImage;
   /** 액션 명령어 — 수신 클라이언트가 해당 캐릭터의 애니메이션 재생 */
   action?: ActionId;
+  /** 리액션 이모지 인덱스 (0~62) — 캐릭터 위 말풍선 이모지로 표시 */
+  reaction?: number;
   /** 보낸 시점의 외형 스냅샷 (채팅창 아바타용, 서버가 첨부) */
   senderAppearance?: Appearance;
 }
@@ -153,6 +155,20 @@ export interface ClientToServerEvents {
   buy: (itemId: string, ack: (res: { ok: boolean; error?: string; coins?: number; items?: string[] }) => void) => void;
   /** 코인 랭킹 톱5 */
   ranking: (ack: (rows: { name: string; coins: number }[]) => void) => void;
+  /** 낚시 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화) */
+  'fishing-state': (data: { phase: FishingPhase; fishId?: string }) => void;
+  /** 물고기 획득 정산 (도감 기록 + 코인) */
+  fish: (
+    fishId: string,
+    ack: (res: { ok: boolean; error?: string; isNew?: boolean; delta?: number; coins?: number }) => void,
+  ) => void;
+  /** 러너 생존 시간 보고 → 코인 정산 */
+  'runner-score': (
+    seconds: number,
+    ack: (res: { ok: boolean; error?: string; delta?: number; coins?: number }) => void,
+  ) => void;
+  /** 리액션 이모지 전송 */
+  reaction: (index: number) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */
   image: (
     payload: { data: ArrayBuffer; mime: string; thumb: string; w: number; h: number },
@@ -173,8 +189,10 @@ export interface ServerToClientEvents {
   'player-read': (data: { id: string; ts: number }) => void;
   /** 내 코인 잔액 (접속/적립/슬롯 정산 시) */
   coins: (coins: number) => void;
-  /** 내 지갑 전체 (잔액 + 보유 상점 아이템) */
-  wallet: (data: { coins: number; items: string[] }) => void;
+  /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감) */
+  wallet: (data: { coins: number; items: string[]; fish: string[] }) => void;
+  /** 누군가의 낚시 상태 (애니메이션 동기화) */
+  'player-fishing': (data: { id: string; phase: FishingPhase; fishId?: string }) => void;
   /** 슬롯 대박 전체 알림 */
   'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
 }
@@ -213,6 +231,33 @@ export function sanitizeAppearance(raw: unknown): Appearance | null {
   if (/^#[0-9a-fA-F]{6}$/.test(nameColor)) result.nameColor = nameColor;
   return result;
 }
+
+// ---- 미니게임: 낚시 / 러너 / 리액션 ----
+
+export const FISH_IDS = [
+  'Albacore', 'Anchovy', 'Anglerfish', 'BlobFish', 'Bone Fish', 'Bream', 'Bullhead Catfish',
+  'Carp', 'Chub', 'Clownfish', 'Crayfish', 'Crimson Snapper', 'Devil Fish', 'Dorado',
+  'Dynamite Fish', 'Faeries Fish', 'Flounder', 'Ghost Catfish', 'Glacier Fish', 'Goby',
+  'Golden Fish', 'Halibut', 'Herring', 'Large Mouth Bass', 'Lingcod', 'LionFish', 'Lobster',
+  'Perch', 'Pike Fish', 'Red Mullet', 'Red Snapper', 'Regal Blue Tang', 'Salmon', 'Sardine',
+  'Sea Cucumber', 'Sea bullhead', 'Shad', 'Smallmouth Bass', 'Sturgeon', 'Sunfish',
+  'Tiger Trout', 'Tuna', 'Walleye', 'Zombie Fish',
+] as const;
+
+export const FISH_FIRST_COIN = 5; // 처음 잡은 물고기
+export const FISH_REPEAT_COIN = 1; // 이미 잡은 물고기
+export const FISH_MIN_INTERVAL_MS = 8000; // 서버측 최소 낚시 간격 (사이클 ~12초)
+
+export const FISHING_PHASES = ['casting', 'waiting', 'reeling', 'caught', 'stop'] as const;
+export type FishingPhase = (typeof FISHING_PHASES)[number];
+
+export const RUNNER_COOLDOWN_SEC = 300; // 5분에 1회
+export const RUNNER_COIN_PER_SEC = 0.2; // 5초당 1코인
+export const RUNNER_COIN_MAX = 20;
+
+/** 리액션 이모지: 16px 셀 9x7 (표시는 아래 세트의 말풍선 버전) */
+export const REACTION_COLS = 9;
+export const REACTION_ROWS = 7;
 
 // ---- 코인 상점 ----
 

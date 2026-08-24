@@ -96,7 +96,20 @@
 
     const body = document.createElement('div');
     body.className = 'text';
-    if (msg.image) {
+    if (msg.reaction != null) {
+      const icon = document.createElement('canvas');
+      icon.className = 'msg-reaction';
+      icon.width = 16;
+      icon.height = 16;
+      const rIdx = msg.reaction;
+      void loadImageFromExtra('reaction.png').then((sheet) => {
+        if (!sheet) return;
+        const rctx = icon.getContext('2d')!;
+        rctx.imageSmoothingEnabled = false;
+        rctx.drawImage(sheet, (rIdx % 9) * 16, Math.floor(rIdx / 9) * 16, 16, 16, 0, 0, 16, 16);
+      });
+      body.appendChild(icon);
+    } else if (msg.image) {
       const imgEl = document.createElement('img');
       imgEl.className = 'msg-image';
       imgEl.src = msg.image.thumb;
@@ -724,6 +737,167 @@
     if (shopPanel.classList.contains('open')) void renderShop();
   });
 
+  // ---- 미니게임 메뉴 ----
+
+  const minigamePanel = document.getElementById('minigame-panel')!;
+  const minigameClose = document.getElementById('minigame-close') as HTMLButtonElement;
+  const runnerCdEl = document.getElementById('runner-cd')!;
+
+  async function renderMinigame(): Promise<void> {
+    const state = await window.overlay.getMinigameState();
+    runnerCdEl.textContent =
+      state.runnerRemainSec > 0
+        ? `쿨타임 ${state.runnerRemainSec}초 남음`
+        : '5분마다 1회 · ↑점프 ↓엎드리기';
+  }
+
+  minigameClose.addEventListener('click', () => minigamePanel.classList.remove('open'));
+  for (const card of document.querySelectorAll('.mg-card')) {
+    card.addEventListener('click', async () => {
+      const game = (card as HTMLElement).dataset.game!;
+      const res = await window.overlay.startMinigame(game);
+      if (!res.ok) {
+        addSystemMessage(res.error ?? '시작할 수 없어요.');
+        void renderMinigame();
+        return;
+      }
+      addSystemMessage(game === 'fishing' ? '🎣 낚시 시작/중지를 전환했어요.' : '🏃 달리기 시작! (↑점프 ↓엎드리기)');
+      minigamePanel.classList.remove('open');
+    });
+  }
+
+  // ---- 낚시도감 ----
+
+  const fishdexPanel = document.getElementById('fishdex-panel')!;
+  const fishdexClose = document.getElementById('fishdex-close') as HTMLButtonElement;
+  const fishdexBook = document.getElementById('fishdex-book')!;
+  const fishdexGrid = document.getElementById('fishdex-grid')!;
+  const fishdexCount = document.getElementById('fishdex-count')!;
+
+  let extrasManifest: ExtrasManifest | null = null;
+  const fishSheetCache = new Map<string, Promise<HTMLImageElement | null>>();
+  let bookBgReady = false;
+
+  function loadImageFromExtra(rel: string): Promise<HTMLImageElement | null> {
+    let cached = fishSheetCache.get(rel);
+    if (!cached) {
+      cached = window.overlay.loadExtra(rel).then((dataUrl) => {
+        if (!dataUrl) return null;
+        return new Promise<HTMLImageElement | null>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = dataUrl;
+        });
+      });
+      fishSheetCache.set(rel, cached);
+    }
+    return cached;
+  }
+
+  async function renderFishdex(): Promise<void> {
+    if (!extrasManifest) extrasManifest = await window.overlay.getExtras();
+    if (!extrasManifest) return;
+    if (!bookBgReady) {
+      // 책 이미지 상단(펼친 책 영역)만 크롭해서 배경으로
+      const book = await loadImageFromExtra('book.png');
+      if (book) {
+        const crop = document.createElement('canvas');
+        crop.width = 256;
+        crop.height = 146;
+        crop.getContext('2d')!.drawImage(book, 0, 0, 256, 146, 0, 0, 256, 146);
+        fishdexBook.style.backgroundImage = `url(${crop.toDataURL()})`;
+        bookBgReady = true;
+      }
+    }
+    const wallet = (await window.overlay.getWallet()) as { fish?: string[] };
+    const caught = new Set(wallet.fish ?? []);
+    fishdexCount.textContent = `${caught.size}/${extrasManifest.fish.length}`;
+    fishdexGrid.innerHTML = '';
+    for (const fishId of extrasManifest.fish) {
+      const cell = document.createElement('div');
+      const isCaught = caught.has(fishId);
+      cell.className = isCaught ? 'fish-cell' : 'fish-cell uncaught';
+      cell.title = isCaught ? fishId : '???';
+      const thumb = document.createElement('canvas');
+      thumb.width = 16;
+      thumb.height = 16;
+      cell.appendChild(thumb);
+      void loadImageFromExtra(`fish/${fishId}.png`).then((img) => {
+        if (!img) return;
+        const tctx = thumb.getContext('2d')!;
+        tctx.imageSmoothingEnabled = false;
+        // 1번 프레임 = 물고기, 3번 프레임 = 그림자(미획득 실루엣)
+        tctx.drawImage(img, isCaught ? 0 : 32, 0, 16, 16, 0, 0, 16, 16);
+      });
+      fishdexGrid.appendChild(cell);
+    }
+  }
+
+  fishdexClose.addEventListener('click', () => fishdexPanel.classList.remove('open'));
+  window.overlay.on('self:wallet', () => {
+    if (fishdexPanel.classList.contains('open')) void renderFishdex();
+  });
+
+  // ---- 리액션 이모지 피커 ----
+
+  const emojiBtn = document.getElementById('emoji-btn') as HTMLButtonElement;
+  const emojiPopup = document.getElementById('emoji-popup')!;
+  let emojiBuilt = false;
+
+  async function buildEmojiPopup(): Promise<void> {
+    if (emojiBuilt) return;
+    if (!extrasManifest) extrasManifest = await window.overlay.getExtras();
+    const sheet = await loadImageFromExtra('reaction.png');
+    if (!sheet || !extrasManifest) return;
+    emojiBuilt = true;
+    const { cell, cols, rows } = extrasManifest.reaction;
+    const probe = document.createElement('canvas');
+    probe.width = cell;
+    probe.height = cell;
+    const probeCtx = probe.getContext('2d')!;
+    for (let i = 0; i < cols * rows; i++) {
+      const sx = (i % cols) * cell;
+      const sy = Math.floor(i / cols) * cell;
+      // 빈 셀 스킵 (알파 검사)
+      probeCtx.clearRect(0, 0, cell, cell);
+      probeCtx.drawImage(sheet, sx, sy, cell, cell, 0, 0, cell, cell);
+      const alpha = probeCtx.getImageData(0, 0, cell, cell).data;
+      let hasPixel = false;
+      for (let a = 3; a < alpha.length; a += 4) {
+        if (alpha[a] > 0) {
+          hasPixel = true;
+          break;
+        }
+      }
+      if (!hasPixel) continue;
+      const btn = document.createElement('button');
+      const icon = document.createElement('canvas');
+      icon.width = cell;
+      icon.height = cell;
+      const ictx = icon.getContext('2d')!;
+      ictx.imageSmoothingEnabled = false;
+      ictx.drawImage(sheet, sx, sy, cell, cell, 0, 0, cell, cell);
+      btn.appendChild(icon);
+      const index = i;
+      btn.addEventListener('click', () => {
+        window.overlay.sendReaction(index);
+        emojiPopup.classList.remove('open');
+      });
+      emojiPopup.appendChild(btn);
+    }
+  }
+
+  emojiBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    void buildEmojiPopup().then(() => emojiPopup.classList.toggle('open'));
+  });
+  document.addEventListener('click', (e) => {
+    if (!emojiPopup.contains(e.target as Node) && e.target !== emojiBtn) {
+      emojiPopup.classList.remove('open');
+    }
+  });
+
   // ---- 코인 랭킹 ----
 
   async function showRanking(): Promise<void> {
@@ -747,6 +921,8 @@
     optionsPanel.classList.remove('open');
     slotPanel.classList.remove('open');
     shopPanel.classList.remove('open');
+    minigamePanel.classList.remove('open');
+    fishdexPanel.classList.remove('open');
   }
 
   menuBtn.addEventListener('click', (e) => {
@@ -762,6 +938,14 @@
     menuDropdown.classList.remove('open');
     closeAllPanels();
     switch (item.dataset.menu) {
+      case 'minigame':
+        minigamePanel.classList.add('open');
+        void renderMinigame();
+        break;
+      case 'fishdex':
+        fishdexPanel.classList.add('open');
+        void renderFishdex();
+        break;
       case 'slot':
         slotPanel.classList.add('open');
         break;
