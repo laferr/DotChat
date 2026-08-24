@@ -3,6 +3,7 @@
 (async () => {
   const bookEl = document.getElementById('book')!;
   const countEl = document.getElementById('count')!;
+  const tooltip = document.getElementById('tooltip')!;
   const closeBtn = document.getElementById('close-btn') as HTMLButtonElement;
   closeBtn.addEventListener('click', () => window.overlay.closeFishdex());
 
@@ -63,9 +64,23 @@
       cell.className = isCaught ? 'fish caught' : 'fish uncaught';
       cell.width = 16;
       cell.height = 16;
-      cell.style.left = `${(PAGE_X[page] + col * DX) * 2}px`;
-      cell.style.top = `${(PAGE_Y + row * DY) * 2}px`;
-      cell.title = isCaught ? fishId : '???';
+      const cellLeft = (PAGE_X[page] + col * DX) * 2;
+      const cellTop = (PAGE_Y + row * DY) * 2;
+      cell.style.left = `${cellLeft}px`;
+      cell.style.top = `${cellTop}px`;
+      // 투명 프레임리스 창에서는 네이티브 title 툴팁이 안 떠서 커스텀 툴팁 사용
+      const label = isCaught ? fishId : '???';
+      cell.addEventListener('mouseenter', () => {
+        tooltip.textContent = label;
+        tooltip.style.display = 'block';
+        // #book 오프셋(10, 24) 반영해 물고기 위 중앙 배치
+        const tw = tooltip.offsetWidth;
+        tooltip.style.left = `${Math.max(2, Math.min(532 - tw - 2, 10 + cellLeft + 16 - tw / 2))}px`;
+        tooltip.style.top = `${24 + cellTop - 22}px`;
+      });
+      cell.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+      });
       void loadImg(`fish/${fishId}.png`).then((img) => {
         if (!img) return;
         const ctx = cell.getContext('2d')!;
