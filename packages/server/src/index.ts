@@ -34,6 +34,7 @@ import {
   MAX_NICKNAME_LEN,
   PlayerState,
   sanitizeAppearance,
+  sanitizePinned,
   ServerToClientEvents,
 } from '@dotchat/shared';
 
@@ -253,6 +254,7 @@ const lastChatAt = new Map<string, number>();
 const imageTimes = new Map<string, number[]>();
 const lastFishAt = new Map<string, number>();
 const lastRunnerAt = new Map<string, number>(); // 지갑 키 기준 (러너 쿨타임)
+const lastPinnedAt = new Map<string, number>();
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
@@ -274,6 +276,7 @@ io.on('connection', (socket) => {
       dir: 1,
       walking: true,
       lastReadTs: 0, // 채팅창을 열어 읽기 전까지는 안읽음으로 집계
+      pinned: sanitizePinned(data?.pinned),
     };
     // 신규 지갑(기존 유저의 첫 업데이트 접속 포함)에 기본 코인 지급
     const key = walletKey(player);
@@ -526,6 +529,19 @@ io.on('connection', (socket) => {
     console.log(`[appearance] ${player.nickname} → ${appearance.race.name}`);
   });
 
+  socket.on('pinned', (raw) => {
+    const player = players.get(socket.id);
+    if (!player) return;
+    const now = Date.now();
+    if (now - (lastPinnedAt.get(socket.id) ?? 0) < 500) return; // 도배 방지
+    const text = sanitizePinned(raw);
+    if (text === (player.pinned ?? '')) return;
+    lastPinnedAt.set(socket.id, now);
+    player.pinned = text;
+    socket.broadcast.emit('player-pinned', { id: socket.id, text });
+    console.log(`[pinned] ${player.nickname}#${player.tag}: ${text || '(해제)'}`);
+  });
+
   socket.on('chat', (text) => {
     const player = players.get(socket.id);
     if (!player || typeof text !== 'string') return;
@@ -609,6 +625,7 @@ io.on('connection', (socket) => {
       imageTimes.delete(socket.id);
       lastSlotAt.delete(socket.id);
       lastFishAt.delete(socket.id);
+      lastPinnedAt.delete(socket.id);
       socket.broadcast.emit('player-fishing', { id: socket.id, phase: 'stop' });
       io.emit('player-left', socket.id);
       console.log(`- ${player.nickname} — ${players.size}명 접속중`);

@@ -5,6 +5,8 @@ export { APP_VERSION } from './version';
 export const DEFAULT_PORT = 4020;
 export const MAX_CHAT_LEN = 200;
 export const MAX_NICKNAME_LEN = 16;
+/** 머리 위 고정메시지 최대 길이 */
+export const MAX_PINNED_LEN = 40;
 
 // 이미지 전송 정책
 export const IMAGE_MAX_BYTES = 1_500_000; // 리사이즈 후 업로드 허용 최대치
@@ -70,6 +72,8 @@ export interface PlayerState {
   walking: boolean;
   /** 이 시각(ts)까지의 채팅을 읽음 — 읽음 확인 카운트용 */
   lastReadTs: number;
+  /** 머리 위 고정메시지 (빈 문자열 = 없음) */
+  pinned?: string;
 }
 
 export interface MovePayload {
@@ -140,11 +144,13 @@ export interface SlotResult {
 }
 
 export interface ClientToServerEvents {
-  hello: (data: { nickname: string; tag: string; appearance: Appearance }) => void;
+  hello: (data: { nickname: string; tag: string; appearance: Appearance; pinned?: string }) => void;
   move: (data: MovePayload) => void;
   chat: (text: string) => void;
   /** 외형 교체 알림 — 획득 판정은 클라이언트 로컬 */
   appearance: (appearance: Appearance) => void;
+  /** 머리 위 고정메시지 갱신 (빈 문자열 = 해제) */
+  pinned: (text: string) => void;
   /** 액션 명령어 (대사 포함) — 서버가 chat 메시지로 브로드캐스트 */
   action: (data: { action: ActionId; text: string }) => void;
   /** 이 시각까지 읽었음을 보고 (채팅창이 보이는 동안) */
@@ -182,6 +188,8 @@ export interface ServerToClientEvents {
   'player-moved': (data: { id: string } & MovePayload) => void;
   'player-left': (id: string) => void;
   'player-appearance': (data: { id: string; appearance: Appearance }) => void;
+  /** 누군가의 고정메시지 갱신 */
+  'player-pinned': (data: { id: string; text: string }) => void;
   chat: (msg: ChatMessage) => void;
   /** 접속 직후 최근 채팅 내역 (서버 보관분) */
   'chat-history': (msgs: ChatMessage[]) => void;
@@ -195,6 +203,14 @@ export interface ServerToClientEvents {
   'player-fishing': (data: { id: string; phase: FishingPhase; fishId?: string }) => void;
   /** 슬롯 대박 전체 알림 */
   'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
+}
+
+/** 고정메시지 정제 — 줄바꿈 제거 + 길이 제한 (빈 문자열 = 해제) */
+export function sanitizePinned(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_PINNED_LEN);
 }
 
 /** 서버측 외형 검증/정제 — 알 수 없는 키 제거, 문자열 길이 제한, 수치 클램프 */

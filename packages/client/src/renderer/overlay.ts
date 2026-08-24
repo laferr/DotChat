@@ -9,6 +9,7 @@ interface NetPlayer {
   dir: -1 | 1;
   walking: boolean;
   lastReadTs: number;
+  pinned?: string;
 }
 
 interface NetChatMessage {
@@ -70,10 +71,18 @@ interface OverlayApi {
   submitProfile(data: { nickname: string; tag: string }): Promise<{ ok: boolean; error?: string }>;
   cancelSetup(): void;
   getInventory(): Promise<{ version: number; owned: string[]; equipped: Appearance }>;
-  getSettings(): Promise<{ opacity: number; scale: number; chatColor: string; serverUrl?: string }>;
+  getSettings(): Promise<{
+    opacity: number;
+    scale: number;
+    chatColor: string;
+    pinnedMsg: string;
+    pinnedOn: boolean;
+    serverUrl?: string;
+  }>;
   setOpacity(value: number): void;
   setScale(value: number): void;
   setChatColor(value: string): void;
+  setPinned(data: { text: string; enabled: boolean }): void;
   getNetState(): Promise<{
     selfId: string | null;
     connected: boolean;
@@ -139,6 +148,11 @@ const NAME_FONT = '10px "Segoe UI", "Malgun Gothic", sans-serif';
 const BUBBLE_MAX_WIDTH = 180;
 const BUBBLE_MAX_LINES = 4;
 
+// 머리 위 고정메시지 (꼬리 없는 말풍선)
+const PINNED_FONT = '11px "Segoe UI", "Malgun Gothic", sans-serif';
+const PINNED_MAX_WIDTH = 140;
+const PINNED_MAX_LINES = 2;
+
 // shared/protocol.ts의 bubbleDurationMs와 동일 (렌더러는 모듈을 못 쓰므로 중복 유지)
 function bubbleMs(text: string): number {
   return Math.min(10, 5 + text.length * 0.05) * 1000;
@@ -200,6 +214,8 @@ interface Actor {
   hopVy: number;
   hopY: number;
   bubble: Bubble | null;
+  /** 머리 위 고정메시지 (빈 문자열 = 없음) */
+  pinned: string;
   /** 재생 중인 액션 (/공격 등) */
   action: string | null;
   actionStart: number;
@@ -281,6 +297,7 @@ function makeActor(nickname: string, appearance: Appearance, x: number): Actor {
     hopVy: 0,
     hopY: 0,
     bubble: null,
+    pinned: '',
     action: null,
     actionStart: 0,
     actionUntil: 0,
@@ -407,6 +424,7 @@ function addRemote(p: NetPlayer): void {
   actor.dir = p.dir;
   actor.walking = p.walking;
   actor.targetX = p.x * viewW;
+  actor.pinned = p.pinned ?? '';
   remotes.set(p.id, actor);
 }
 
@@ -537,6 +555,44 @@ function drawName(actor: Actor): void {
   stageCtx.globalAlpha = 1;
 }
 
+// 머리 위 고정메시지 — 꼬리 없는 말풍선, 닉네임 위에 상시 표시.
+// 채팅 말풍선/리액션이 떠 있는 동안엔 숨고, 사라지면 다시 나타난다.
+function drawPinned(actor: Actor, now: number): void {
+  if (!actor.pinned || actor.bubble) return;
+  if (actor.reaction && now < actor.reaction.until) return;
+  if (actor === me && runnerState.active) return;
+
+  const lines = wrapText(actor.pinned, PINNED_MAX_WIDTH, PINNED_MAX_LINES, PINNED_FONT);
+  if (lines.length === 0) return;
+  stageCtx.font = PINNED_FONT;
+  const lineHeight = 14;
+  const padX = 7;
+  const padY = 4;
+  let textW = 0;
+  for (const line of lines) textW = Math.max(textW, stageCtx.measureText(line).width);
+  const w = Math.ceil(textW) + padX * 2;
+  const h = lines.length * lineHeight + padY * 2;
+  const box = actorBox(actor);
+  // 닉네임(원격은 그 위의 '낚시중' 표시까지) 위로 띄운다
+  const above = box.y - 15 - (actor.fishing && actor !== me ? 13 : 0);
+  const bx = Math.max(4, Math.min(viewW - w - 4, actor.x - w / 2));
+  const by = above - h - 2;
+
+  const style = BUBBLE_STYLES[actor.appearance.bubbleSkin ?? ''] ?? BUBBLE_STYLES.default;
+  stageCtx.globalAlpha = 0.92;
+  stageCtx.fillStyle = style.fill;
+  stageCtx.strokeStyle = style.stroke;
+  stageCtx.lineWidth = 1.5;
+  roundRect(bx, by, w, h, 7);
+  stageCtx.fill();
+  stageCtx.stroke();
+  stageCtx.fillStyle = style.text;
+  lines.forEach((line, i) => {
+    stageCtx.fillText(line, bx + padX, by + padY + (i + 1) * lineHeight - 3.5);
+  });
+  stageCtx.globalAlpha = 1;
+}
+
 // 이펙트 시트 오오라 (상점 프리미엄) — 캐릭터 중심에 애니메이션 시트 재생
 const effectSheets = new Map<string, HTMLImageElement | null>();
 
@@ -650,6 +706,7 @@ function drawActor(actor: Actor, now: number): void {
   }
   drawFishing(actor, now);
   drawName(actor);
+  drawPinned(actor, now);
   // 원격 낚시꾼 머리 위 '낚시중 ...' 표시
   if (actor.fishing && actor !== me && !actor.bubble) {
     const dots = '.'.repeat(1 + (Math.floor(now / 500) % 3));
@@ -667,16 +724,21 @@ function drawActor(actor: Actor, now: number): void {
   drawReaction(actor, now);
 }
 
-function wrapText(text: string): string[] {
-  stageCtx.font = BUBBLE_FONT;
+function wrapText(
+  text: string,
+  maxWidth = BUBBLE_MAX_WIDTH,
+  maxLines = BUBBLE_MAX_LINES,
+  font = BUBBLE_FONT,
+): string[] {
+  stageCtx.font = font;
   const lines: string[] = [];
   let current = '';
   for (const ch of text) {
-    if (ch === '\n' || stageCtx.measureText(current + ch).width > BUBBLE_MAX_WIDTH) {
+    if (ch === '\n' || stageCtx.measureText(current + ch).width > maxWidth) {
       lines.push(current);
       current = ch === '\n' ? '' : ch;
-      if (lines.length === BUBBLE_MAX_LINES) {
-        lines[BUBBLE_MAX_LINES - 1] = lines[BUBBLE_MAX_LINES - 1].slice(0, -1) + '…';
+      if (lines.length === maxLines) {
+        lines[maxLines - 1] = lines[maxLines - 1].slice(0, -1) + '…';
         return lines;
       }
     } else {
@@ -1376,9 +1438,14 @@ function sendTrayIcon(): void {
 
 // ---- 설정 ----
 
-function applySettings(s: { opacity: number; scale: number }): void {
+// 내 고정메시지 — me가 만들어지기 전에 설정이 도착할 수 있어 별도 보관
+let selfPinned = '';
+
+function applySettings(s: { opacity: number; scale: number; pinnedMsg?: string; pinnedOn?: boolean }): void {
   stage.style.opacity = String(Math.min(1, Math.max(0.1, s.opacity)));
   if ([1, 2, 3].includes(s.scale)) viewScale = s.scale;
+  selfPinned = s.pinnedOn ? (s.pinnedMsg ?? '') : '';
+  if (me) me.pinned = selfPinned;
 }
 
 // ---- 네트워크 이벤트 ----
@@ -1477,8 +1544,14 @@ function wireNet(): void {
     composer.compose(d.appearance).then(() => sendTrayIcon());
   });
 
+  window.overlay.on('net:player-pinned', (data) => {
+    const d = data as { id: string; text: string };
+    const actor = d.id === selfId ? me : remotes.get(d.id);
+    if (actor) actor.pinned = d.text;
+  });
+
   window.overlay.on('self:settings', (data) => {
-    applySettings(data as { opacity: number; scale: number });
+    applySettings(data as { opacity: number; scale: number; pinnedMsg: string; pinnedOn: boolean });
   });
 
   window.overlay.on('self:unread', (data) => {
@@ -1539,6 +1612,7 @@ async function init(): Promise<void> {
   const myInfo = await window.overlay.getSelf();
   giftIntervalSec = myInfo.giftIntervalSec;
   me = makeActor(myInfo.nickname, myInfo.appearance, 150 + Math.random() * Math.max(200, viewW - 300));
+  me.pinned = selfPinned;
   await composer.compose(myInfo.appearance).then((frames) => {
     me.frames = frames;
   });

@@ -62,11 +62,20 @@ npm run bot      # 테스트 봇 (두 번째 유저 시뮬레이션)
 ```json
 {
   "opacity": 1,
+  "pinnedMsg": "작업 중이라 자리 비움",
+  "pinnedOn": true,
   "serverUrl": "https://내-서버-주소"
 }
 ```
 
 `serverUrl`을 넣으면 패키징된 앱이 해당 서버로 접속합니다 (env `DOTCHAT_SERVER`가 있으면 그쪽이 우선).
+
+### 고정메시지
+
+채팅창 ☰ 메뉴 → 📌 고정메시지에서 캐릭터 닉네임 위에 상시 표시할 한 줄(최대 40자)을 설정합니다.
+꼬리 없는 말풍선으로 그려지고, 표시 여부는 체크박스로 켜고 끕니다. 채팅을 보내면 그 말풍선이 뜨는 동안
+잠시 숨었다가 사라지면 다시 나타납니다. 다른 접속자에게도 동기화됩니다 (`pinned` / `player-pinned` 이벤트).
+프로토콜 검증: `node tools/verify-pinned.mjs` (기본 `localhost:4020`, `DOTCHAT_SERVER`로 대상 변경).
 
 ## 인스톨러 빌드
 

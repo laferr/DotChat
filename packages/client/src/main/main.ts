@@ -15,6 +15,7 @@ import {
   PartChoice,
   PlayerState,
   sanitizeAppearance,
+  sanitizePinned,
   ServerToClientEvents,
   SHOP_ITEMS,
 } from '@dotchat/shared';
@@ -168,7 +169,7 @@ function loadProfile(): Profile | null {
 
 let profile = loadProfile();
 
-// ---- 설정 (투명도 / 표시 배율 / 서버 주소) ----
+// ---- 설정 (투명도 / 표시 배율 / 고정메시지 / 서버 주소) ----
 
 interface Settings {
   /** 오버레이 콘텐츠 투명도 0.1~1.0 */
@@ -177,6 +178,10 @@ interface Settings {
   scale: number;
   /** 채팅창 테마 색상 (#rrggbb) */
   chatColor: string;
+  /** 머리 위 고정메시지 내용 */
+  pinnedMsg: string;
+  /** 고정메시지 표시 여부 */
+  pinnedOn: boolean;
   serverUrl?: string;
 }
 
@@ -193,10 +198,12 @@ function loadSettings(): Settings {
       opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0.1, opacity)) : 1,
       scale: [1, 2, 3].includes(scale) ? scale : 2, // 기본 2배
       chatColor: /^#[0-9a-fA-F]{6}$/.test(String(raw.chatColor)) ? raw.chatColor : DEFAULT_CHAT_COLOR,
+      pinnedMsg: sanitizePinned(raw.pinnedMsg),
+      pinnedOn: raw.pinnedOn === true,
       serverUrl: typeof raw.serverUrl === 'string' && raw.serverUrl ? raw.serverUrl : undefined,
     };
   } catch {
-    return { opacity: 1, scale: 2, chatColor: DEFAULT_CHAT_COLOR };
+    return { opacity: 1, scale: 2, chatColor: DEFAULT_CHAT_COLOR, pinnedMsg: '', pinnedOn: false };
   }
 }
 
@@ -205,6 +212,11 @@ const settings = loadSettings();
 function saveSettings(): void {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
+}
+
+/** 실제로 남에게 보이는 고정메시지 (표시 꺼져 있으면 해제와 동일) */
+function effectivePinned(): string {
+  return settings.pinnedOn ? settings.pinnedMsg : '';
 }
 
 // 패키징 앱은 공식 서버, 개발 모드는 로컬 서버가 기본
@@ -242,6 +254,7 @@ function connect(): void {
         nickname: profile.nickname,
         tag: profile.tag,
         appearance: inventory.equipped,
+        pinned: effectivePinned(),
       });
     }
   });
@@ -297,6 +310,12 @@ function connect(): void {
     const p = players.get(data.id);
     if (p) p.appearance = data.appearance;
     broadcast('net:player-appearance', data);
+  });
+
+  socket.on('player-pinned', (data) => {
+    const p = players.get(data.id);
+    if (p) p.pinned = data.text;
+    broadcast('net:player-pinned', data);
   });
 
   socket.on('player-read', (data) => {
@@ -640,6 +659,14 @@ ipcMain.on('set-chat-color', (_e, value: string) => {
   settings.chatColor = value;
   saveSettings();
   broadcast('self:settings', settings);
+});
+
+ipcMain.on('set-pinned', (_e, data: { text?: unknown; enabled?: unknown }) => {
+  settings.pinnedMsg = sanitizePinned(data?.text);
+  settings.pinnedOn = data?.enabled === true;
+  saveSettings();
+  broadcast('self:settings', settings);
+  if (socket?.connected) socket.emit('pinned', effectivePinned());
 });
 
 ipcMain.handle('net-state', () => ({

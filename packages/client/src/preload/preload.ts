@@ -9,6 +9,7 @@ const NET_CHANNELS = new Set([
   'net:player-moved',
   'net:player-left',
   'net:player-appearance',
+  'net:player-pinned',
   'net:chat',
   'self:appearance',
   'self:inventory',
@@ -37,11 +38,17 @@ contextBridge.exposeInMainWorld('overlay', {
     ipcRenderer.invoke('profile-submit', data),
   cancelSetup: () => ipcRenderer.send('setup-cancel'),
   getInventory: (): Promise<unknown> => ipcRenderer.invoke('get-inventory'),
-  getSettings: (): Promise<{ opacity: number; scale: number; serverUrl?: string }> =>
-    ipcRenderer.invoke('get-settings'),
+  getSettings: (): Promise<{
+    opacity: number;
+    scale: number;
+    pinnedMsg: string;
+    pinnedOn: boolean;
+    serverUrl?: string;
+  }> => ipcRenderer.invoke('get-settings'),
   setOpacity: (value: number) => ipcRenderer.send('set-opacity', value),
   setScale: (value: number) => ipcRenderer.send('set-scale', value),
   setChatColor: (value: string) => ipcRenderer.send('set-chat-color', value),
+  setPinned: (data: { text: string; enabled: boolean }) => ipcRenderer.send('set-pinned', data),
   getNetState: (): Promise<unknown> => ipcRenderer.invoke('net-state'),
   getChatHistory: (): Promise<unknown[]> => ipcRenderer.invoke('chat-history'),
   getUpdateState: (): Promise<unknown> => ipcRenderer.invoke('update-state'),

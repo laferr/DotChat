@@ -53,6 +53,7 @@
         font-weight: 700;
         color: #fffdf7;
         white-space: nowrap;
+        flex-shrink: 0;
       }
       header .online {
         font-size: 11px;
@@ -220,9 +221,10 @@
         white-space: nowrap;
         flex-shrink: 0;
       }
-      /* 창이 좁아지면 전송버튼 숨김 (Enter로 전송 가능) */
-      @media (max-width: 340px) {
-        #send-btn {
+      /* 창을 최소 폭까지 줄이면 전송버튼/제목을 감춰 입력창 자리를 확보 (전송은 Enter로) */
+      @media (max-width: 320px) {
+        #send-btn,
+        header .title {
           display: none;
         }
       }
@@ -241,6 +243,7 @@
         padding: 0 10px;
         cursor: pointer;
         font-size: 14px;
+        flex-shrink: 0;
       }
       #img-btn:hover:enabled {
         background: var(--header-hover);
@@ -520,6 +523,7 @@
         padding: 0 10px;
         cursor: pointer;
         font-size: 14px;
+        flex-shrink: 0;
       }
       #emoji-btn:hover {
         background: var(--header-hover);
@@ -532,6 +536,7 @@
       }
       #appearance-panel,
       #options-panel,
+      #pinned-panel,
       #shop-panel,
       #minigame-panel,
       #fishdex-panel,
@@ -549,6 +554,7 @@
       }
       #appearance-panel.open,
       #options-panel.open,
+      #pinned-panel.open,
       #shop-panel.open,
       #minigame-panel.open,
       #fishdex-panel.open,
@@ -604,6 +610,58 @@
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+      /* 고정메시지 패널 */
+      #pinned-input {
+        width: 100%;
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+      }
+      #pinned-input:focus {
+        border-color: var(--accent);
+      }
+      .check-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        cursor: pointer;
+      }
+      .options-body label.check-row {
+        color: var(--text);
+        font-weight: 400;
+      }
+      .check-row input {
+        accent-color: var(--accent);
+        width: 15px;
+        height: 15px;
+        cursor: pointer;
+      }
+      #pinned-stage {
+        display: flex;
+        justify-content: center;
+        padding: 6px 0 2px;
+      }
+      /* 오버레이의 꼬리 없는 고정 말풍선 미리보기 */
+      #pinned-preview {
+        max-width: 90%;
+        background: #fffdf7;
+        border: 2px solid #4a2837;
+        border-radius: 8px;
+        color: #3a2430;
+        font-size: 11px;
+        line-height: 1.35;
+        padding: 4px 8px;
+        text-align: center;
+        word-break: break-word;
+      }
+      #pinned-preview.off {
+        opacity: 0.35;
       }
       #color-swatches {
         display: flex;
@@ -767,6 +825,7 @@
       <button data-menu="shop">🛒 상점</button>
       <button data-menu="fishdex">📖 낚시도감</button>
       <button data-menu="appearance">👕 외모 변경</button>
+      <button data-menu="pinned">📌 고정메시지</button>
       <button data-menu="ranking">🏆 코인 랭킹</button>
       <button data-menu="options">⚙️ 옵션</button>
     </div>
@@ -831,6 +890,22 @@
           <div id="color-swatches"></div>
           <input id="chat-color" type="color" title="직접 선택" />
         </div>
+      </div>
+    </div>
+    <div id="pinned-panel">
+      <div class="panel-head">
+        <span>고정메시지</span>
+        <button id="pinned-close">✕</button>
+      </div>
+      <div class="options-body">
+        <label for="pinned-input">캐릭터 머리 위 메시지</label>
+        <input id="pinned-input" maxlength="40" placeholder="예: 작업 중이라 자리 비움" autocomplete="off" />
+        <label class="check-row"><input id="pinned-on" type="checkbox" /><span>머리 위에 표시하기</span></label>
+        <div id="pinned-stage"><div id="pinned-preview"></div></div>
+        <p class="hint">
+          닉네임 위에 항상 떠 있는 말풍선이에요. 채팅을 보내면 잠시 숨었다가, 채팅 말풍선이 사라지면 다시
+          나타납니다. (최대 40자)
+        </p>
       </div>
     </div>
     <div id="appearance-panel">

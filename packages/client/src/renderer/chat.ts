@@ -649,6 +649,45 @@
     }
   });
 
+  // ---- 고정메시지 패널 (머리 위 꼬리 없는 말풍선) ----
+
+  const pinnedPanel = document.getElementById('pinned-panel')!;
+  const pinnedClose = document.getElementById('pinned-close') as HTMLButtonElement;
+  const pinnedInput = document.getElementById('pinned-input') as HTMLInputElement;
+  const pinnedOnEl = document.getElementById('pinned-on') as HTMLInputElement;
+  const pinnedPreview = document.getElementById('pinned-preview')!;
+
+  function renderPinnedPreview(): void {
+    const text = pinnedInput.value.trim();
+    pinnedPreview.textContent = text || '(메시지를 입력하면 여기에 보여요)';
+    pinnedPreview.classList.toggle('off', !text || !pinnedOnEl.checked);
+  }
+
+  let pinnedSaveTimer = 0;
+
+  function applyPinned(): void {
+    window.clearTimeout(pinnedSaveTimer);
+    window.overlay.setPinned({ text: pinnedInput.value, enabled: pinnedOnEl.checked });
+    renderPinnedPreview();
+  }
+
+  // 타이핑 중엔 디바운스, 확정(blur/Enter)·체크박스 변경은 즉시 반영
+  pinnedInput.addEventListener('input', () => {
+    renderPinnedPreview();
+    window.clearTimeout(pinnedSaveTimer);
+    pinnedSaveTimer = window.setTimeout(applyPinned, 600);
+  });
+  pinnedInput.addEventListener('change', applyPinned);
+  pinnedOnEl.addEventListener('change', applyPinned);
+  pinnedClose.addEventListener('click', () => pinnedPanel.classList.remove('open'));
+
+  async function loadPinned(): Promise<void> {
+    const s = await window.overlay.getSettings();
+    pinnedInput.value = s.pinnedMsg ?? '';
+    pinnedOnEl.checked = s.pinnedOn === true;
+    renderPinnedPreview();
+  }
+
   // ---- 상점 (오오라 / 말풍선 스킨 / 닉네임 색) ----
 
   const shopPanel = document.getElementById('shop-panel')!;
@@ -889,6 +928,7 @@
   function closeAllPanels(): void {
     panel.classList.remove('open');
     optionsPanel.classList.remove('open');
+    pinnedPanel.classList.remove('open');
     slotPanel.classList.remove('open');
     shopPanel.classList.remove('open');
     minigamePanel.classList.remove('open');
@@ -924,6 +964,10 @@
       case 'appearance':
         panel.classList.add('open');
         void renderPanel();
+        break;
+      case 'pinned':
+        pinnedPanel.classList.add('open');
+        void loadPinned();
         break;
       case 'ranking':
         void showRanking();

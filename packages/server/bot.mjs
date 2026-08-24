@@ -41,9 +41,12 @@ function pickNextMode() {
   }
 }
 
+// 머리 위 고정메시지 시연 (채팅 말풍선이 뜨면 잠시 가려졌다가 다시 나타나는지 확인용)
+const PINNED = ['봇순이 순찰 중 🚶', '말 걸어주세요!'];
+
 socket.on('connect', () => {
   console.log(`bot connected as ${nickname} (${socket.id})`);
-  socket.emit('hello', { nickname, tag: '9999', appearance });
+  socket.emit('hello', { nickname, tag: '9999', appearance, pinned: PINNED[0] });
 });
 
 // 읽음 확인 시연: 메시지를 받고 4초 뒤 읽음 처리
@@ -75,6 +78,12 @@ setInterval(() => {
   socket.emit('chat', LINES[lineIdx % LINES.length]);
   lineIdx++;
 }, 7000);
+
+let pinnedIdx = 0;
+setInterval(() => {
+  pinnedIdx++;
+  socket.emit('pinned', PINNED[pinnedIdx % PINNED.length]);
+}, 30000);
 
 // 주기적으로 액션 명령 시연
 const ACTIONS = [
