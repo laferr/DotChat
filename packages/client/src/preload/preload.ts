@@ -14,6 +14,7 @@ const NET_CHANNELS = new Set([
   'self:inventory',
   'self:settings',
   'self:update',
+  'self:update-hint',
   'self:unread',
   'self:coins',
   'self:wallet',

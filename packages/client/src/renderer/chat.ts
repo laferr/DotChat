@@ -798,25 +798,42 @@
   // ---- 업데이트 알림 벨 ----
 
   const updateBell = document.getElementById('update-bell') as HTMLButtonElement;
-  let pendingUpdate: { version: string } | null = null;
+  let pendingUpdate: { version: string; ready: boolean } | null = null;
 
-  function showUpdateBell(info: { version: string }): void {
+  function showUpdateBell(info: { version: string; ready: boolean }): void {
     pendingUpdate = info;
     updateBell.hidden = false;
-    updateBell.title = `새 업데이트 v${info.version} 준비됨 — 클릭하여 재시작·설치`;
+    updateBell.title = info.ready
+      ? `새 업데이트 v${info.version} 준비됨 — 클릭하여 재시작·설치`
+      : `새 버전 v${info.version} 감지 — 다운로드 중`;
   }
 
   updateBell.addEventListener('click', () => {
     if (!pendingUpdate) return;
+    if (!pendingUpdate.ready) {
+      addSystemMessage(`🔔 새 버전 v${pendingUpdate.version}를 다운로드하고 있어요. 잠시 후 벨을 다시 눌러주세요.`);
+      return;
+    }
     if (window.confirm(`새 버전 v${pendingUpdate.version}가 준비됐어요.\n지금 재시작하여 설치할까요?`)) {
       window.overlay.installUpdate();
     }
   });
-  window.overlay.on('self:update', (data) => showUpdateBell(data as { version: string }));
+  window.overlay.on('self:update', (data) => {
+    const d = data as { version: string };
+    showUpdateBell({ version: d.version, ready: true });
+  });
+  // 서버-클라이언트 버전 불일치 감지 (다운로드 완료 전 단계)
+  window.overlay.on('self:update-hint', (data) => {
+    const d = data as { version: string };
+    if (!pendingUpdate?.ready) showUpdateBell({ version: d.version, ready: false });
+  });
 
   // ---- 초기 상태 + 이벤트 구독 ----
 
-  const updateState = (await window.overlay.getUpdateState()) as { version: string } | null;
+  const updateState = (await window.overlay.getUpdateState()) as {
+    version: string;
+    ready: boolean;
+  } | null;
   if (updateState) showUpdateBell(updateState);
 
   updateCoins(await window.overlay.getCoins());

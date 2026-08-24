@@ -61,7 +61,7 @@ interface OverlayApi {
     players: NetPlayer[];
   }>;
   getChatHistory(): Promise<NetChatMessage[]>;
-  getUpdateState(): Promise<{ version: string } | null>;
+  getUpdateState(): Promise<{ version: string; ready: boolean } | null>;
   installUpdate(): void;
   sendMove(data: { x: number; dir: -1 | 1; walking: boolean }): void;
   sendChat(text: string): void;

@@ -1,5 +1,7 @@
 // 클라이언트-서버 공유 프로토콜
 
+export { APP_VERSION } from './version';
+
 export const DEFAULT_PORT = 4020;
 export const MAX_CHAT_LEN = 200;
 export const MAX_NICKNAME_LEN = 16;
@@ -159,7 +161,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
-  welcome: (data: { selfId: string; players: PlayerState[] }) => void;
+  welcome: (data: { selfId: string; players: PlayerState[]; serverVersion?: string }) => void;
   'player-joined': (player: PlayerState) => void;
   'player-moved': (data: { id: string } & MovePayload) => void;
   'player-left': (id: string) => void;

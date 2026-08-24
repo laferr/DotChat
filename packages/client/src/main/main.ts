@@ -256,6 +256,13 @@ function connect(): void {
     broadcast('net:welcome', { selfId, players: [...players.values()] });
     sendStatus();
     console.log(`[net] welcome as ${selfId}, ${players.size}명 접속중`);
+    // 서버-클라이언트 버전 불일치 → 즉시 업데이트 확인 + 벨 힌트
+    if (data.serverVersion && data.serverVersion !== app.getVersion()) {
+      console.log(`[update] 버전 불일치: client ${app.getVersion()} vs server ${data.serverVersion}`);
+      versionHint = data.serverVersion;
+      broadcast('self:update-hint', { version: data.serverVersion });
+      updateCheckNow?.();
+    }
   });
 
   socket.on('player-joined', (player) => {
@@ -857,6 +864,8 @@ ipcMain.on('setup-cancel', () => setupWindow?.close());
 // 패키징 + publish 설정(GitHub Releases 등)이 있을 때만 실제로 동작 — 없으면 조용히 스킵
 let updateReady: { version: string } | null = null;
 let updaterRef: { quitAndInstall: () => void } | null = null;
+let updateCheckNow: (() => void) | null = null;
+let versionHint: string | null = null;
 
 function setupAutoUpdate(): void {
   // 개발 모드 UI 테스트용: DOTCHAT_FAKE_UPDATE=1 이면 5초 뒤 가짜 업데이트 알림
@@ -881,6 +890,7 @@ function setupAutoUpdate(): void {
       autoUpdater
         .checkForUpdatesAndNotify()
         .catch((err: unknown) => console.log('[update] check skipped:', String(err)));
+    updateCheckNow = check;
     check();
     // 실행 중에도 30분마다 확인 (다운로드 후 알림, 설치는 종료 시 적용)
     setInterval(check, 30 * 60 * 1000);
@@ -889,7 +899,11 @@ function setupAutoUpdate(): void {
   }
 }
 
-ipcMain.handle('update-state', () => updateReady);
+ipcMain.handle('update-state', () => {
+  if (updateReady) return { version: updateReady.version, ready: true };
+  if (versionHint) return { version: versionHint, ready: false };
+  return null;
+});
 
 ipcMain.on('install-update', () => {
   if (updateReady && updaterRef) updaterRef.quitAndInstall();

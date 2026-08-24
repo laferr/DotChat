@@ -5,6 +5,7 @@ import * as path from 'path';
 import { Server } from 'socket.io';
 import {
   ACTION_IDS,
+  APP_VERSION,
   Appearance,
   CHAT_HISTORY_MAX,
   CHAT_RETENTION_DAYS,
@@ -268,7 +269,11 @@ io.on('connection', (socket) => {
     }
     stripUnownedCosmetics(player.appearance, key);
     players.set(socket.id, player);
-    socket.emit('welcome', { selfId: socket.id, players: [...players.values()] });
+    socket.emit('welcome', {
+      selfId: socket.id,
+      players: [...players.values()],
+      serverVersion: APP_VERSION,
+    });
     socket.emit('wallet', { coins: wallets[key].coins, items: [...wallets[key].items] });
     socket.emit('chat-history', chatHistory.slice(-100));
     socket.broadcast.emit('player-joined', player);
@@ -501,4 +506,4 @@ io.on('connection', (socket) => {
   });
 });
 
-console.log(`DotChat server listening on :${port}`);
+console.log(`DotChat server v${APP_VERSION} listening on :${port}`);
