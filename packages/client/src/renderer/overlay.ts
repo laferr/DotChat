@@ -18,6 +18,8 @@ interface NetChatMessage {
   ts: number;
   image?: { url: string; thumb: string; w: number; h: number };
   action?: string;
+  /** 메인 프로세스가 붙여주는 보낸 사람 외형 스냅샷 (채팅창 아바타용) */
+  senderAppearance?: Appearance;
 }
 
 interface GiftClaimResult {
@@ -47,9 +49,10 @@ interface OverlayApi {
   submitProfile(data: { nickname: string; tag: string }): Promise<{ ok: boolean; error?: string }>;
   cancelSetup(): void;
   getInventory(): Promise<{ version: number; owned: string[]; equipped: Appearance }>;
-  getSettings(): Promise<{ opacity: number; scale: number; serverUrl?: string }>;
+  getSettings(): Promise<{ opacity: number; scale: number; chatColor: string; serverUrl?: string }>;
   setOpacity(value: number): void;
   setScale(value: number): void;
+  setChatColor(value: string): void;
   getNetState(): Promise<{
     selfId: string | null;
     connected: boolean;

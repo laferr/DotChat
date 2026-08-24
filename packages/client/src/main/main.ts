@@ -169,8 +169,12 @@ interface Settings {
   opacity: number;
   /** 표시 배율 1|2|3 */
   scale: number;
+  /** 채팅창 테마 색상 (#rrggbb) */
+  chatColor: string;
   serverUrl?: string;
 }
+
+const DEFAULT_CHAT_COLOR = '#d94f63';
 
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
 
@@ -182,10 +186,11 @@ function loadSettings(): Settings {
     return {
       opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0.1, opacity)) : 1,
       scale: [1, 2, 3].includes(scale) ? scale : 2, // 기본 2배
+      chatColor: /^#[0-9a-fA-F]{6}$/.test(String(raw.chatColor)) ? raw.chatColor : DEFAULT_CHAT_COLOR,
       serverUrl: typeof raw.serverUrl === 'string' && raw.serverUrl ? raw.serverUrl : undefined,
     };
   } catch {
-    return { opacity: 1, scale: 2 };
+    return { opacity: 1, scale: 2, chatColor: DEFAULT_CHAT_COLOR };
   }
 }
 
@@ -208,7 +213,9 @@ const SERVER_URL =
 let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 let selfId: string | null = null;
 const players = new Map<string, PlayerState>();
-const chatLog: ChatMessage[] = [];
+// 채팅창 아바타용으로 보낸 사람 외형 스냅샷을 붙여서 중계
+type RelayedChat = ChatMessage & { senderAppearance?: Appearance };
+const chatLog: RelayedChat[] = [];
 
 function broadcast(channel: string, payload?: unknown): void {
   for (const win of [overlayWindow, chatWindow]) {
@@ -282,9 +289,10 @@ function connect(): void {
 
   socket.on('chat', (msg) => {
     if (msg.image) msg.image = { ...msg.image, url: `${SERVER_URL}${msg.image.url}` };
-    chatLog.push(msg);
+    const enriched: RelayedChat = { ...msg, senderAppearance: players.get(msg.id)?.appearance };
+    chatLog.push(enriched);
     if (chatLog.length > 100) chatLog.shift();
-    broadcast('net:chat', msg);
+    broadcast('net:chat', enriched);
   });
 }
 
@@ -471,6 +479,13 @@ ipcMain.on('set-scale', (_e, value: number) => {
   const v = Number(value);
   if (![1, 2, 3].includes(v)) return;
   settings.scale = v;
+  saveSettings();
+  broadcast('self:settings', settings);
+});
+
+ipcMain.on('set-chat-color', (_e, value: string) => {
+  if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value)) return;
+  settings.chatColor = value;
   saveSettings();
   broadcast('self:settings', settings);
 });

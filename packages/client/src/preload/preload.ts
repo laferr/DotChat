@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('overlay', {
     ipcRenderer.invoke('get-settings'),
   setOpacity: (value: number) => ipcRenderer.send('set-opacity', value),
   setScale: (value: number) => ipcRenderer.send('set-scale', value),
+  setChatColor: (value: string) => ipcRenderer.send('set-chat-color', value),
   getNetState: (): Promise<unknown> => ipcRenderer.invoke('net-state'),
   getChatHistory: (): Promise<unknown[]> => ipcRenderer.invoke('chat-history'),
   sendMove: (data: { x: number; dir: -1 | 1; walking: boolean }) => ipcRenderer.send('move', data),

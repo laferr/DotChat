@@ -14,9 +14,58 @@
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
+  // ---- 캐릭터 얼굴 아바타 (외형 스냅샷 → 합성 idle 프레임의 얼굴 크롭) ----
+
+  const chatPartProvider: PartImageProvider = (layer, name) =>
+    window.overlay.loadPart(layer, name).then((dataUrl) => {
+      if (!dataUrl) return null;
+      return new Promise<HTMLImageElement | null>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = dataUrl;
+      });
+    });
+  const chatComposer = new PartComposer(chatPartProvider);
+  const faceCache = new Map<string, Promise<HTMLCanvasElement | null>>();
+
+  function faceFor(appearance: Appearance): Promise<HTMLCanvasElement | null> {
+    const key = JSON.stringify(appearance);
+    let cached = faceCache.get(key);
+    if (!cached) {
+      cached = chatComposer.compose(appearance).then((frames) => {
+        if (!frames) return null;
+        const face = document.createElement('canvas');
+        face.width = 32;
+        face.height = 32;
+        const ctx = face.getContext('2d')!;
+        ctx.imageSmoothingEnabled = false;
+        // 64x64 셀에서 얼굴 근처(16,12)-(48,44) 크롭
+        ctx.drawImage(frames.idle[0], 16, 12, 32, 32, 0, 0, 32, 32);
+        return face;
+      });
+      faceCache.set(key, cached);
+    }
+    return cached;
+  }
+
   function addMessage(msg: NetChatMessage): void {
     const wrap = document.createElement('div');
     wrap.className = msg.id === chatSelfId ? 'msg self' : 'msg';
+
+    // 아바타 (본인은 오른쪽, 타인은 왼쪽 — CSS row-reverse)
+    const avatar = document.createElement('canvas');
+    avatar.className = 'avatar';
+    avatar.width = 32;
+    avatar.height = 32;
+    if (msg.senderAppearance) {
+      void faceFor(msg.senderAppearance).then((face) => {
+        if (face) avatar.getContext('2d')!.drawImage(face, 0, 0);
+      });
+    }
+
+    const content = document.createElement('div');
+    content.className = 'content';
 
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -42,7 +91,8 @@
       body.textContent = msg.text;
     }
 
-    wrap.append(meta, body);
+    content.append(meta, body);
+    wrap.append(avatar, content);
     messagesEl.appendChild(wrap);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
@@ -357,6 +407,59 @@
   const opacitySlider = document.getElementById('opacity-slider') as HTMLInputElement;
   const opacityVal = document.getElementById('opacity-val')!;
   const scaleBtns = [...document.querySelectorAll('#scale-btns button')] as HTMLButtonElement[];
+  const swatchRow = document.getElementById('color-swatches')!;
+  const colorInput = document.getElementById('chat-color') as HTMLInputElement;
+
+  // ---- 채팅창 테마 색상 (기준색에서 헤더/말풍선 색 파생) ----
+
+  const COLOR_PRESETS = ['#d94f63', '#4f7bd9', '#3fa66a', '#8a5fd9', '#d98a3f', '#e06fa8', '#5a5f6b'];
+  let currentChatColor = '#d94f63';
+
+  function hexToHsl(hex: string): { h: number; s: number; l: number } {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    let h = 0;
+    let s = 0;
+    if (d > 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      if (max === r) h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h = (h * 60 + 360) % 360;
+    }
+    return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+  }
+
+  function applyChatTheme(hex: string): void {
+    currentChatColor = hex;
+    const { h, s, l } = hexToHsl(hex);
+    const root = document.documentElement.style;
+    root.setProperty('--accent', hex);
+    root.setProperty('--accent-hover', `hsl(${h} ${s}% ${Math.min(l + 8, 88)}%)`);
+    root.setProperty('--header', `hsl(${h} 30% 25%)`);
+    root.setProperty('--header-hover', `hsl(${h} 30% 34%)`);
+    root.setProperty('--self-bubble', `hsl(${h} 25% 32%)`);
+    colorInput.value = hex;
+    for (const el of swatchRow.children) {
+      el.classList.toggle('active', (el as HTMLElement).dataset.color === hex);
+    }
+  }
+
+  for (const preset of COLOR_PRESETS) {
+    const btn = document.createElement('button');
+    btn.className = 'swatch';
+    btn.style.background = preset;
+    btn.dataset.color = preset;
+    btn.title = preset;
+    btn.addEventListener('click', () => window.overlay.setChatColor(preset));
+    swatchRow.appendChild(btn);
+  }
+  colorInput.addEventListener('change', () => window.overlay.setChatColor(colorInput.value));
 
   function showOpacity(value: number): void {
     opacitySlider.value = String(Math.round(value * 100));
@@ -376,6 +479,7 @@
       const s = await window.overlay.getSettings();
       showOpacity(s.opacity);
       showScale(s.scale);
+      applyChatTheme(s.chatColor ?? currentChatColor);
     }
   });
   optionsClose.addEventListener('click', () => optionsPanel.classList.remove('open'));
@@ -391,8 +495,9 @@
     });
   }
   window.overlay.on('self:settings', (data) => {
+    const s = data as { opacity: number; scale: number; chatColor: string };
+    if (s.chatColor) applyChatTheme(s.chatColor); // 테마는 항상 즉시 반영
     if (optionsPanel.classList.contains('open')) {
-      const s = data as { opacity: number; scale: number };
       showOpacity(s.opacity);
       showScale(s.scale);
     }
@@ -411,6 +516,8 @@
   closeBtn.addEventListener('click', () => window.overlay.closeChat());
 
   // ---- 초기 상태 + 이벤트 구독 ----
+
+  applyChatTheme((await window.overlay.getSettings()).chatColor ?? currentChatColor);
 
   const state = await window.overlay.getNetState();
   chatSelfId = state.selfId;
