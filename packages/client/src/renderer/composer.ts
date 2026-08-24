@@ -108,6 +108,21 @@ const COSMETIC_ITEMS: CosmeticItem[] = [
   { id: 'name-red', kind: 'namecolor', name: '레드 닉네임', price: 20, value: '#ff6b6b' },
 ];
 
+// 미보유 랜덤 파츠 뽑기 — shared/protocol.ts의 RANDOM_SHOP과 동기화 유지 필요
+const RANDOM_ITEMS: { id: string; name: string; price: number; emoji: string }[] = [
+  { id: 'rand-any', name: '전체 랜덤', price: 200, emoji: '🎲' },
+  { id: 'rand-race', name: '종족 랜덤', price: 1000, emoji: '🧬' },
+  { id: 'rand-weapon', name: '무기 랜덤', price: 300, emoji: '⚔️' },
+  { id: 'rand-hair', name: '머리 랜덤', price: 500, emoji: '💇' },
+  { id: 'rand-armor', name: '갑옷 랜덤', price: 500, emoji: '🛡️' },
+  { id: 'rand-helmet', name: '헬멧 랜덤', price: 500, emoji: '⛑️' },
+  { id: 'rand-shield', name: '방패 랜덤', price: 500, emoji: '🔰' },
+  { id: 'rand-mask', name: '마스크 랜덤', price: 500, emoji: '🎭' },
+  { id: 'rand-back', name: '등 랜덤', price: 500, emoji: '🎒' },
+  { id: 'rand-cape', name: '망토 랜덤', price: 500, emoji: '🧣' },
+  { id: 'rand-horns', name: '뿔 랜덤', price: 500, emoji: '🦌' },
+];
+
 const BUBBLE_STYLES: Record<string, { fill: string; stroke: string; text: string }> = {
   default: { fill: '#fffdf7', stroke: '#4a2837', text: '#3a2430' },
   'bubble-dark': { fill: '#2b2230', stroke: '#8d7d88', text: '#f0e8ec' },

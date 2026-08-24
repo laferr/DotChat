@@ -16,8 +16,12 @@
         getExtras: () => fetch('/assets/extras/manifest-extras.json').then((r) => r.json()),
         loadExtra: (rel) =>
           fetch('/assets/extras/' + rel).then((r) => (r.ok ? r.blob().then(toDataUrl) : null)),
-        // 잡은 물고기 샘플: 구 1종 + 새 3종 (box 포함) — 실루엣/컬러 대비 확인용
-        getWallet: () => Promise.resolve({ fish: ['Clownfish', 'box', 'goldfish', 'Squidoom'] }),
+        // 잡은 물고기 샘플: 구 3종 + 새 3종 (box 포함) — 실루엣/컬러/월척 별표 확인용
+        getWallet: () =>
+          Promise.resolve({
+            fish: ['Clownfish', 'Salmon', 'Anchovy', 'box', 'goldfish', 'Squidoom'],
+            trophies: ['Clownfish', 'goldfish'],
+          }),
         on: () => {},
         closeFishdex: () => {},
       };

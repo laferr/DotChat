@@ -14,6 +14,7 @@ import {
   MovePayload,
   PartChoice,
   PlayerState,
+  RANDOM_SHOP,
   sanitizeAppearance,
   sanitizePinned,
   ServerToClientEvents,
@@ -335,6 +336,7 @@ function connect(): void {
     myCoins = data.coins;
     myItems = data.items;
     myFish = data.fish ?? [];
+    myTrophies = data.trophies ?? [];
     broadcast('self:coins', myCoins);
     broadcast('self:wallet', data);
   });
@@ -832,10 +834,11 @@ ipcMain.handle('claim-gift', (): GiftResult => {
 let myCoins = 0;
 let myItems: string[] = [];
 let myFish: string[] = [];
+let myTrophies: string[] = [];
 
 ipcMain.handle('get-coins', () => myCoins);
 
-ipcMain.handle('get-wallet', () => ({ coins: myCoins, items: myItems, fish: myFish }));
+ipcMain.handle('get-wallet', () => ({ coins: myCoins, items: myItems, fish: myFish, trophies: myTrophies }));
 
 ipcMain.handle('shop-buy', (_e, itemId: string) => {
   return new Promise((resolve) => {
@@ -1006,22 +1009,23 @@ ipcMain.handle('minigame-start', (_e, game: string) => {
 });
 
 // 낚시 상태 변화를 서버에 중계 (다른 접속자 화면 동기화)
-ipcMain.on('fishing-send', (_e, data: { phase?: unknown; fishId?: unknown }) => {
+ipcMain.on('fishing-send', (_e, data: { phase?: unknown; fishId?: unknown; trophy?: unknown }) => {
   if (!socket?.connected) return;
   socket.emit('fishing-state', {
     phase: String(data?.phase ?? 'stop') as any,
     fishId: typeof data?.fishId === 'string' ? data.fishId : undefined,
+    trophy: data?.trophy === true || undefined,
   });
 });
 
-// 물고기 획득 정산 (서버가 도감 기록 + 코인)
-ipcMain.handle('fish-caught', (_e, fishId: string) => {
+// 물고기 획득 정산 (서버가 도감 기록 + 코인, trophy = 월척)
+ipcMain.handle('fish-caught', (_e, fishId: string, trophy?: boolean) => {
   return new Promise((resolve) => {
     if (!socket?.connected) {
       resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
       return;
     }
-    (socket as any).timeout(10000).emit('fish', String(fishId), (err: unknown, res: any) => {
+    (socket as any).timeout(10000).emit('fish', String(fishId), trophy === true, (err: unknown, res: any) => {
       if (err || !res) {
         resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
         return;
@@ -1033,10 +1037,62 @@ ipcMain.handle('fish-caught', (_e, fishId: string) => {
       // 보물상자에서 상점 아이템 당첨 시 서버가 지갑에 넣어 보내줌
       if (res.ok && Array.isArray(res.items)) myItems = res.items;
       if (res.ok && res.isNew) myFish.push(String(fishId));
-      if (res.ok && (res.isNew || res.item)) {
-        broadcast('self:wallet', { coins: myCoins, items: myItems, fish: myFish });
+      if (res.ok && res.trophy && !myTrophies.includes(String(fishId))) myTrophies.push(String(fishId));
+      if (res.ok && (res.isNew || res.item || res.trophy)) {
+        broadcast('self:wallet', { coins: myCoins, items: myItems, fish: myFish, trophies: myTrophies });
       }
       resolve(res);
+    });
+  });
+});
+
+// ---- 미보유 랜덤 파츠 뽑기 (결제는 서버, 지급은 로컬 풀에서) ----
+
+function randomPoolFor(layer: string): string[] {
+  const pool = giftPool().filter((id) => !inventory.owned.includes(id));
+  if (layer === 'any') return pool;
+  if (layer === 'race') return pool.filter((id) => id.startsWith('race:'));
+  return pool.filter((id) => id.startsWith(`${layer}/`));
+}
+
+ipcMain.handle('shop-buy-random', (_e, itemId: string) => {
+  return new Promise((resolve) => {
+    const def = RANDOM_SHOP.find((i) => i.id === String(itemId));
+    if (!def) {
+      resolve({ ok: false, error: '없는 상품이에요.' });
+      return;
+    }
+    if (randomPoolFor(def.layer).length === 0) {
+      resolve({ ok: false, error: '이 카테고리 파츠를 이미 모두 보유하고 있어요!' });
+      return;
+    }
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('buy-random', def.id, (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      if (!res.ok) {
+        resolve(res);
+        return;
+      }
+      // 결제 완료 → 해당 카테고리 미보유 풀에서 랜덤 지급
+      const pool = randomPoolFor(def.layer);
+      const id = randomOf(pool);
+      inventory.owned.push(id);
+      saveInventory();
+      broadcast('self:inventory');
+      syncParts();
+      const label = id.startsWith('race:') ? `${id.slice(5)} 종족 세트` : id.split('/')[1];
+      console.log(`[shop] ${def.id} 뽑기 → ${id}`);
+      resolve({ ok: true, label, coins: myCoins });
     });
   });
 });

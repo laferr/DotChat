@@ -82,6 +82,37 @@ res = await emitAck(b, 'fish', 'NotARealFish');
 if (res.ok) fail('알 수 없는 물고기가 통과됨');
 console.log('  새 물고기/유효성 OK');
 
+// 7) 월척: (fishId, true, ack) 3인자 — 반복어(1) + 보너스(5) = 6, trophies 기록
+await new Promise((r) => setTimeout(r, 8200));
+res = await emitAck(b, 'fish', 'Amanita_Fungifin', true);
+if (!res.ok || res.trophy !== true || res.delta !== 6) fail(`월척 정산 이상: ${JSON.stringify(res)}`);
+console.log(`  월척 OK (+${res.delta}코인, trophy=${res.trophy})`);
+// 상자에는 월척 미적용
+await new Promise((r) => setTimeout(r, 8200));
+res = await emitAck(b, 'fish', 'box', true);
+if (!res.ok || res.trophy === true) fail(`상자에 월척이 적용됨: ${JSON.stringify(res)}`);
+console.log('  상자 월척 제외 OK');
+
+// 8) 랜덤 뽑기 결제: 잔액에 따라 정확히 차감 or 부족 거부, 없는 상품 거부
+const before = res.coins;
+res = await emitAck(b, 'buy-random', 'rand-any'); // 200코인
+if (before >= 200) {
+  if (!res.ok || res.coins !== before - 200) fail(`랜덤 뽑기 차감 이상: ${before} → ${JSON.stringify(res)}`);
+  console.log(`  랜덤 뽑기 차감 OK (${before} → ${res.coins})`);
+} else {
+  if (res.ok) fail(`잔액 부족(${before})인데 결제됨`);
+  console.log(`  랜덤 뽑기 잔액 부족 거부 OK (잔액 ${before})`);
+}
+res = await emitAck(b, 'buy-random', 'rand-nope');
+if (res.ok) fail('없는 랜덤 상품이 결제됨');
+console.log('  랜덤 뽑기 유효성 OK');
+
+// 9) 구버전 인자 (fishId, ack) 2인자도 여전히 동작
+await new Promise((r) => setTimeout(r, 8200));
+res = await emitAck(b, 'fish', 'carp');
+if (!res.ok || res.trophy === true) fail(`구버전 인자 호환 실패: ${JSON.stringify(res)}`);
+console.log('  구버전 fish 인자 호환 OK');
+
 b.disconnect();
 console.log('PARTS_OK');
 process.exit(0);

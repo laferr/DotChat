@@ -116,14 +116,16 @@ interface OverlayApi {
   loadExtra(relPath: string): Promise<string | null>;
   getMinigameState(): Promise<{ runnerRemainSec: number }>;
   startMinigame(game: string): Promise<{ ok: boolean; error?: string }>;
-  sendFishing(data: { phase: string; fishId?: string }): void;
-  reportFish(fishId: string): Promise<{
+  sendFishing(data: { phase: string; fishId?: string; trophy?: boolean }): void;
+  reportFish(fishId: string, trophy?: boolean): Promise<{
     ok: boolean;
     error?: string;
     isNew?: boolean;
     delta?: number;
+    trophy?: boolean;
     item?: { id: string; name: string };
   }>;
+  buyRandom(itemId: string): Promise<{ ok: boolean; error?: string; label?: string; coins?: number }>;
   endRunner(seconds: number): Promise<{ ok: boolean; error?: string; delta?: number }>;
   sendReaction(index: number): void;
   equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
@@ -236,6 +238,8 @@ interface Actor {
     dir: -1 | 1;
     waitDur?: number;
     reelDur?: number;
+    /** 월척 — 낚아올리는 스프라이트 3배 */
+    trophy?: boolean;
   } | null;
   /** 리액션 이모지 표시 */
   reaction: { index: number; until: number } | null;
@@ -1047,14 +1051,15 @@ const FISHING_PLAY: Record<string, { fps: number; once: boolean }> = {
 };
 const CAUGHT_DURATION = 1.7;
 
-function setSelfFishingPhase(phase: string, fishId?: string): void {
+function setSelfFishingPhase(phase: string, fishId?: string, trophy?: boolean): void {
   if (!me.fishing) return;
   me.fishing.phase = phase;
   me.fishing.phaseStart = performance.now();
   me.fishing.fishId = fishId ?? null;
+  me.fishing.trophy = trophy === true;
   if (phase === 'waiting') me.fishing.waitDur = 10 + Math.random() * 5;
   if (phase === 'reeling') me.fishing.reelDur = 1 + Math.random();
-  window.overlay.sendFishing({ phase, fishId });
+  window.overlay.sendFishing({ phase, fishId, trophy });
 }
 
 function startFishing(): void {
@@ -1083,14 +1088,19 @@ function updateSelfFishing(now: number): void {
     case 'reeling':
       if (t >= (f.reelDur ?? 1.5)) {
         const fishId = rollFishCatch();
+        // 월척 0.2% — 일반 물고기만 (상자/보물상자 제외), 3배 스프라이트 + 보너스 코인
+        const trophy =
+          fishId !== 'box' && fishId !== 'treasure_chest' && Math.random() * 100 < 0.2;
         loadFishImage(fishId);
-        setSelfFishingPhase('caught', fishId);
-        void window.overlay.reportFish(fishId).then((res) => {
+        setSelfFishingPhase('caught', fishId, trophy);
+        void window.overlay.reportFish(fishId, trophy).then((res) => {
           if (!res.ok) return;
           if (fishId === 'box') {
             showBubble(me, `📦 상자 발견! +${res.delta}🪙`);
           } else if (fishId === 'treasure_chest') {
             showBubble(me, res.item ? `💰 보물상자!! '${res.item.name}' 획득!` : `💰 보물상자!! +${res.delta}🪙`);
+          } else if (res.trophy) {
+            showBubble(me, `🌟 월척이다!! ${fishId.replace(/_/g, ' ')}! +${res.delta}🪙`);
           } else {
             showBubble(me, `🎣 ${fishId.replace(/_/g, ' ')}! ${res.isNew ? 'NEW! ' : ''}+${res.delta}🪙`);
           }
@@ -1142,7 +1152,7 @@ function drawFishing(actor: Actor, time: number): void {
       const p = Math.min(1, t / 1.4);
       const fx = actor.x + (62 - 30 * p) * vs;
       const fy = viewH - 4 * vs - 44 * vs * p - Math.sin(p * Math.PI) * 6 * vs;
-      const fs = 16 * 1.5 * vs;
+      const fs = 16 * 1.5 * vs * (f.trophy ? 3 : 1); // 월척은 3배
       if (isFish2(f.fishId)) {
         // 단일 이미지: 전체를 비율 유지로 축소
         const nw = fishImg.naturalWidth || 16;
@@ -1533,7 +1543,7 @@ function wireNet(): void {
   });
 
   window.overlay.on('net:player-fishing', (data) => {
-    const d = data as { id: string; phase: string; fishId?: string };
+    const d = data as { id: string; phase: string; fishId?: string; trophy?: boolean };
     const actor = remotes.get(d.id);
     if (!actor) return;
     if (d.phase === 'stop') {
@@ -1546,6 +1556,7 @@ function wireNet(): void {
       phaseStart: performance.now(),
       fishId: d.fishId ?? null,
       dir: actor.fishing?.dir ?? actor.dir,
+      trophy: d.trophy === true,
     };
     actor.walking = false;
   });

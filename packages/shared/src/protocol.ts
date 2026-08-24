@@ -143,6 +143,19 @@ export interface SlotResult {
   coins?: number;
 }
 
+/** fish 이벤트 정산 응답 */
+export type FishAck = (res: {
+  ok: boolean;
+  error?: string;
+  isNew?: boolean;
+  delta?: number;
+  coins?: number;
+  /** 월척 인정 여부 */
+  trophy?: boolean;
+  item?: { id: string; name: string };
+  items?: string[];
+}) => void;
+
 export interface ClientToServerEvents {
   hello: (data: { nickname: string; tag: string; appearance: Appearance; pinned?: string }) => void;
   move: (data: MovePayload) => void;
@@ -161,20 +174,17 @@ export interface ClientToServerEvents {
   buy: (itemId: string, ack: (res: { ok: boolean; error?: string; coins?: number; items?: string[] }) => void) => void;
   /** 코인 랭킹 톱5 */
   ranking: (ack: (rows: { name: string; coins: number }[]) => void) => void;
-  /** 낚시 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화) */
-  'fishing-state': (data: { phase: FishingPhase; fishId?: string }) => void;
-  /** 물고기 획득 정산 (도감 기록 + 코인, box/보물상자는 특수 보상 — item은 상점 아이템 당첨) */
-  fish: (
-    fishId: string,
-    ack: (res: {
-      ok: boolean;
-      error?: string;
-      isNew?: boolean;
-      delta?: number;
-      coins?: number;
-      item?: { id: string; name: string };
-      items?: string[];
-    }) => void,
+  /** 낚시 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화, trophy = 월척 3배 연출) */
+  'fishing-state': (data: { phase: FishingPhase; fishId?: string; trophy?: boolean }) => void;
+  /**
+   * 물고기 획득 정산 (도감 기록 + 코인, box/보물상자는 특수 보상 — item은 상점 아이템 당첨)
+   * 월척이면 (fishId, true, ack) 3인자로 호출 — 구버전 (fishId, ack) 2인자와 서버가 모두 수용
+   */
+  fish: (fishId: string, trophyOrAck: boolean | FishAck, maybeAck?: FishAck) => void;
+  /** 미보유 랜덤 파츠 뽑기 결제 (RANDOM_SHOP 가격, 지급은 클라이언트 로컬) */
+  'buy-random': (
+    itemId: string,
+    ack: (res: { ok: boolean; error?: string; coins?: number }) => void,
   ) => void;
   /** 보유 파츠 목록 동기화 — 클라 목록을 서버 지갑에 합집합 등록, ack로 병합 결과 반환 */
   'parts-sync': (parts: string[], ack: (res: { ok: boolean; parts?: string[] }) => void) => void;
@@ -207,10 +217,10 @@ export interface ServerToClientEvents {
   'player-read': (data: { id: string; ts: number }) => void;
   /** 내 코인 잔액 (접속/적립/슬롯 정산 시) */
   coins: (coins: number) => void;
-  /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감) */
-  wallet: (data: { coins: number; items: string[]; fish: string[] }) => void;
-  /** 누군가의 낚시 상태 (애니메이션 동기화) */
-  'player-fishing': (data: { id: string; phase: FishingPhase; fishId?: string }) => void;
+  /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감 + 월척 기록) */
+  wallet: (data: { coins: number; items: string[]; fish: string[]; trophies?: string[] }) => void;
+  /** 누군가의 낚시 상태 (애니메이션 동기화, trophy = 월척 3배 연출) */
+  'player-fishing': (data: { id: string; phase: FishingPhase; fishId?: string; trophy?: boolean }) => void;
   /** 슬롯 대박 전체 알림 */
   'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
 }
@@ -307,6 +317,9 @@ export const FISH_BOX_COIN_MAX = 10;
 export const FISH_CHEST_COIN_MIN = 20;
 export const FISH_CHEST_COIN_MAX = 50;
 
+// 월척 — 일반 물고기 낚을 때 0.2% (클라 롤), 스프라이트 3배 + 보너스 코인, 도감에 별표
+export const FISH_TROPHY_COIN = 5;
+
 /** 보유 파츠 서버 동기화 한도 */
 export const PARTS_SYNC_MAX = 3000;
 /** 파츠 id 형식: "race:이름" 또는 "레이어/이름" */
@@ -333,6 +346,29 @@ export interface ShopItem {
   /** namecolor의 실제 색상값 */
   value?: string;
 }
+
+/** 미보유 랜덤 파츠 뽑기 — 결제는 서버, 지급은 클라이언트(파츠 풀 로컬 보유) */
+export interface RandomShopItem {
+  id: string;
+  name: string;
+  price: number;
+  /** 'any' = 전체, 'race' = 종족 세트, 그 외 = 파츠 레이어명 (눈/귀는 종족 포함이라 제외) */
+  layer: 'any' | 'race' | 'Weapon' | 'Hair' | 'Armor' | 'Helmet' | 'Shield' | 'Mask' | 'Back' | 'Cape' | 'Horns';
+}
+
+export const RANDOM_SHOP: RandomShopItem[] = [
+  { id: 'rand-any', name: '전체 랜덤', price: 200, layer: 'any' },
+  { id: 'rand-race', name: '종족 랜덤', price: 1000, layer: 'race' },
+  { id: 'rand-weapon', name: '무기 랜덤', price: 300, layer: 'Weapon' },
+  { id: 'rand-hair', name: '머리 랜덤', price: 500, layer: 'Hair' },
+  { id: 'rand-armor', name: '갑옷 랜덤', price: 500, layer: 'Armor' },
+  { id: 'rand-helmet', name: '헬멧 랜덤', price: 500, layer: 'Helmet' },
+  { id: 'rand-shield', name: '방패 랜덤', price: 500, layer: 'Shield' },
+  { id: 'rand-mask', name: '마스크 랜덤', price: 500, layer: 'Mask' },
+  { id: 'rand-back', name: '등 랜덤', price: 500, layer: 'Back' },
+  { id: 'rand-cape', name: '망토 랜덤', price: 500, layer: 'Cape' },
+  { id: 'rand-horns', name: '뿔 랜덤', price: 500, layer: 'Horns' },
+];
 
 export const SHOP_ITEMS: ShopItem[] = [
   { id: 'aura-spark', kind: 'aura', name: '골드 스파크', price: 40 },

@@ -743,6 +743,39 @@
     const inv = await window.overlay.getInventory();
     const eq = inv.equipped;
     shopList.innerHTML = '';
+
+    // 미보유 랜덤 파츠 뽑기 (결제 서버, 지급 로컬 — 눈/귀는 종족 세트에 포함이라 없음)
+    const randHead = document.createElement('div');
+    randHead.className = 'shop-group';
+    randHead.textContent = '🎲 랜덤 뽑기 (미보유 파츠)';
+    shopList.appendChild(randHead);
+    for (const item of RANDOM_ITEMS) {
+      const row = document.createElement('div');
+      row.className = 'shop-item';
+      const preview = document.createElement('div');
+      preview.className = 'shop-preview';
+      preview.textContent = item.emoji;
+      const name = document.createElement('span');
+      name.className = 'shop-name';
+      name.textContent = item.name;
+      const btn = document.createElement('button');
+      btn.className = 'shop-btn';
+      btn.textContent = `${item.price} 🪙`;
+      btn.disabled = wallet.coins < item.price;
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        const res = (await window.overlay.buyRandom(item.id)) as {
+          ok: boolean;
+          error?: string;
+          label?: string;
+        };
+        addSystemMessage(res.ok ? `🎲 '${res.label}' 획득!` : (res.error ?? '뽑기에 실패했어요.'));
+        void renderShop();
+      });
+      row.append(preview, name, btn);
+      shopList.appendChild(row);
+    }
+
     let lastKind = '';
     for (const item of COSMETIC_ITEMS) {
       if (item.kind !== lastKind) {

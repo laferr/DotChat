@@ -60,12 +60,50 @@
   const nextBtn = document.getElementById('next-btn') as HTMLButtonElement;
   const pageLabel = document.getElementById('page-label')!;
 
+  // 스트립 프레임의 실제 픽셀 영역(bbox) — 구 물고기는 16칸 안에서 작게 그려져 있어
+  // bbox 크롭 후 확대해서 신규 물고기와 아이콘 크기를 맞춘다
+  const bboxCache = new Map<string, { x: number; y: number; w: number; h: number } | null>();
+  function frameBBox(img: HTMLImageElement, sx: number, key: string): { x: number; y: number; w: number; h: number } | null {
+    let cached = bboxCache.get(key);
+    if (cached !== undefined) return cached;
+    const probe = document.createElement('canvas');
+    probe.width = 16;
+    probe.height = 16;
+    const pctx = probe.getContext('2d')!;
+    pctx.drawImage(img, sx, 0, 16, 16, 0, 0, 16, 16);
+    const data = pctx.getImageData(0, 0, 16, 16).data;
+    let minX = 16;
+    let minY = 16;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < 16; y++) {
+      for (let x = 0; x < 16; x++) {
+        if (data[(y * 16 + x) * 4 + 3] > 0) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    cached = maxX < 0 ? null : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+    bboxCache.set(key, cached);
+    return cached;
+  }
+
   function drawCell(cell: HTMLCanvasElement, fishId: string, isCaught: boolean, img: HTMLImageElement): void {
     const ctx = cell.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
     if (!fish2Set.has(fishId)) {
       // 구 물고기 스트립: 1번 프레임 = 물고기, 3번 프레임 = 그림자 실루엣
-      ctx.drawImage(img, isCaught ? 0 : 32, 0, 16, 16, 0, 0, 16, 16);
+      // 실제 픽셀 영역만 잘라 확대 → 신규 아이콘과 크기 통일
+      const sx = isCaught ? 0 : 32;
+      const bbox = frameBBox(img, sx, `${fishId}:${sx}`);
+      if (!bbox) return;
+      const s = Math.min(16 / bbox.w, 16 / bbox.h);
+      const w = Math.max(1, Math.round(bbox.w * s));
+      const h = Math.max(1, Math.round(bbox.h * s));
+      ctx.drawImage(img, sx + bbox.x, bbox.y, bbox.w, bbox.h, Math.floor((16 - w) / 2), Math.floor((16 - h) / 2), w, h);
       return;
     }
     // 새 물고기: 전체 이미지를 16x16 칸에 비율 유지로 맞춤
@@ -85,8 +123,9 @@
   }
 
   async function render(): Promise<void> {
-    const wallet = (await window.overlay.getWallet()) as { fish?: string[] };
+    const wallet = (await window.overlay.getWallet()) as { fish?: string[]; trophies?: string[] };
     const caught = new Set(wallet.fish ?? []);
+    const trophies = new Set(wallet.trophies ?? []);
     countEl.textContent = `${[...caught].filter((f) => ALL_FISH.includes(f)).length} / ${ALL_FISH.length}`;
     pageLabel.textContent = `${spread + 1}/${totalSpreads}`;
     prevBtn.disabled = spread === 0;
@@ -107,7 +146,8 @@
       cell.style.left = `${cellLeft}px`;
       cell.style.top = `${cellTop}px`;
       // 투명 프레임리스 창에서는 네이티브 title 툴팁이 안 떠서 커스텀 툴팁 사용
-      const label = isCaught ? fishId.replace(/_/g, ' ') : '???';
+      const isTrophy = isCaught && trophies.has(fishId);
+      const label = isCaught ? `${fishId.replace(/_/g, ' ')}${isTrophy ? ' 🌟월척' : ''}` : '???';
       cell.addEventListener('mouseenter', () => {
         tooltip.textContent = label;
         tooltip.style.display = 'block';
@@ -120,8 +160,18 @@
         tooltip.style.display = 'none';
       });
       const rel = fish2Set.has(fishId) ? `fish2/${fishId}.png` : `fish/${fishId}.png`;
-      void loadImg(rel).then((img) => {
-        if (img) drawCell(cell, fishId, isCaught, img);
+      void loadImg(rel).then(async (img) => {
+        if (!img) return;
+        drawCell(cell, fishId, isCaught, img);
+        if (isTrophy) {
+          // 월척 별표 — 리액션 시트의 ⭐(첫 세트 인덱스 62)를 우측 상단에
+          const star = await loadImg('reaction.png');
+          if (star) {
+            const ctx = cell.getContext('2d')!;
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(star, 128, 96, 16, 16, 8, 0, 8, 8);
+          }
+        }
       });
       bookEl.appendChild(cell);
     });

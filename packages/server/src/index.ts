@@ -23,6 +23,7 @@ import {
   FISH_IDS_EXTRA,
   FISH_MIN_INTERVAL_MS,
   FISH_REPEAT_COIN,
+  FISH_TROPHY_COIN,
   FISHING_PHASES,
   PART_ID_RE,
   PARTS_SYNC_MAX,
@@ -31,6 +32,7 @@ import {
   RUNNER_COIN_MAX,
   RUNNER_COIN_PER_SEC,
   RUNNER_COOLDOWN_SEC,
+  RANDOM_SHOP,
   SHOP_ITEMS,
   SLOT_COST,
   SlotKind,
@@ -110,6 +112,8 @@ interface Wallet {
   fish: string[];
   /** 보유 외형 파츠 — 클라이언트가 parts-sync로 등록 (합집합, 클라 기준) */
   parts: string[];
+  /** 월척으로 잡아본 물고기 (도감 별표) */
+  trophies: string[];
 }
 
 let wallets: Record<string, Wallet> = {};
@@ -120,14 +124,15 @@ function loadWallets(): void {
     if (raw && typeof raw === 'object') {
       for (const [k, v] of Object.entries(raw)) {
         if (typeof v === 'number' && Number.isFinite(v)) {
-          wallets[k] = { coins: Math.max(0, Math.floor(v)), items: [], fish: [], parts: [] }; // 구버전 마이그레이션
+          wallets[k] = { coins: Math.max(0, Math.floor(v)), items: [], fish: [], parts: [], trophies: [] }; // 구버전 마이그레이션
         } else if (v && typeof v === 'object') {
-          const w = v as { coins?: unknown; items?: unknown; fish?: unknown; parts?: unknown };
+          const w = v as { coins?: unknown; items?: unknown; fish?: unknown; parts?: unknown; trophies?: unknown };
           wallets[k] = {
             coins: Math.max(0, Math.floor(Number(w.coins) || 0)),
             items: Array.isArray(w.items) ? w.items.filter((i) => typeof i === 'string') : [],
             fish: Array.isArray(w.fish) ? w.fish.filter((i) => typeof i === 'string') : [],
             parts: Array.isArray(w.parts) ? w.parts.filter((i) => typeof i === 'string') : [],
+            trophies: Array.isArray(w.trophies) ? w.trophies.filter((i) => typeof i === 'string') : [],
           };
         }
       }
@@ -174,7 +179,7 @@ setInterval(() => {
     const key = walletKey(player);
     if (!credited.has(key)) {
       credited.add(key);
-      wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [] };
+      wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] };
       wallets[key].coins += COIN_PER_MINUTE;
     }
     io.sockets.sockets.get(socketId)?.emit('coins', wallets[key].coins);
@@ -270,6 +275,7 @@ const imageTimes = new Map<string, number[]>();
 const lastFishAt = new Map<string, number>();
 const lastRunnerAt = new Map<string, number>(); // 지갑 키 기준 (러너 쿨타임)
 const lastPinnedAt = new Map<string, number>();
+const lastRandomBuyAt = new Map<string, number>();
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
@@ -296,7 +302,7 @@ io.on('connection', (socket) => {
     // 신규 지갑(기존 유저의 첫 업데이트 접속 포함)에 기본 코인 지급
     const key = walletKey(player);
     if (!(key in wallets)) {
-      wallets[key] = { coins: COIN_STARTER, items: [], fish: [], parts: [] };
+      wallets[key] = { coins: COIN_STARTER, items: [], fish: [], parts: [], trophies: [] };
       saveWallets();
       console.log(`[coins] ${key} 신규 지갑 +${COIN_STARTER}`);
     }
@@ -311,6 +317,7 @@ io.on('connection', (socket) => {
       coins: wallets[key].coins,
       items: [...wallets[key].items],
       fish: [...wallets[key].fish],
+      trophies: [...(wallets[key].trophies ?? [])],
     });
     socket.emit('chat-history', chatHistory.slice(-100));
     socket.broadcast.emit('player-joined', player);
@@ -369,7 +376,7 @@ io.on('connection', (socket) => {
       return;
     }
     const key = walletKey(player);
-    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [] });
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     if (wallet.coins < SLOT_COST) {
       reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${SLOT_COST})` });
       return;
@@ -411,7 +418,7 @@ io.on('connection', (socket) => {
       return;
     }
     const key = walletKey(player);
-    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [] });
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     if (wallet.items.includes(item.id)) {
       reply({ ok: false, error: '이미 보유한 상품이에요.', coins: wallet.coins, items: [...wallet.items] });
       return;
@@ -438,10 +445,14 @@ io.on('connection', (socket) => {
       id: socket.id,
       phase: phase as (typeof FISHING_PHASES)[number],
       fishId,
+      trophy: data?.trophy === true || undefined,
     });
   });
 
-  socket.on('fish', (fishId, ack) => {
+  // (fishId, ack) 구버전과 (fishId, trophy, ack) 신버전 인자를 모두 수용
+  socket.on('fish', (fishId, trophyOrAck, maybeAck) => {
+    const trophyArg = trophyOrAck === true;
+    const ack = typeof trophyOrAck === 'function' ? trophyOrAck : maybeAck;
     const reply = typeof ack === 'function' ? ack : () => undefined;
     const player = players.get(socket.id);
     if (!player) {
@@ -460,13 +471,14 @@ io.on('connection', (socket) => {
     }
     lastFishAt.set(socket.id, now);
     const key = walletKey(player);
-    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [] });
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     const isNew = !wallet.fish.includes(id);
     if (isNew) wallet.fish.push(id);
 
     // 특수 어획물: 상자(코인), 보물상자(코인 or 미보유 상점 아이템)
     let delta: number;
     let itemGrant: { id: string; name: string } | null = null;
+    const isTrophy = trophyArg && id !== FISH_BOX_ID && id !== FISH_CHEST_ID;
     if (id === FISH_BOX_ID) {
       delta = FISH_BOX_COIN_MIN + Math.floor(Math.random() * (FISH_BOX_COIN_MAX - FISH_BOX_COIN_MIN + 1));
     } else if (id === FISH_CHEST_ID) {
@@ -481,7 +493,10 @@ io.on('connection', (socket) => {
       }
     } else {
       delta = isNew ? FISH_FIRST_COIN : FISH_REPEAT_COIN;
+      if (isTrophy) delta += FISH_TROPHY_COIN; // 월척 보너스
     }
+    wallet.trophies = wallet.trophies ?? [];
+    if (isTrophy && !wallet.trophies.includes(id)) wallet.trophies.push(id);
     wallet.coins += delta;
     saveWallets();
     reply({
@@ -489,13 +504,48 @@ io.on('connection', (socket) => {
       isNew,
       delta,
       coins: wallet.coins,
+      ...(isTrophy ? { trophy: true } : {}),
       ...(itemGrant ? { item: itemGrant, items: [...wallet.items] } : {}),
     });
     if (id === FISH_BOX_ID || id === FISH_CHEST_ID) {
       console.log(`[fish] ${key}: ${id} 개봉 → ${itemGrant ? `아이템 '${itemGrant.name}'` : `+${delta}코인`}`);
+    } else if (isTrophy) {
+      console.log(`[fish] ${key}: ${id} 🌟월척! (+${delta}) 별 ${wallet.trophies.length}종`);
     } else if (isNew) {
       console.log(`[fish] ${key}: ${id} 최초 획득 (+${delta}) 도감 ${wallet.fish.length}/${ALL_FISH_IDS.size}`);
     }
+  });
+
+  // ---- 미보유 랜덤 파츠 뽑기 (결제만 서버, 지급은 클라이언트 로컬 풀) ----
+
+  socket.on('buy-random', (itemId, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const def = RANDOM_SHOP.find((i) => i.id === String(itemId));
+    if (!def) {
+      reply({ ok: false, error: '없는 상품이에요.' });
+      return;
+    }
+    const now = Date.now();
+    if (now - (lastRandomBuyAt.get(socket.id) ?? 0) < 500) {
+      reply({ ok: false, error: '너무 빨라요!' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    if (wallet.coins < def.price) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${def.price})`, coins: wallet.coins });
+      return;
+    }
+    lastRandomBuyAt.set(socket.id, now);
+    wallet.coins -= def.price;
+    saveWallets();
+    reply({ ok: true, coins: wallet.coins });
+    console.log(`[shop] ${key}: ${def.id} 뽑기 (-${def.price}) 잔액 ${wallet.coins}`);
   });
 
   // ---- 보유 파츠 동기화 (클라 기준 합집합 — 다른 PC에서도 수집품 이어받기) ----
@@ -508,7 +558,7 @@ io.on('connection', (socket) => {
       return;
     }
     const key = walletKey(player);
-    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [] });
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     wallet.parts = wallet.parts ?? [];
     if (Array.isArray(parts)) {
       let added = 0;
@@ -546,7 +596,7 @@ io.on('connection', (socket) => {
     lastRunnerAt.set(key, now);
     const secs = Math.max(0, Math.min(600, Number(seconds) || 0));
     const delta = Math.min(RUNNER_COIN_MAX, Math.floor(secs * RUNNER_COIN_PER_SEC));
-    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [] });
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     wallet.coins += delta;
     saveWallets();
     reply({ ok: true, delta, coins: wallet.coins });
@@ -700,6 +750,7 @@ io.on('connection', (socket) => {
       lastSlotAt.delete(socket.id);
       lastFishAt.delete(socket.id);
       lastPinnedAt.delete(socket.id);
+      lastRandomBuyAt.delete(socket.id);
       socket.broadcast.emit('player-fishing', { id: socket.id, phase: 'stop' });
       io.emit('player-left', socket.id);
       console.log(`- ${player.nickname} — ${players.size}명 접속중`);

@@ -75,8 +75,11 @@ contextBridge.exposeInMainWorld('overlay', {
   loadExtra: (relPath: string): Promise<string | null> => ipcRenderer.invoke('load-extra', relPath),
   getMinigameState: (): Promise<unknown> => ipcRenderer.invoke('minigame-state'),
   startMinigame: (game: string): Promise<unknown> => ipcRenderer.invoke('minigame-start', game),
-  sendFishing: (data: { phase: string; fishId?: string }) => ipcRenderer.send('fishing-send', data),
-  reportFish: (fishId: string): Promise<unknown> => ipcRenderer.invoke('fish-caught', fishId),
+  sendFishing: (data: { phase: string; fishId?: string; trophy?: boolean }) =>
+    ipcRenderer.send('fishing-send', data),
+  reportFish: (fishId: string, trophy?: boolean): Promise<unknown> =>
+    ipcRenderer.invoke('fish-caught', fishId, trophy),
+  buyRandom: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy-random', itemId),
   endRunner: (seconds: number): Promise<unknown> => ipcRenderer.invoke('runner-end', seconds),
   sendReaction: (index: number) => ipcRenderer.send('reaction-send', index),
   equip: (payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }) =>
