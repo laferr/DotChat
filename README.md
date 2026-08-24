@@ -17,16 +17,19 @@ npm run dev
 
 ### 캐릭터 에셋 준비 (필수)
 
-캐릭터 스프라이트(SuperRetroWorld 에셋 팩)는 재배포 금지 라이선스라 저장소에 포함되어 있지 않습니다.
-[gif-superretroworld.itch.io](https://gif-superretroworld.itch.io/)에서 캐릭터 팩을 받은 뒤, 프로젝트 루트에 아래 구조로 배치하세요:
+캐릭터 파츠 스프라이트(Hippo "Fantasy Heroes" / PixelFantasy 유니티 에셋)는 재배포 금지 라이선스라 저장소에 포함되어 있지 않습니다. 에셋을 구한 뒤 임포트 스크립트를 실행하세요:
 
-```
-sprite_split/
-└── character_1/
-    └── character_1_frame16x20.png   (3x4 시트: 1행 정면, 2행 왼쪽, 3행 오른쪽)
+```bash
+node tools/import-pixelheroes.mjs "D:/assetsPuller/Assets/PixelFantasy/PixelHeroes"
 ```
 
-시트가 없으면 앱은 내장 폴백 도트 캐릭터로 실행됩니다.
+`assets/pixelheroes/<레이어>/<이름>.png` + `manifest.json`이 생성됩니다 (총 ~436개 시트, 576×928 / 64×64 셀).
+
+- 파츠 레이어: 종족세트(Body+Head+Eyes+Arms, Ears), Hair, Armor(+Bracers 자동), Helmet, Weapon, Shield, Mask, Back, Cape, Horns
+- 합성 규칙(유니티 CharacterBuilder 포팅)은 `packages/client/src/renderer/composer.ts` 참고
+- 첫 로그인: 랜덤 종족 세트 + 랜덤 머리카락 + TravelerTunic
+- 선물상자(기본 3분): 종족은 세트로, 나머지는 개별 파츠로 드랍
+- 파츠별 HSV 색상 변경 지원 (외모 변경 패널의 색조/채도/명도 슬라이더)
 
 종료는 트레이 아이콘 우클릭 → 종료.
 

@@ -3,7 +3,11 @@ import { io } from 'socket.io-client';
 
 const url = process.env.DOTCHAT_SERVER ?? 'http://localhost:4020';
 const nickname = process.env.BOT_NICK ?? '봇순이';
-const character = process.env.BOT_CHAR ?? 'character_7';
+const appearance = {
+  race: { name: process.env.BOT_RACE ?? 'Goblin' },
+  hair: { name: 'Hair7', h: -40 },
+  armor: { name: 'BanditTunic' },
+};
 
 const LINES = [
   '안녕하세요~',
@@ -39,7 +43,7 @@ function pickNextMode() {
 
 socket.on('connect', () => {
   console.log(`bot connected as ${nickname} (${socket.id})`);
-  socket.emit('hello', { nickname, tag: '9999', character });
+  socket.emit('hello', { nickname, tag: '9999', appearance });
 });
 socket.on('disconnect', () => console.log('bot disconnected'));
 

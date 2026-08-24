@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>PixelHeroes compose preview</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #8b7d88;
+        font-family: monospace;
+        color: #fff;
+      }
+      canvas {
+        image-rendering: pixelated;
+        background: rgba(0, 0, 0, 0.15);
+        margin: 4px;
+      }
+      .row {
+        margin-bottom: 12px;
+      }
+      #error {
+        color: #ffd0d0;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="error"></div>
+    <div id="out"></div>
+    <script src="../packages/client/dist/renderer/composer.js"></script>
+    <script>
+      const provider = (layer, name) =>
+        new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = `/assets/pixelheroes/${encodeURIComponent(layer)}/${encodeURIComponent(name)}.png`;
+        });
+      const composer = new PartComposer(provider);
+      const out = document.getElementById('out');
+
+      const variants = [
+        { label: 'starter: Human + Hair1 + TravelerTunic', app: { race: { name: 'Human' }, hair: { name: 'Hair1' }, armor: { name: 'TravelerTunic' } } },
+        { label: 'Orc + helmet[ShowEars] + weapon/shield', app: { race: { name: 'Orc' }, ears: { name: 'Orc' }, hair: { name: 'Hair5' }, armor: { name: 'BlueKnight' }, helmet: { name: 'PirateBandana [ShowEars]' }, weapon: { name: 'IronSword' }, shield: { name: 'RoundShield' } } },
+        { label: 'Elf tinted: hair h=120, armor h=-60, skin v=-20', app: { race: { name: 'Elf', v: -20 }, ears: { name: 'Elf' }, hair: { name: 'Hair3', h: 120 }, armor: { name: 'ClericRobe', h: -60 } } },
+        { label: 'FireLizard + helmet/hair (억제되어야 함) + back', app: { race: { name: 'FireLizard' }, hair: { name: 'Hair2' }, helmet: { name: 'ChiefHat [ShowEars]' }, armor: { name: 'BanditTunic' }, back: { name: 'SmallBackpack' } } },
+      ];
+
+      (async () => {
+        try {
+          const manifest = await fetch('/assets/pixelheroes/manifest.json').then((r) => r.json());
+          // 없는 이름 폴백: manifest에서 실제 존재하는 무기/방패로 교체
+          const v = variants[1].app;
+          if (!manifest.layers.Weapon.includes(v.weapon.name)) v.weapon.name = manifest.layers.Weapon[20];
+          if (!manifest.layers.Shield.includes(v.shield.name)) v.shield.name = manifest.layers.Shield[5];
+          if (!manifest.layers.Armor.includes(variants[2].app.armor.name)) variants[2].app.armor.name = manifest.layers.Armor[10];
+
+          for (const variant of variants) {
+            const frames = await composer.compose(variant.app);
+            const row = document.createElement('div');
+            row.className = 'row';
+            const label = document.createElement('div');
+            label.textContent = variant.label + (frames ? '' : ' — COMPOSE FAILED');
+            row.appendChild(label);
+            if (frames) {
+              for (const frame of [...frames.idle, ...frames.run]) {
+                const c = document.createElement('canvas');
+                c.width = 64;
+                c.height = 64;
+                c.style.width = '128px';
+                c.style.height = '128px';
+                c.getContext('2d').drawImage(frame, 0, 0);
+                row.appendChild(c);
+              }
+              // 미러(왼쪽 보기) 확인
+              const m = document.createElement('canvas');
+              m.width = 64;
+              m.height = 64;
+              m.style.width = '128px';
+              m.style.height = '128px';
+              const mctx = m.getContext('2d');
+              mctx.translate(64, 0);
+              mctx.scale(-1, 1);
+              mctx.drawImage(frames.run[1], 0, 0);
+              row.appendChild(m);
+            }
+            out.appendChild(row);
+          }
+          window.__done = true;
+        } catch (err) {
+          document.getElementById('error').textContent = String(err && err.stack ? err.stack : err);
+        }
+      })();
+
+      // 스크린샷 대용: 전체 결과를 하나의 PNG로 추출
+      window.exportPng = () => {
+        const canvases = [...document.querySelectorAll('#out canvas')];
+        const cols = 7;
+        const cell = 66;
+        const rows = Math.ceil(canvases.length / cols);
+        const big = document.createElement('canvas');
+        big.width = cols * cell;
+        big.height = rows * cell;
+        const ctx = big.getContext('2d');
+        ctx.fillStyle = '#8b7d88';
+        ctx.fillRect(0, 0, big.width, big.height);
+        canvases.forEach((c, i) => {
+          ctx.drawImage(c, (i % cols) * cell + 1, Math.floor(i / cols) * cell + 1);
+        });
+        return big.toDataURL('image/png');
+      };
+    </script>
+  </body>
+</html>

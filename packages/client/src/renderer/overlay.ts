@@ -1,10 +1,10 @@
-// 오버레이 렌더러 — 작업표시줄 위를 걸어다니는 캐릭터들 (본인 + 접속자)
+// 오버레이 렌더러 — 작업표시줄 위를 걸어다니는 파츠 조합 캐릭터들 (본인 + 접속자)
 
 interface NetPlayer {
   id: string;
   nickname: string;
   tag: string;
-  character: string;
+  appearance: Appearance;
   x: number; // 0~1 정규화
   dir: -1 | 1;
   walking: boolean;
@@ -19,18 +19,36 @@ interface NetChatMessage {
   image?: { url: string; thumb: string; w: number; h: number };
 }
 
+interface GiftClaimResult {
+  isNew: boolean;
+  kind: 'race' | 'part' | null;
+  id: string | null;
+  label: string | null;
+  ownedCount: number;
+  total: number;
+}
+
 interface OverlayApi {
   setInteractive(interactive: boolean): void;
   setTrayIcon(dataUrl: string): void;
-  loadSprites(): Promise<{ name: string; dataUrl: string }[]>;
-  getSelf(): Promise<{ nickname: string; tag: string; character: string; giftIntervalSec: number }>;
+  getManifest(): Promise<{
+    cell: number;
+    layers: Record<string, string[]>;
+    races: { name: string; ears: boolean }[];
+  } | null>;
+  loadPart(layer: string, name: string): Promise<string | null>;
+  getSelf(): Promise<{
+    nickname: string;
+    tag: string;
+    appearance: Appearance;
+    giftIntervalSec: number;
+  }>;
   submitProfile(data: { nickname: string; tag: string }): Promise<{ ok: boolean; error?: string }>;
   cancelSetup(): void;
-  getInventory(): Promise<{ owned: string[]; current: string }>;
-  getSettings(): Promise<{ opacity: number; serverUrl?: string }>;
+  getInventory(): Promise<{ version: number; owned: string[]; equipped: Appearance }>;
+  getSettings(): Promise<{ opacity: number; scale: number; serverUrl?: string }>;
   setOpacity(value: number): void;
-  claimGift(): Promise<{ isNew: boolean; character: string | null; ownedCount: number; total: number }>;
-  equip(character: string): void;
+  setScale(value: number): void;
   getNetState(): Promise<{
     selfId: string | null;
     connected: boolean;
@@ -48,6 +66,8 @@ interface OverlayApi {
     h: number;
   }): Promise<{ ok: boolean; error?: string }>;
   openImage(url: string): void;
+  claimGift(): Promise<GiftClaimResult>;
+  equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
   toggleChat(): void;
   closeChat(): void;
   on(channel: string, callback: (data: unknown) => void): void;
@@ -56,14 +76,19 @@ interface Window {
   overlay: OverlayApi;
 }
 
-const SCALE = 2;
+let viewScale = 1; // 표시 배율 (옵션에서 1|2|3)
 const WALK_SPEED_MIN = 30; // px/s — 걸을 때마다 이 범위에서 랜덤
 const WALK_SPEED_MAX = 85;
-const EDGE_MARGIN = 24;
-const WALK_FPS = 7;
+const EDGE_MARGIN = 40;
+const RUN_FPS = 10;
+const IDLE_FPS = 1.6;
 const HOVER_PAD = 8;
 const MOVE_SEND_INTERVAL = 0.15; // 초
-const REMOTE_LERP = 8; // 원격 캐릭터 위치 보간 속도
+const REMOTE_LERP = 8;
+
+// 캐릭터가 64px 셀 안에서 실제로 차지하는 대략적 영역 (히트박스/말풍선 기준)
+const ART_W = 30;
+const ART_H = 42;
 
 const BUBBLE_FONT = '12px "Segoe UI", "Malgun Gothic", sans-serif';
 const NAME_FONT = '10px "Segoe UI", "Malgun Gothic", sans-serif';
@@ -93,37 +118,25 @@ function resizeStage(): void {
   stageCtx.imageSmoothingEnabled = false;
 }
 
-// ---- 스프라이트 로딩 ----
+// ---- 파츠 합성기 (composer.ts) ----
 
-const sheetUrls = new Map<string, string>();
-const framesCache = new Map<string, Promise<CharFrames>>();
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('image load failed'));
-    img.src = src;
+const partProvider: PartImageProvider = (layer, name) =>
+  window.overlay.loadPart(layer, name).then((dataUrl) => {
+    if (!dataUrl) return null;
+    return new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
   });
-}
 
-function framesFor(character: string): Promise<CharFrames> {
-  let cached = framesCache.get(character);
-  if (!cached) {
-    const url = sheetUrls.get(character);
-    cached = url
-      ? loadImage(url).then((img) => buildSheetFrames(img))
-      : Promise.resolve(buildFallbackFrames());
-    framesCache.set(character, cached);
-  }
-  return cached;
-}
+const composer = new PartComposer(partProvider);
 
 // ---- 액터 (본인 + 원격 유저 공용) ----
 
 interface Bubble {
   lines: string[];
-  /** 이미지 말풍선일 때 썸네일 */
   img: HTMLImageElement | null;
   imgW: number;
   imgH: number;
@@ -132,35 +145,45 @@ interface Bubble {
 
 interface Actor {
   nickname: string;
-  character: string;
-  frames: CharFrames | null; // 시트 로딩 전 null
+  appearance: Appearance;
+  appearanceKey: string;
+  frames: ComposedFrames | null; // 합성 전 null
   x: number; // 중심 px
-  targetX: number | null; // 원격 보간 목표
+  targetX: number | null;
   dir: -1 | 1;
   walking: boolean;
-  walkClock: number;
+  animClock: number;
   hopVy: number;
   hopY: number;
   bubble: Bubble | null;
 }
 
-function makeActor(nickname: string, character: string, x: number): Actor {
+function setAppearance(actor: Actor, appearance: Appearance): void {
+  const key = JSON.stringify(appearance);
+  if (actor.appearanceKey === key && actor.frames) return;
+  actor.appearance = appearance;
+  actor.appearanceKey = key;
+  composer.compose(appearance).then((frames) => {
+    if (actor.appearanceKey === key) actor.frames = frames;
+  });
+}
+
+function makeActor(nickname: string, appearance: Appearance, x: number): Actor {
   const actor: Actor = {
     nickname,
-    character,
+    appearance,
+    appearanceKey: '',
     frames: null,
     x,
     targetX: null,
     dir: 1,
     walking: false,
-    walkClock: 0,
+    animClock: 0,
     hopVy: 0,
     hopY: 0,
     bubble: null,
   };
-  framesFor(character).then((frames) => {
-    actor.frames = frames;
-  });
+  setAppearance(actor, appearance);
   return actor;
 }
 
@@ -168,16 +191,14 @@ let me: Actor;
 let selfId: string | null = null;
 const remotes = new Map<string, Actor>();
 
-function actorW(actor: Actor): number {
-  return (actor.frames?.width ?? 16) * SCALE;
-}
-function actorH(actor: Actor): number {
-  return (actor.frames?.height ?? 20) * SCALE;
+// 발 위치: 셀 바닥에서 8px 위 → 셀 상단 y
+function cellTop(actor: Actor): number {
+  return viewH - (PH_CELL - PH_FOOT_OFFSET) * viewScale + actor.hopY;
 }
 
 function actorBox(actor: Actor): { x: number; y: number; w: number; h: number } {
-  const w = actorW(actor);
-  const h = actorH(actor);
+  const w = ART_W * viewScale;
+  const h = ART_H * viewScale;
   return { x: actor.x - w / 2, y: viewH - h + actor.hopY, w, h };
 }
 
@@ -209,11 +230,11 @@ function updateSelf(dt: number): void {
   if (selfModeTime <= 0) pickNextMode();
 
   me.walking = selfMode === 'walk';
+  me.animClock += dt;
   if (me.walking) {
     me.x += me.dir * selfSpeed * dt;
-    me.walkClock += dt;
-    const minX = EDGE_MARGIN + actorW(me) / 2;
-    const maxX = viewW - EDGE_MARGIN - actorW(me) / 2;
+    const minX = EDGE_MARGIN + (ART_W * viewScale) / 2;
+    const maxX = viewW - EDGE_MARGIN - (ART_W * viewScale) / 2;
     if (me.x <= minX) {
       me.x = minX;
       me.dir = 1;
@@ -257,6 +278,7 @@ function sendMoveIfNeeded(dt: number): void {
 
 function updateRemotes(dt: number): void {
   for (const actor of remotes.values()) {
+    actor.animClock += dt;
     if (actor.targetX !== null) {
       const diff = actor.targetX - actor.x;
       if (Math.abs(diff) < 0.5) {
@@ -265,13 +287,12 @@ function updateRemotes(dt: number): void {
         actor.x += diff * Math.min(1, dt * REMOTE_LERP);
       }
     }
-    if (actor.walking) actor.walkClock += dt;
   }
 }
 
 function addRemote(p: NetPlayer): void {
   if (p.id === selfId || remotes.has(p.id)) return;
-  const actor = makeActor(p.nickname, p.character, p.x * viewW);
+  const actor = makeActor(p.nickname, p.appearance, p.x * viewW);
   actor.dir = p.dir;
   actor.walking = p.walking;
   actor.targetX = p.x * viewW;
@@ -283,11 +304,11 @@ function addRemote(p: NetPlayer): void {
 function currentFrame(actor: Actor): HTMLCanvasElement | null {
   if (!actor.frames) return null;
   if (actor.walking) {
-    const strip = actor.dir === -1 ? actor.frames.left : actor.frames.right;
-    const step = Math.floor(actor.walkClock * WALK_FPS) % actor.frames.cycle.length;
-    return strip[actor.frames.cycle[step]];
+    const idx = Math.floor(actor.animClock * RUN_FPS) % actor.frames.run.length;
+    return actor.frames.run[idx];
   }
-  return actor.frames.idle;
+  const idx = Math.floor(actor.animClock * IDLE_FPS) % actor.frames.idle.length;
+  return actor.frames.idle[idx];
 }
 
 function roundRect(x: number, y: number, w: number, h: number, r: number): void {
@@ -386,18 +407,29 @@ function drawName(actor: Actor): void {
 function drawActor(actor: Actor, now: number): void {
   const frame = currentFrame(actor);
   if (!frame) return;
-  const box = actorBox(actor);
+  const size = PH_CELL * viewScale;
+  const top = cellTop(actor);
+  const left = Math.round(actor.x - size / 2);
 
   // 발밑 그림자
   stageCtx.save();
   stageCtx.globalAlpha = 0.18;
   stageCtx.fillStyle = '#000';
   stageCtx.beginPath();
-  stageCtx.ellipse(actor.x, viewH - 2, box.w * 0.42, 2.5, 0, 0, Math.PI * 2);
+  stageCtx.ellipse(actor.x, viewH - 2, ART_W * viewScale * 0.45, 2.5, 0, 0, Math.PI * 2);
   stageCtx.fill();
   stageCtx.restore();
 
-  stageCtx.drawImage(frame, Math.round(box.x), Math.round(box.y), box.w, box.h);
+  if (actor.dir === -1) {
+    // 기본 시트는 오른쪽 보기 → 왼쪽 이동 시 미러
+    stageCtx.save();
+    stageCtx.translate(left + size, Math.round(top));
+    stageCtx.scale(-1, 1);
+    stageCtx.drawImage(frame, 0, 0, size, size);
+    stageCtx.restore();
+  } else {
+    stageCtx.drawImage(frame, left, Math.round(top), size, size);
+  }
   drawName(actor);
   drawBubble(actor, now);
 }
@@ -510,7 +542,7 @@ function drawHearts(time: number): void {
   stageCtx.globalAlpha = 1;
 }
 
-// ---- 선물상자 (5분마다 클라이언트 로컬 스폰, 각자 독립 획득) ----
+// ---- 선물상자 (클라이언트 로컬 스폰, 각자 독립 획득) ----
 
 const GIFT_SCALE = 2;
 const GIFT_PALETTE: Record<string, string> = {
@@ -534,7 +566,7 @@ const GIFT_GRID = [
 ];
 
 let giftCanvas: HTMLCanvasElement;
-let giftIntervalSec = 300;
+let giftIntervalSec = 180;
 let giftTimer = 0;
 const gift = { present: false, x: 0, altitude: 0, vel: 0, landed: false };
 
@@ -608,10 +640,10 @@ async function claimGift(): Promise<void> {
   giftTimer = 0;
   spawnHearts(gift.x, r.y);
   const result = await window.overlay.claimGift();
-  if (result.isNew && result.character) {
-    showBubble(me, `🎁 새 캐릭터 '${result.character}' 획득! (${result.ownedCount}/${result.total})`);
+  if (result.isNew && result.label) {
+    showBubble(me, `🎁 '${result.label}' 획득! (${result.ownedCount}/${result.total})`);
   } else {
-    showBubble(me, '이미 모든 캐릭터를 다 모았어요!');
+    showBubble(me, '이미 모든 파츠를 다 모았어요!');
   }
 }
 
@@ -649,7 +681,7 @@ function drawChatButton(): void {
   stageCtx.globalAlpha = 1;
 }
 
-// ---- 마우스: 캐릭터/버튼 위에서만 클릭 받기 ----
+// ---- 마우스: 캐릭터/버튼/선물 위에서만 클릭 받기 ----
 
 let mouseX = -1;
 let mouseY = -1;
@@ -695,7 +727,7 @@ window.addEventListener('mousedown', () => {
   }
 });
 
-// ---- 트레이 아이콘 ----
+// ---- 트레이 아이콘: 합성된 idle 프레임의 상반신 크롭 ----
 
 function sendTrayIcon(): void {
   if (!me.frames) return;
@@ -704,11 +736,16 @@ function sendTrayIcon(): void {
   icon.height = 32;
   const ctx = icon.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
-  const s = Math.max(1, Math.floor(Math.min(32 / me.frames.width, 32 / me.frames.height)));
-  const w = me.frames.width * s;
-  const h = me.frames.height * s;
-  ctx.drawImage(me.frames.idle, Math.floor((32 - w) / 2), Math.floor((32 - h) / 2), w, h);
+  // 64x64 셀에서 캐릭터 상반신 근처(16,16)-(48,48) 크롭
+  ctx.drawImage(me.frames.idle[0], 16, 16, 32, 32, 0, 0, 32, 32);
   window.overlay.setTrayIcon(icon.toDataURL('image/png'));
+}
+
+// ---- 설정 ----
+
+function applySettings(s: { opacity: number; scale: number }): void {
+  stage.style.opacity = String(Math.min(1, Math.max(0.1, s.opacity)));
+  if ([1, 2, 3].includes(s.scale)) viewScale = s.scale;
 }
 
 // ---- 네트워크 이벤트 ----
@@ -752,31 +789,21 @@ function wireNet(): void {
   });
 
   window.overlay.on('net:player-appearance', (data) => {
-    const d = data as { id: string; character: string };
+    const d = data as { id: string; appearance: Appearance };
     const actor = remotes.get(d.id);
-    if (!actor || actor.character === d.character) return;
-    actor.character = d.character;
-    framesFor(d.character).then((frames) => {
-      if (actor.character === d.character) actor.frames = frames;
-    });
+    if (actor) setAppearance(actor, d.appearance);
   });
 
   window.overlay.on('self:appearance', (data) => {
-    const d = data as { character: string };
-    me.character = d.character;
-    framesFor(d.character).then((frames) => {
-      me.frames = frames;
-      sendTrayIcon();
-    });
+    const d = data as { appearance: Appearance };
+    setAppearance(me, d.appearance);
+    // 합성 완료 후 트레이 아이콘 갱신
+    composer.compose(d.appearance).then(() => sendTrayIcon());
   });
 
   window.overlay.on('self:settings', (data) => {
-    applyOpacity((data as { opacity: number }).opacity);
+    applySettings(data as { opacity: number; scale: number });
   });
-}
-
-function applyOpacity(value: number): void {
-  stage.style.opacity = String(Math.min(1, Math.max(0.1, value)));
 }
 
 // ---- 메인 루프 ----
@@ -813,22 +840,18 @@ async function init(): Promise<void> {
   resizeStage();
   window.addEventListener('resize', resizeStage);
 
-  const sheets = await window.overlay.loadSprites();
-  for (const sheet of sheets) sheetUrls.set(sheet.name, sheet.dataUrl);
+  applySettings(await window.overlay.getSettings());
 
   const myInfo = await window.overlay.getSelf();
-  me = makeActor(myInfo.nickname, myInfo.character, 150 + Math.random() * Math.max(200, viewW - 300));
-  await framesFor(myInfo.character).then((frames) => {
+  giftIntervalSec = myInfo.giftIntervalSec;
+  me = makeActor(myInfo.nickname, myInfo.appearance, 150 + Math.random() * Math.max(200, viewW - 300));
+  await composer.compose(myInfo.appearance).then((frames) => {
     me.frames = frames;
   });
   sendTrayIcon();
-  giftIntervalSec = myInfo.giftIntervalSec;
-  giftCanvas = buildGiftCanvas();
   console.log(
-    `[overlay] self '${myInfo.nickname}' as ${myInfo.character}, ${sheets.length} sheets, gift every ${giftIntervalSec}s`,
+    `[overlay] self '${myInfo.nickname}' race=${myInfo.appearance.race.name}, gift every ${giftIntervalSec}s, scale x${viewScale}`,
   );
-
-  applyOpacity((await window.overlay.getSettings()).opacity);
 
   wireNet();
   const state = await window.overlay.getNetState();
@@ -836,6 +859,7 @@ async function init(): Promise<void> {
   state.players.forEach(addRemote);
 
   heartCanvas = buildHeartCanvas();
+  giftCanvas = buildGiftCanvas();
   console.log(`[overlay] ready, viewport ${viewW}x${viewH}`);
   requestAnimationFrame((t) => {
     lastTime = t;

@@ -209,6 +209,27 @@
         line-height: 1.5;
         margin: 0;
       }
+      #scale-btns {
+        display: flex;
+        gap: 6px;
+      }
+      #scale-btns button {
+        flex: 1;
+        border: 1px solid #4a2837;
+        background: #2b2230;
+        color: #f0e8ec;
+        border-radius: 6px;
+        padding: 6px 0;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      #scale-btns button:hover {
+        border-color: #d94f63;
+      }
+      #scale-btns button.active {
+        background: #5c3247;
+        border-color: #d94f63;
+      }
       .panel-head {
         display: flex;
         justify-content: space-between;
@@ -232,6 +253,49 @@
         color: #8d7d88;
         font-weight: 400;
         font-size: 11px;
+      }
+      #slot-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 0 12px 8px;
+      }
+      .slot-tab {
+        border: 1px solid #4a2837;
+        background: #2b2230;
+        color: #f0e8ec;
+        border-radius: 6px;
+        padding: 3px 8px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .slot-tab:hover {
+        border-color: #d94f63;
+      }
+      .slot-tab.active {
+        background: #5c3247;
+        border-color: #d94f63;
+        font-weight: 700;
+      }
+      #hsv-controls {
+        display: flex;
+        gap: 10px;
+        padding: 0 12px 8px;
+      }
+      #hsv-controls label {
+        flex: 1;
+        font-size: 10px;
+        color: #8d7d88;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      #hsv-controls input {
+        width: 100%;
+        accent-color: #d94f63;
+      }
+      #hsv-controls input:disabled {
+        opacity: 0.35;
       }
       #char-grid {
         flex: 1;
@@ -267,13 +331,23 @@
         border-color: #ffd66e;
       }
       .char-cell canvas {
-        width: 32px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
         image-rendering: pixelated;
       }
       .char-cell .cname {
         font-size: 9px;
         color: #8d7d88;
+        max-width: 56px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .char-cell.remove-cell {
+        justify-content: center;
+        font-size: 18px;
+        color: #8d7d88;
+        min-height: 56px;
       }
     </style>
   </head>
@@ -295,12 +369,25 @@
         <label for="opacity-slider">콘텐츠 투명도 <span id="opacity-val"></span></label>
         <input id="opacity-slider" type="range" min="10" max="100" step="5" />
         <p class="hint">작업표시줄 위 캐릭터·말풍선·버튼의 투명도입니다. (최소 10%)</p>
+        <label>표시 크기</label>
+        <div id="scale-btns">
+          <button data-scale="1">x1</button>
+          <button data-scale="2">x2</button>
+          <button data-scale="3">x3</button>
+        </div>
+        <p class="hint">캐릭터 표시 배율입니다. (원본 64px 기준)</p>
       </div>
     </div>
     <div id="appearance-panel">
       <div class="panel-head">
         <span>외모 변경 <span id="owned-count"></span></span>
         <button id="panel-close">✕</button>
+      </div>
+      <div id="slot-tabs"></div>
+      <div id="hsv-controls">
+        <label>색조 <input id="hsv-h" type="range" min="-180" max="180" step="5" /></label>
+        <label>채도 <input id="hsv-s" type="range" min="-100" max="100" step="5" /></label>
+        <label>명도 <input id="hsv-v" type="range" min="-100" max="100" step="5" /></label>
       </div>
       <div id="char-grid"></div>
     </div>

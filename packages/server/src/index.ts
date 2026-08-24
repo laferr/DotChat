@@ -12,6 +12,7 @@ import {
   MAX_CHAT_LEN,
   MAX_NICKNAME_LEN,
   PlayerState,
+  sanitizeAppearance,
   ServerToClientEvents,
 } from '@dotchat/shared';
 
@@ -96,12 +97,12 @@ io.on('connection', (socket) => {
         .trim()
         .slice(0, MAX_NICKNAME_LEN) || `user-${socket.id.slice(0, 4)}`;
     const tag = /^\d{4}$/.test(String(data?.tag ?? '')) ? String(data.tag) : '0000';
-    const character = String(data?.character ?? '').slice(0, 40) || 'character_1';
+    const appearance = sanitizeAppearance(data?.appearance) ?? { race: { name: 'Human' } };
     const player: PlayerState = {
       id: socket.id,
       nickname,
       tag,
-      character,
+      appearance,
       x: clamp01(0.1 + Math.random() * 0.8),
       dir: 1,
       walking: true,
@@ -109,7 +110,7 @@ io.on('connection', (socket) => {
     players.set(socket.id, player);
     socket.emit('welcome', { selfId: socket.id, players: [...players.values()] });
     socket.broadcast.emit('player-joined', player);
-    console.log(`+ ${nickname}#${tag} [${character}] — ${players.size}명 접속중`);
+    console.log(`+ ${nickname}#${tag} [${appearance.race.name}] — ${players.size}명 접속중`);
   });
 
   socket.on('move', (data) => {
@@ -126,12 +127,13 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('appearance', (character) => {
+  socket.on('appearance', (raw) => {
     const player = players.get(socket.id);
-    if (!player || typeof character !== 'string') return;
-    player.character = character.slice(0, 40);
-    socket.broadcast.emit('player-appearance', { id: socket.id, character: player.character });
-    console.log(`[appearance] ${player.nickname} → ${player.character}`);
+    const appearance = sanitizeAppearance(raw);
+    if (!player || !appearance) return;
+    player.appearance = appearance;
+    socket.broadcast.emit('player-appearance', { id: socket.id, appearance });
+    console.log(`[appearance] ${player.nickname} → ${appearance.race.name}`);
   });
 
   socket.on('chat', (text) => {

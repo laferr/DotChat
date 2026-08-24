@@ -36,11 +36,8 @@
     ],
     "extraResources": [
       {
-        "from": "../../sprite_split",
-        "to": "sprite_split",
-        "filter": [
-          "**/*_frame16x20.png"
-        ]
+        "from": "../../assets/pixelheroes",
+        "to": "pixelheroes"
       }
     ],
     "publish": [

@@ -3,22 +3,31 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { io, Socket } from 'socket.io-client';
 import {
+  Appearance,
+  AppearanceSlot,
+  APPEARANCE_SLOTS,
   ChatMessage,
   ClientToServerEvents,
   DEFAULT_PORT,
   MAX_NICKNAME_LEN,
   MovePayload,
+  PartChoice,
   PlayerState,
+  sanitizeAppearance,
   ServerToClientEvents,
 } from '@dotchat/shared';
 
 // 오버레이 창 높이 — 캐릭터 + 말풍선이 들어갈 공간
-const OVERLAY_HEIGHT = 200;
-const CHAT_SIZE = { width: 330, height: 460 };
-// 패키징된 앱은 리소스 폴더에 동봉된 시트를 사용
-const SPRITE_DIR = app.isPackaged
-  ? path.join(process.resourcesPath, 'sprite_split')
-  : path.join(__dirname, '..', '..', '..', '..', 'sprite_split');
+const OVERLAY_HEIGHT = 260;
+const CHAT_SIZE = { width: 340, height: 480 };
+// 선물상자 스폰 주기 (기본 3분, 테스트용으로 env 오버라이드 가능)
+const GIFT_INTERVAL_SEC = Math.max(5, Number(process.env.DOTCHAT_GIFT_SEC ?? 180));
+
+// PixelHeroes 파츠 에셋 (tools/import-pixelheroes.mjs로 임포트, 패키징 시 리소스 동봉)
+const ASSETS_DIR = app.isPackaged
+  ? path.join(process.resourcesPath, 'pixelheroes')
+  : path.join(__dirname, '..', '..', '..', '..', 'assets', 'pixelheroes');
+
 const PRELOAD = path.join(__dirname, '..', 'preload', 'preload.js');
 const RENDERER_DIR = path.join(__dirname, '..', '..', 'src', 'renderer');
 
@@ -27,39 +36,86 @@ let chatWindow: BrowserWindow | null = null;
 let setupWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
-// ---- 스프라이트 ----
+// ---- 에셋 매니페스트 ----
 
-function listSheetNames(): string[] {
-  if (!fs.existsSync(SPRITE_DIR)) return [];
-  return fs
-    .readdirSync(SPRITE_DIR)
-    .filter((sub) => fs.existsSync(path.join(SPRITE_DIR, sub, `${sub}_frame16x20.png`)));
+interface Manifest {
+  cell: number;
+  layers: Record<string, string[]>;
+  races: { name: string; ears: boolean }[];
 }
 
-// ---- 내 정보 / 인벤토리 (로컬 파일 영속화 — 획득 판정은 클라이언트 로컬) ----
+function loadManifest(): Manifest | null {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ASSETS_DIR, 'manifest.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
 
-// 선물상자 스폰 주기 (기본 5분, 테스트용으로 env 오버라이드 가능)
-const GIFT_INTERVAL_SEC = Math.max(5, Number(process.env.DOTCHAT_GIFT_SEC ?? 300));
+const manifest = loadManifest();
+if (!manifest) {
+  console.error(`[main] 파츠 에셋 없음: ${ASSETS_DIR} — tools/import-pixelheroes.mjs 실행 필요`);
+}
 
-const sheetNames = listSheetNames();
+// 슬롯 → 시트 레이어 매핑 (eyes/ears는 종족명 시트 사용)
+const SLOT_LAYER: Record<AppearanceSlot, string> = {
+  eyes: 'Eyes',
+  ears: 'Ears',
+  hair: 'Hair',
+  armor: 'Armor',
+  helmet: 'Helmet',
+  weapon: 'Weapon',
+  shield: 'Shield',
+  mask: 'Mask',
+  back: 'Back',
+  cape: 'Cape',
+  horns: 'Horns',
+};
+// 선물상자에서 개별 드랍되는 레이어 (종족 관련 시트는 세트로만)
+const GIFT_LAYERS = ['Hair', 'Armor', 'Helmet', 'Weapon', 'Shield', 'Mask', 'Back', 'Cape', 'Horns'];
+
+// ---- 인벤토리 v2 (종족 세트 = "race:이름", 개별 파츠 = "레이어/이름") ----
 
 interface Inventory {
+  version: 2;
   owned: string[];
-  current: string;
+  equipped: Appearance;
 }
 
 const DATA_DIR = path.join(app.getPath('appData'), 'DotChat');
 const INVENTORY_PATH = path.join(DATA_DIR, 'inventory.json');
 
+function randomOf<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function starterInventory(): Inventory {
+  // 첫 로그인: 랜덤 종족 세트 + 랜덤 머리카락 + 기본 갑옷(TravelerTunic)
+  const race = manifest ? randomOf(manifest.races) : { name: 'Human', ears: false };
+  const hair = manifest ? randomOf(manifest.layers.Hair) : 'Hair1';
+  const equipped: Appearance = {
+    race: { name: race.name },
+    hair: { name: hair },
+    armor: { name: 'TravelerTunic' },
+  };
+  if (race.ears) equipped.ears = { name: race.name };
+  return {
+    version: 2,
+    owned: [`race:${race.name}`, `Hair/${hair}`, 'Armor/TravelerTunic'],
+    equipped,
+  };
+}
+
 function loadInventory(): Inventory | null {
   try {
     const raw = JSON.parse(fs.readFileSync(INVENTORY_PATH, 'utf8'));
+    if (raw.version !== 2) return null; // 구버전(sprite_split 시절)은 새로 시작
     const owned = Array.isArray(raw.owned)
-      ? raw.owned.filter((n: unknown) => typeof n === 'string' && sheetNames.includes(n))
+      ? raw.owned.filter((n: unknown) => typeof n === 'string')
       : [];
-    if (owned.length === 0) return null;
-    const current = owned.includes(raw.current) ? raw.current : owned[0];
-    return { owned, current };
+    const equipped = sanitizeAppearance(raw.equipped);
+    if (owned.length === 0 || !equipped) return null;
+    return { version: 2, owned, equipped };
   } catch {
     return null;
   }
@@ -70,15 +126,13 @@ function saveInventory(): void {
   fs.writeFileSync(INVENTORY_PATH, JSON.stringify(inventory, null, 2), 'utf8');
 }
 
-let inventory = loadInventory();
-if (!inventory) {
-  // 최초 실행: 32종 중 랜덤 1개로 시작. 이후엔 마지막 장착 캐릭터로 접속.
-  const start =
-    sheetNames.length > 0 ? sheetNames[Math.floor(Math.random() * sheetNames.length)] : 'fallback';
-  inventory = { owned: [start], current: start };
-  saveInventory();
+const loadedInventory = loadInventory();
+const inventory: Inventory = loadedInventory ?? starterInventory();
+if (!loadedInventory) saveInventory();
+
+function ownsRace(name: string): boolean {
+  return inventory.owned.includes(`race:${name}`);
 }
-let myCharacter = inventory.current;
 
 // ---- 프로필 (닉네임#고유번호 — 사용자 구분 키) ----
 
@@ -105,11 +159,13 @@ function loadProfile(): Profile | null {
 
 let profile = loadProfile();
 
-// ---- 설정 (투명도 / 서버 주소) ----
+// ---- 설정 (투명도 / 표시 배율 / 서버 주소) ----
 
 interface Settings {
   /** 오버레이 콘텐츠 투명도 0.1~1.0 */
   opacity: number;
+  /** 표시 배율 1|2|3 */
+  scale: number;
   serverUrl?: string;
 }
 
@@ -119,12 +175,14 @@ function loadSettings(): Settings {
   try {
     const raw = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
     const opacity = Number(raw.opacity);
+    const scale = Number(raw.scale);
     return {
       opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0.1, opacity)) : 1,
+      scale: [1, 2, 3].includes(scale) ? scale : 1,
       serverUrl: typeof raw.serverUrl === 'string' && raw.serverUrl ? raw.serverUrl : undefined,
     };
   } catch {
-    return { opacity: 1 };
+    return { opacity: 1, scale: 1 };
   }
 }
 
@@ -165,7 +223,11 @@ function connect(): void {
   socket.on('connect', () => {
     console.log('[net] connected to', SERVER_URL);
     if (profile) {
-      socket!.emit('hello', { nickname: profile.nickname, tag: profile.tag, character: myCharacter });
+      socket!.emit('hello', {
+        nickname: profile.nickname,
+        tag: profile.tag,
+        appearance: inventory.equipped,
+      });
     }
   });
 
@@ -211,7 +273,7 @@ function connect(): void {
 
   socket.on('player-appearance', (data) => {
     const p = players.get(data.id);
-    if (p) p.character = data.character;
+    if (p) p.appearance = data.appearance;
     broadcast('net:player-appearance', data);
   });
 
@@ -310,8 +372,8 @@ function toggleChat(): void {
     show: false,
     frame: false,
     resizable: true,
-    minWidth: 280,
-    minHeight: 320,
+    minWidth: 300,
+    minHeight: 340,
     skipTaskbar: true,
     alwaysOnTop: true,
     webPreferences: {
@@ -330,7 +392,7 @@ function toggleChat(): void {
   });
 }
 
-// ---- IPC ----
+// ---- IPC: 오버레이/공통 ----
 
 ipcMain.on('set-interactive', (_e, interactive: boolean) => {
   overlayWindow?.setIgnoreMouseEvents(!interactive, { forward: true });
@@ -354,25 +416,39 @@ ipcMain.on('set-tray-icon', (_e, dataUrl: string) => {
   );
 });
 
-// sprite_split/<캐릭터>/<캐릭터>_frame16x20.png 시트들을 data URL로 로드
-// (file:// 이미지를 캔버스에 그리면 toDataURL이 오염 에러를 내므로 data URL로 전달)
-ipcMain.handle('load-sprites', () => {
-  const sheets: { name: string; dataUrl: string }[] = [];
-  for (const name of listSheetNames()) {
-    const file = path.join(SPRITE_DIR, name, `${name}_frame16x20.png`);
-    sheets.push({
-      name,
-      dataUrl: `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`,
-    });
+// ---- IPC: 에셋 ----
+
+ipcMain.handle('get-manifest', () => manifest);
+
+// 파츠 시트 1장을 data URL로 (렌더러에서 캔버스 합성용 — file:// 오염 회피)
+const partCache = new Map<string, string | null>();
+ipcMain.handle('load-part', (_e, layer: string, name: string) => {
+  const key = `${layer}/${name}`;
+  if (partCache.has(key)) return partCache.get(key);
+  let result: string | null = null;
+  if (
+    manifest &&
+    typeof layer === 'string' &&
+    typeof name === 'string' &&
+    manifest.layers[layer]?.includes(name)
+  ) {
+    try {
+      const file = path.join(ASSETS_DIR, layer, `${name}.png`);
+      result = `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`;
+    } catch {
+      result = null;
+    }
   }
-  console.log(`[main] loaded ${sheets.length} sprite sheets`);
-  return sheets;
+  partCache.set(key, result);
+  return result;
 });
+
+// ---- IPC: 프로필/설정/네트워크 ----
 
 ipcMain.handle('get-self', () => ({
   nickname: profile?.nickname ?? '',
   tag: profile?.tag ?? '',
-  character: myCharacter,
+  appearance: inventory.equipped,
   giftIntervalSec: GIFT_INTERVAL_SEC,
 }));
 
@@ -388,33 +464,12 @@ ipcMain.on('set-opacity', (_e, value: number) => {
   broadcast('self:settings', settings);
 });
 
-// 선물상자 획득 — 미보유 캐릭터 중 랜덤 지급 (전부 보유 시 isNew: false)
-ipcMain.handle('claim-gift', () => {
-  const unowned = sheetNames.filter((name) => !inventory.owned.includes(name));
-  if (unowned.length === 0) {
-    return { isNew: false, character: null, ownedCount: inventory.owned.length, total: sheetNames.length };
-  }
-  const character = unowned[Math.floor(Math.random() * unowned.length)];
-  inventory.owned.push(character);
-  saveInventory();
-  broadcast('self:inventory'); // 외모 패널이 열려 있으면 즉시 갱신
-  console.log(`[gift] ${character} 획득 (${inventory.owned.length}/${sheetNames.length})`);
-  return {
-    isNew: true,
-    character,
-    ownedCount: inventory.owned.length,
-    total: sheetNames.length,
-  };
-});
-
-ipcMain.on('equip', (_e, character: string) => {
-  if (typeof character !== 'string' || !inventory.owned.includes(character)) return;
-  inventory.current = character;
-  myCharacter = character;
-  saveInventory();
-  if (socket?.connected) socket.emit('appearance', character);
-  broadcast('self:appearance', { character });
-  console.log(`[equip] ${character}`);
+ipcMain.on('set-scale', (_e, value: number) => {
+  const v = Number(value);
+  if (![1, 2, 3].includes(v)) return;
+  settings.scale = v;
+  saveSettings();
+  broadcast('self:settings', settings);
 });
 
 ipcMain.handle('net-state', () => ({
@@ -465,6 +520,104 @@ ipcMain.on('open-image', (_e, url: string) => {
 ipcMain.on('toggle-chat', () => toggleChat());
 ipcMain.on('close-chat', () => chatWindow?.hide());
 
+// ---- IPC: 선물상자 / 장착 ----
+
+interface GiftResult {
+  isNew: boolean;
+  kind: 'race' | 'part' | null;
+  id: string | null;
+  label: string | null;
+  ownedCount: number;
+  total: number;
+}
+
+function giftPool(): string[] {
+  if (!manifest) return [];
+  return [
+    ...manifest.races.map((r) => `race:${r.name}`),
+    ...GIFT_LAYERS.flatMap((layer) => (manifest.layers[layer] ?? []).map((n) => `${layer}/${n}`)),
+  ];
+}
+
+ipcMain.handle('claim-gift', (): GiftResult => {
+  const pool = giftPool();
+  const unowned = pool.filter((id) => !inventory.owned.includes(id));
+  const base = { ownedCount: inventory.owned.length, total: pool.length };
+  if (unowned.length === 0) {
+    return { isNew: false, kind: null, id: null, label: null, ...base };
+  }
+  const id = randomOf(unowned);
+  inventory.owned.push(id);
+  saveInventory();
+  broadcast('self:inventory');
+  const isRace = id.startsWith('race:');
+  const label = isRace ? `${id.slice(5)} 종족 세트` : id.split('/')[1];
+  console.log(`[gift] ${id} 획득 (${inventory.owned.length}/${pool.length})`);
+  return {
+    isNew: true,
+    kind: isRace ? 'race' : 'part',
+    id,
+    label,
+    ownedCount: inventory.owned.length + 0,
+    total: pool.length,
+  };
+});
+
+function pushAppearance(): void {
+  saveInventory();
+  if (socket?.connected) socket.emit('appearance', inventory.equipped);
+  broadcast('self:appearance', { appearance: inventory.equipped });
+}
+
+// 슬롯 장착/해제/색상 변경: {slot, name, h, s, v} (name=null → 해제)
+ipcMain.on('equip', (_e, payload: { slot?: unknown; name?: unknown; h?: unknown; s?: unknown; v?: unknown }) => {
+  if (!manifest) return;
+  const slot = String(payload?.slot ?? '');
+  const name = payload?.name == null ? null : String(payload.name);
+  const choice: PartChoice | null = name
+    ? {
+        name,
+        h: Number(payload?.h) || 0,
+        s: Number(payload?.s) || 0,
+        v: Number(payload?.v) || 0,
+      }
+    : null;
+
+  if (slot === 'race') {
+    if (!choice || !ownsRace(choice.name)) return;
+    const race = manifest.races.find((r) => r.name === choice.name);
+    if (!race) return;
+    const changed = inventory.equipped.race.name !== choice.name;
+    inventory.equipped.race = choice;
+    if (changed) {
+      // 종족 변경 시 눈/귀는 새 종족 기본값으로
+      delete inventory.equipped.eyes;
+      if (race.ears) inventory.equipped.ears = { name: race.name };
+      else delete inventory.equipped.ears;
+    }
+    pushAppearance();
+    return;
+  }
+
+  if (!(APPEARANCE_SLOTS as readonly string[]).includes(slot)) return;
+  const typedSlot = slot as AppearanceSlot;
+  if (!choice) {
+    delete inventory.equipped[typedSlot];
+    pushAppearance();
+    return;
+  }
+  // 소유 검증: eyes/ears는 종족 세트, 나머지는 개별 파츠
+  if (typedSlot === 'eyes' || typedSlot === 'ears') {
+    if (!ownsRace(choice.name)) return;
+    if (typedSlot === 'ears' && !manifest.races.find((r) => r.name === choice.name)?.ears) return;
+  } else {
+    const layer = SLOT_LAYER[typedSlot];
+    if (!inventory.owned.includes(`${layer}/${choice.name}`)) return;
+  }
+  inventory.equipped[typedSlot] = choice;
+  pushAppearance();
+});
+
 // ---- 프로필 설정 창 (첫 실행) ----
 
 let started = false;
@@ -513,7 +666,7 @@ ipcMain.handle('profile-submit', (_e, data: { nickname?: unknown; tag?: unknown 
 
 ipcMain.on('setup-cancel', () => setupWindow?.close());
 
-// ---- 앱 라이프사이클 ----
+// ---- 자동 업데이트 ----
 
 // 패키징 + publish 설정(GitHub Releases 등)이 있을 때만 실제로 동작 — 없으면 조용히 스킵
 function setupAutoUpdate(): void {
@@ -527,6 +680,8 @@ function setupAutoUpdate(): void {
     console.log('[update] electron-updater unavailable');
   }
 }
+
+// ---- 앱 라이프사이클 ----
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

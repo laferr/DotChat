@@ -144,83 +144,208 @@
     }
   });
 
-  // ---- 외모 변경 패널 ----
+  // ---- 외모 변경 패널 (파츠 슬롯 + HSV) ----
 
   const appearanceBtn = document.getElementById('appearance-btn') as HTMLButtonElement;
   const panel = document.getElementById('appearance-panel')!;
   const panelClose = document.getElementById('panel-close') as HTMLButtonElement;
+  const slotTabs = document.getElementById('slot-tabs')!;
   const charGrid = document.getElementById('char-grid')!;
   const ownedCountEl = document.getElementById('owned-count')!;
+  const hsvH = document.getElementById('hsv-h') as HTMLInputElement;
+  const hsvS = document.getElementById('hsv-s') as HTMLInputElement;
+  const hsvV = document.getElementById('hsv-v') as HTMLInputElement;
 
-  const sheetImgs = new Map<string, Promise<HTMLImageElement>>();
-  let sheetUrlMap: Map<string, string> | null = null;
+  interface SlotDef {
+    key: string;
+    label: string;
+    layer: string;
+    removable: boolean;
+  }
+  const SLOTS: SlotDef[] = [
+    { key: 'race', label: '종족', layer: 'Head', removable: false },
+    { key: 'hair', label: '머리', layer: 'Hair', removable: true },
+    { key: 'armor', label: '갑옷', layer: 'Armor', removable: true },
+    { key: 'helmet', label: '헬멧', layer: 'Helmet', removable: true },
+    { key: 'weapon', label: '무기', layer: 'Weapon', removable: true },
+    { key: 'shield', label: '방패', layer: 'Shield', removable: true },
+    { key: 'mask', label: '마스크', layer: 'Mask', removable: true },
+    { key: 'back', label: '등', layer: 'Back', removable: true },
+    { key: 'cape', label: '망토', layer: 'Cape', removable: true },
+    { key: 'horns', label: '뿔', layer: 'Horns', removable: true },
+    { key: 'eyes', label: '눈', layer: 'Eyes', removable: false },
+    { key: 'ears', label: '귀', layer: 'Ears', removable: true },
+  ];
 
-  function sheetImage(name: string, url: string): Promise<HTMLImageElement> {
-    let promise = sheetImgs.get(name);
-    if (!promise) {
-      promise = new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('sheet image load failed'));
-        img.src = url;
+  let currentSlot = 'race';
+  let manifest: { layers: Record<string, string[]>; races: { name: string; ears: boolean }[] } | null =
+    null;
+
+  const iconCache = new Map<string, Promise<HTMLImageElement | null>>();
+  function partIcon(layer: string, name: string): Promise<HTMLImageElement | null> {
+    const key = `${layer}/${name}`;
+    let cached = iconCache.get(key);
+    if (!cached) {
+      cached = window.overlay.loadPart(layer, name).then((dataUrl) => {
+        if (!dataUrl) return null;
+        return new Promise<HTMLImageElement | null>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = dataUrl;
+        });
       });
-      sheetImgs.set(name, promise);
+      iconCache.set(key, cached);
     }
-    return promise;
+    return cached;
   }
 
-  async function renderGrid(): Promise<void> {
-    if (!sheetUrlMap) {
-      const sheets = await window.overlay.loadSprites();
-      sheetUrlMap = new Map(sheets.map((s) => [s.name, s.dataUrl]));
+  function ownedRaces(owned: string[]): string[] {
+    return owned.filter((id) => id.startsWith('race:')).map((id) => id.slice(5));
+  }
+
+  function slotOptions(slot: SlotDef, owned: string[]): string[] {
+    if (slot.key === 'race' || slot.key === 'eyes') return ownedRaces(owned);
+    if (slot.key === 'ears') {
+      return ownedRaces(owned).filter((n) => manifest?.races.find((r) => r.name === n)?.ears);
     }
+    return owned.filter((id) => id.startsWith(`${slot.layer}/`)).map((id) => id.split('/')[1]);
+  }
+
+  function equippedIn(slot: string, equipped: Appearance): PartChoice | null {
+    if (slot === 'race') return equipped.race;
+    const choice = (equipped as unknown as Record<string, PartChoice | undefined>)[slot];
+    if (choice) return choice;
+    if (slot === 'eyes') return { name: equipped.race.name }; // 눈 기본값 = 종족
+    return null;
+  }
+
+  function setSliders(choice: PartChoice | null): void {
+    const enabled = !!choice;
+    for (const el of [hsvH, hsvS, hsvV]) el.disabled = !enabled;
+    hsvH.value = String(choice?.h ?? 0);
+    hsvS.value = String(choice?.s ?? 0);
+    hsvV.value = String(choice?.v ?? 0);
+  }
+
+  async function renderPanel(): Promise<void> {
+    if (!manifest) manifest = (await window.overlay.getManifest()) as typeof manifest;
     const inv = await window.overlay.getInventory();
-    ownedCountEl.textContent = `${inv.owned.length}/${sheetUrlMap.size}`;
+    ownedCountEl.textContent = `보유 ${inv.owned.length}개`;
+
+    // 슬롯 탭
+    slotTabs.innerHTML = '';
+    for (const slot of SLOTS) {
+      const btn = document.createElement('button');
+      btn.className = slot.key === currentSlot ? 'slot-tab active' : 'slot-tab';
+      btn.textContent = slot.label;
+      btn.addEventListener('click', () => {
+        currentSlot = slot.key;
+        void renderPanel();
+      });
+      slotTabs.appendChild(btn);
+    }
+
+    const slotDef = SLOTS.find((s) => s.key === currentSlot)!;
+    const equipped = equippedIn(currentSlot, inv.equipped);
+    setSliders(equipped);
+
+    // 파츠 그리드
     charGrid.innerHTML = '';
-    for (const name of inv.owned) {
-      const url = sheetUrlMap.get(name);
-      if (!url) continue;
+    if (slotDef.removable) {
+      const removeCell = document.createElement('button');
+      removeCell.className = equipped ? 'char-cell remove-cell' : 'char-cell remove-cell current';
+      removeCell.textContent = '∅';
+      removeCell.title = '해제';
+      removeCell.addEventListener('click', () => window.overlay.equip({ slot: currentSlot, name: null }));
+      charGrid.appendChild(removeCell);
+    }
+    for (const name of slotOptions(slotDef, inv.owned)) {
       const cell = document.createElement('button');
-      cell.className = name === inv.current ? 'char-cell current' : 'char-cell';
+      cell.className = equipped?.name === name ? 'char-cell current' : 'char-cell';
       cell.title = name;
       const thumb = document.createElement('canvas');
+      thumb.width = 32;
+      thumb.height = 32;
       const label = document.createElement('span');
       label.className = 'cname';
-      label.textContent = name.replace('character_', '#');
+      label.textContent = name.replace(' [ShowEars]', '');
       cell.append(thumb, label);
-      void sheetImage(name, url).then((img) => {
-        const cw = Math.floor(img.width / 3);
-        const ch = Math.floor(img.height / 4);
-        thumb.width = cw;
-        thumb.height = ch;
+      void partIcon(slotDef.layer, name).then((img) => {
+        if (!img) return;
         const tctx = thumb.getContext('2d')!;
         tctx.imageSmoothingEnabled = false;
-        tctx.drawImage(img, cw, 0, cw, ch, 0, 0, cw, ch); // 정면 idle 셀 (1행 가운데)
+        tctx.drawImage(img, 0, 0, 32, 32, 0, 0, 32, 32); // 시트 좌상단 32x32 아이콘
       });
-      cell.addEventListener('click', () => window.overlay.equip(name));
+      cell.addEventListener('click', () =>
+        window.overlay.equip({
+          slot: currentSlot,
+          name,
+          h: Number(hsvH.value),
+          s: Number(hsvS.value),
+          v: Number(hsvV.value),
+        }),
+      );
       charGrid.appendChild(cell);
     }
   }
 
-  // ---- 옵션 패널 (투명도) ----
+  function applySliderChange(): void {
+    void window.overlay.getInventory().then((inv) => {
+      const equipped = equippedIn(currentSlot, inv.equipped);
+      if (!equipped) return;
+      window.overlay.equip({
+        slot: currentSlot,
+        name: equipped.name,
+        h: Number(hsvH.value),
+        s: Number(hsvS.value),
+        v: Number(hsvV.value),
+      });
+    });
+  }
+  for (const el of [hsvH, hsvS, hsvV]) el.addEventListener('change', applySliderChange);
+
+  appearanceBtn.addEventListener('click', () => {
+    optionsPanel.classList.remove('open');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) void renderPanel();
+  });
+  panelClose.addEventListener('click', () => panel.classList.remove('open'));
+  window.overlay.on('self:appearance', () => {
+    if (panel.classList.contains('open')) void renderPanel();
+  });
+  // 패널이 열린 채로 선물상자를 획득해도 새 파츠가 바로 보이도록
+  window.overlay.on('self:inventory', () => {
+    if (panel.classList.contains('open')) void renderPanel();
+  });
+
+  // ---- 옵션 패널 (투명도 / 표시 배율) ----
 
   const optionsBtn = document.getElementById('options-btn') as HTMLButtonElement;
   const optionsPanel = document.getElementById('options-panel')!;
   const optionsClose = document.getElementById('options-close') as HTMLButtonElement;
   const opacitySlider = document.getElementById('opacity-slider') as HTMLInputElement;
   const opacityVal = document.getElementById('opacity-val')!;
+  const scaleBtns = [...document.querySelectorAll('#scale-btns button')] as HTMLButtonElement[];
 
   function showOpacity(value: number): void {
     opacitySlider.value = String(Math.round(value * 100));
     opacityVal.textContent = `${Math.round(value * 100)}%`;
   }
 
+  function showScale(scale: number): void {
+    for (const btn of scaleBtns) {
+      btn.classList.toggle('active', Number(btn.dataset.scale) === scale);
+    }
+  }
+
   optionsBtn.addEventListener('click', async () => {
     panel.classList.remove('open');
     optionsPanel.classList.toggle('open');
     if (optionsPanel.classList.contains('open')) {
-      const s = (await window.overlay.getSettings()) as { opacity: number };
+      const s = await window.overlay.getSettings();
       showOpacity(s.opacity);
+      showScale(s.scale);
     }
   });
   optionsClose.addEventListener('click', () => optionsPanel.classList.remove('open'));
@@ -229,23 +354,21 @@
     opacityVal.textContent = `${opacitySlider.value}%`;
     window.overlay.setOpacity(v);
   });
+  for (const btn of scaleBtns) {
+    btn.addEventListener('click', () => {
+      window.overlay.setScale(Number(btn.dataset.scale));
+      showScale(Number(btn.dataset.scale));
+    });
+  }
   window.overlay.on('self:settings', (data) => {
-    if (optionsPanel.classList.contains('open')) showOpacity((data as { opacity: number }).opacity);
+    if (optionsPanel.classList.contains('open')) {
+      const s = data as { opacity: number; scale: number };
+      showOpacity(s.opacity);
+      showScale(s.scale);
+    }
   });
 
-  appearanceBtn.addEventListener('click', () => {
-    optionsPanel.classList.remove('open');
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) void renderGrid();
-  });
-  panelClose.addEventListener('click', () => panel.classList.remove('open'));
-  window.overlay.on('self:appearance', () => {
-    if (panel.classList.contains('open')) void renderGrid();
-  });
-  // 패널이 열린 채로 선물상자를 획득해도 새 스킨이 바로 보이도록
-  window.overlay.on('self:inventory', () => {
-    if (panel.classList.contains('open')) void renderGrid();
-  });
+  // ---- 입력/버튼 ----
 
   inputEl.addEventListener('keydown', (e) => {
     // isComposing 체크: 한글 IME 조합 중 Enter로 이중 전송 방지
@@ -257,7 +380,8 @@
   sendBtn.addEventListener('click', send);
   closeBtn.addEventListener('click', () => window.overlay.closeChat());
 
-  // 초기 상태 + 이벤트 구독
+  // ---- 초기 상태 + 이벤트 구독 ----
+
   const state = await window.overlay.getNetState();
   chatSelfId = state.selfId;
   setStatus(state.connected, state.online);
