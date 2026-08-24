@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+        font-size: 13px;
+      }
+      body {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        background: #2b2230;
+        color: #f0e8ec;
+        border: 1px solid #4a2837;
+        border-radius: 10px;
+      }
+      header {
+        -webkit-app-region: drag;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        background: #4a2837;
+        border-radius: 9px 9px 0 0;
+        user-select: none;
+      }
+      header .title {
+        font-weight: 700;
+        color: #fffdf7;
+      }
+      header .online {
+        font-size: 11px;
+        color: #f2a6b4;
+      }
+      header .spacer {
+        flex: 1;
+      }
+      header button {
+        -webkit-app-region: no-drag;
+        border: 0;
+        background: transparent;
+        color: #f0e8ec;
+        font-size: 14px;
+        cursor: pointer;
+        padding: 2px 8px;
+        border-radius: 5px;
+      }
+      header button:hover {
+        background: #6b3b52;
+      }
+      #messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #messages::-webkit-scrollbar {
+        width: 8px;
+      }
+      #messages::-webkit-scrollbar-thumb {
+        background: #4a2837;
+        border-radius: 4px;
+      }
+      .msg .meta {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        margin-bottom: 2px;
+      }
+      .msg .nick {
+        font-size: 12px;
+        font-weight: 700;
+        color: #f2a6b4;
+      }
+      .msg.self .nick {
+        color: #ffd66e;
+      }
+      .msg .time {
+        font-size: 10px;
+        color: #8d7d88;
+      }
+      .msg .text {
+        background: #3a2f40;
+        border-radius: 8px;
+        padding: 6px 10px;
+        width: fit-content;
+        max-width: 92%;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.4;
+      }
+      .msg.self .text {
+        background: #5c3247;
+      }
+      .sysmsg {
+        text-align: center;
+        font-size: 11px;
+        color: #8d7d88;
+      }
+      footer {
+        display: flex;
+        gap: 8px;
+        padding: 10px 12px;
+        border-top: 1px solid #4a2837;
+      }
+      #chat-input {
+        flex: 1;
+        border: 1px solid #4a2837;
+        background: #221a26;
+        color: #f0e8ec;
+        border-radius: 7px;
+        padding: 8px 10px;
+        font-size: 13px;
+        outline: none;
+      }
+      #chat-input:focus {
+        border-color: #d94f63;
+      }
+      #send-btn {
+        border: 0;
+        background: #d94f63;
+        color: #fffdf7;
+        font-weight: 700;
+        border-radius: 7px;
+        padding: 0 14px;
+        cursor: pointer;
+      }
+      #send-btn:hover {
+        background: #e86a7c;
+      }
+      #send-btn:disabled {
+        background: #6b5b64;
+        cursor: default;
+      }
+      #img-btn {
+        border: 0;
+        background: #3a2f40;
+        color: #f0e8ec;
+        border-radius: 7px;
+        padding: 0 10px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      #img-btn:hover:enabled {
+        background: #6b3b52;
+      }
+      #img-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .msg-image {
+        display: block;
+        max-width: 180px;
+        max-height: 140px;
+        border-radius: 6px;
+        cursor: zoom-in;
+      }
+      #appearance-panel,
+      #options-panel {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 41px;
+        bottom: 55px;
+        display: none;
+        flex-direction: column;
+        background: #221a26;
+        border-top: 1px solid #4a2837;
+        z-index: 5;
+      }
+      #appearance-panel.open,
+      #options-panel.open {
+        display: flex;
+      }
+      .options-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 4px 14px;
+      }
+      .options-body label {
+        font-size: 12px;
+        color: #f2a6b4;
+        font-weight: 700;
+      }
+      #opacity-val {
+        color: #f0e8ec;
+      }
+      #opacity-slider {
+        width: 100%;
+        accent-color: #d94f63;
+      }
+      .options-body .hint {
+        font-size: 11px;
+        color: #8d7d88;
+        line-height: 1.5;
+        margin: 0;
+      }
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        font-weight: 700;
+        color: #f2a6b4;
+      }
+      .panel-head button {
+        border: 0;
+        background: transparent;
+        color: #f0e8ec;
+        cursor: pointer;
+        border-radius: 5px;
+        padding: 2px 8px;
+      }
+      .panel-head button:hover {
+        background: #6b3b52;
+      }
+      #owned-count {
+        color: #8d7d88;
+        font-weight: 400;
+        font-size: 11px;
+      }
+      #char-grid {
+        flex: 1;
+        overflow-y: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+        gap: 8px;
+        padding: 0 12px 12px;
+        align-content: start;
+      }
+      #char-grid::-webkit-scrollbar {
+        width: 8px;
+      }
+      #char-grid::-webkit-scrollbar-thumb {
+        background: #4a2837;
+        border-radius: 4px;
+      }
+      .char-cell {
+        border: 2px solid #4a2837;
+        background: #2b2230;
+        border-radius: 8px;
+        padding: 6px 0 3px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      .char-cell:hover {
+        border-color: #d94f63;
+      }
+      .char-cell.current {
+        border-color: #ffd66e;
+      }
+      .char-cell canvas {
+        width: 32px;
+        height: 40px;
+        image-rendering: pixelated;
+      }
+      .char-cell .cname {
+        font-size: 9px;
+        color: #8d7d88;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="title">DotChat</span>
+      <span class="online" id="online">접속 확인 중…</span>
+      <span class="spacer"></span>
+      <button id="appearance-btn" title="외모 변경">👕</button>
+      <button id="options-btn" title="옵션">⚙️</button>
+      <button id="close-btn" title="닫기">✕</button>
+    </header>
+    <div id="options-panel">
+      <div class="panel-head">
+        <span>옵션</span>
+        <button id="options-close">✕</button>
+      </div>
+      <div class="options-body">
+        <label for="opacity-slider">콘텐츠 투명도 <span id="opacity-val"></span></label>
+        <input id="opacity-slider" type="range" min="10" max="100" step="5" />
+        <p class="hint">작업표시줄 위 캐릭터·말풍선·버튼의 투명도입니다. (최소 10%)</p>
+      </div>
+    </div>
+    <div id="appearance-panel">
+      <div class="panel-head">
+        <span>외모 변경 <span id="owned-count"></span></span>
+        <button id="panel-close">✕</button>
+      </div>
+      <div id="char-grid"></div>
+    </div>
+    <div id="messages"></div>
+    <footer>
+      <button id="img-btn" title="이미지 전송 (Ctrl+V로 붙여넣기도 가능)">📎</button>
+      <input id="img-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+      <input id="chat-input" maxlength="200" placeholder="메시지 입력 후 Enter" autocomplete="off" />
+      <button id="send-btn">전송</button>
+    </footer>
+    <script src="../../dist/renderer/chat.js"></script>
+  </body>
+</html>

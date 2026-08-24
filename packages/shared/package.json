@@ -1,0 +1,13 @@
+{
+  "name": "@dotchat/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/protocol.js",
+  "types": "dist/protocol.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

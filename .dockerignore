@@ -1,0 +1,9 @@
+node_modules
+packages/*/node_modules
+packages/*/dist
+packages/client/release
+packages/server/uploads
+sprite_split
+tools
+.git
+*.log

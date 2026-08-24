@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>DotChat sprite preview</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #8b7d88;
+        font-family: monospace;
+        color: #fff;
+      }
+      .row {
+        display: flex;
+        align-items: flex-end;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+      canvas {
+        image-rendering: pixelated;
+      }
+      #error {
+        color: #ffd0d0;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="error"></div>
+    <div class="row" id="static"></div>
+    <div class="row">
+      <canvas id="anim" width="200" height="140" style="width: 400px; height: 280px"></canvas>
+    </div>
+    <script src="../packages/client/dist/renderer/sprite.js"></script>
+    <script>
+      try {
+        const frames = buildDotFrames();
+        const staticRow = document.getElementById('static');
+        for (const [name, scale] of [
+          ['idle', 3],
+          ['walk', 3],
+          ['blink', 3],
+          ['idle', 6],
+          ['walk', 6],
+        ]) {
+          const c = document.createElement('canvas');
+          c.width = frames.width;
+          c.height = frames.height;
+          c.style.width = frames.width * scale + 'px';
+          c.style.height = frames.height * scale + 'px';
+          c.getContext('2d').drawImage(frames[name], 0, 0);
+          staticRow.appendChild(c);
+        }
+
+        // 걷기 애니메이션
+        const anim = document.getElementById('anim');
+        const ctx = anim.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        let x = 30;
+        let dir = 1;
+        let clock = 0;
+        let last = 0;
+        function tick(t) {
+          const dt = Math.min((t - last) / 1000, 0.05);
+          last = t;
+          clock += dt;
+          x += dir * 25 * dt;
+          if (x < 20) dir = 1;
+          if (x > 150) dir = -1;
+          ctx.clearRect(0, 0, anim.width, anim.height);
+          const step = Math.floor(clock * 6) % 2;
+          const frame = step === 0 ? frames.walk : frames.idle;
+          ctx.drawImage(frame, Math.round(x), 100 - frames.height + (step === 0 ? 0 : 1));
+          requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      } catch (err) {
+        document.getElementById('error').textContent = String(err && err.stack ? err.stack : err);
+      }
+    </script>
+  </body>
+</html>
