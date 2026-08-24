@@ -657,6 +657,27 @@
   const shopCoinsEl = document.getElementById('shop-coins')!;
 
   function stylePreview(el: HTMLElement, item: CosmeticItem): void {
+    if (item.kind === 'aura' && item.id.startsWith('aura-fx-')) {
+      // 이펙트 시트 오오라: 첫 프레임 미리보기
+      const effectId = item.id.slice(8);
+      const preview = document.createElement('canvas');
+      preview.width = 26;
+      preview.height = 26;
+      preview.style.width = '26px';
+      preview.style.height = '26px';
+      el.appendChild(preview);
+      void (async () => {
+        if (!extrasManifest) extrasManifest = await window.overlay.getExtras();
+        const def = extrasManifest?.effects?.find((e) => e.id === effectId);
+        if (!def) return;
+        const sheet = await loadImageFromExtra(`effects/${def.file}`);
+        if (!sheet) return;
+        const pctx = preview.getContext('2d')!;
+        pctx.imageSmoothingEnabled = false;
+        pctx.drawImage(sheet, 0, 0, def.fw, def.fh, 0, 0, 26, 26);
+      })();
+      return;
+    }
     if (item.kind === 'aura') {
       const colors = AURA_COLORS[item.id];
       el.style.borderRadius = '50%';

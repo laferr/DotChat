@@ -58,6 +58,28 @@ fs.copyFileSync(path.join(SRC, 'rungame', 'Trap3.png'), path.join(DEST, 'rungame
 fs.copyFileSync(path.join(SRC, 'speech bubble, emojis, reaction.png'), path.join(DEST, 'reaction.png'));
 fs.copyFileSync(path.join(SRC, 'Book.png'), path.join(DEST, 'book.png'));
 
+// 이펙트 오오라 (상점 판매용) — 프레임 크기는 파일별 정의
+const EFFECT_DEFS = [
+  { id: 'ChargeUp', file: 'ChargeUp.png', fw: 48, fh: 48 },
+  { id: 'HeartBeat', file: 'HeartBeat.png', fw: 16, fh: 16 },
+  { id: 'Poison', file: 'Poison.png', fw: 64, fh: 64 },
+  { id: 'pipo021', file: 'pipo-mapeffect021_192.png', fw: 192, fh: 192 },
+  { id: 'pipo022', file: 'pipo-mapeffect022_192.png', fw: 192, fh: 192 },
+  { id: 'pipo023', file: 'pipo-mapeffect023_192.png', fw: 192, fh: 192 },
+  { id: 'pipo024', file: 'pipo-mapeffect024_192.png', fw: 192, fh: 192 },
+  { id: 'pipo025', file: 'pipo-mapeffect025_192.png', fw: 192, fh: 192 },
+];
+fs.mkdirSync(path.join(DEST, 'effects'), { recursive: true });
+const effects = [];
+for (const def of EFFECT_DEFS) {
+  const src = path.join(SRC, 'effects', def.file);
+  const { w, h } = pngSize(src);
+  fs.copyFileSync(src, path.join(DEST, 'effects', def.file));
+  const cols = Math.floor(w / def.fw);
+  const count = cols * Math.floor(h / def.fh);
+  effects.push({ ...def, cols, count });
+}
+
 const manifest = {
   fish,
   tools: {
@@ -67,6 +89,7 @@ const manifest = {
     files: TOOL_STRIPS,
   },
   reaction: { cell: 16, cols: 9, rows: 7 },
+  effects,
 };
 fs.writeFileSync(path.join(DEST, 'manifest-extras.json'), JSON.stringify(manifest, null, 2), 'utf8');
 console.log(`물고기 ${fish.length}종 + 도구/러너/리액션 임포트 완료 → ${DEST}`);

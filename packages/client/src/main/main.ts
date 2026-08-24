@@ -592,6 +592,7 @@ ipcMain.handle('load-extra', (_e, relPath: string) => {
     rel === 'book.png' ||
     /^tools\/tools_\w+_strip\d+\.png$/.test(rel) ||
     /^rungame\/(Arrow|Trap3)\.png$/.test(rel) ||
+    /^effects\/[\w\-]+\.png$/.test(rel) ||
     (/^fish\/[\w\- ]+\.png$/.test(rel) &&
       extrasManifest?.fish.includes(rel.slice(5, -4)) === true);
   if (allowed && extrasManifest) {

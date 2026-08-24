@@ -24,10 +24,20 @@ interface NetChatMessage {
   senderAppearance?: Appearance;
 }
 
+interface EffectDef {
+  id: string;
+  file: string;
+  fw: number;
+  fh: number;
+  cols: number;
+  count: number;
+}
+
 interface ExtrasManifest {
   fish: string[];
   tools: { frameW: number; frameH: number; strips: Record<string, number>; files: Record<string, string> };
   reaction: { cell: number; cols: number; rows: number };
+  effects?: EffectDef[];
 }
 
 interface GiftClaimResult {
@@ -524,10 +534,51 @@ function drawName(actor: Actor): void {
   stageCtx.globalAlpha = 1;
 }
 
+// 이펙트 시트 오오라 (상점 프리미엄) — 캐릭터 중심에 애니메이션 시트 재생
+const effectSheets = new Map<string, HTMLImageElement | null>();
+
+function drawFxAura(actor: Actor, time: number, effectId: string): void {
+  if (!extras?.effects) return;
+  const def = extras.effects.find((e) => e.id === effectId);
+  if (!def) return;
+  if (!effectSheets.has(effectId)) {
+    effectSheets.set(effectId, null);
+    void loadExtraImage(`effects/${def.file}`).then((img) => effectSheets.set(effectId, img));
+  }
+  const sheet = effectSheets.get(effectId);
+  if (!sheet) return;
+  const frame = Math.floor(time / 85) % def.count;
+  const sx = (frame % def.cols) * def.fw;
+  const sy = Math.floor(frame / def.cols) * def.fh;
+  const vs = viewScale;
+  const size = 46 * vs; // 캐릭터를 감싸는 크기
+  const cx = actor.x;
+  const cy = viewH - (ART_H / 2) * vs + actor.hopY;
+  stageCtx.save();
+  stageCtx.globalAlpha = 0.85;
+  stageCtx.drawImage(
+    sheet,
+    sx,
+    sy,
+    def.fw,
+    def.fh,
+    Math.round(cx - size / 2),
+    Math.round(cy - size / 2),
+    size,
+    size,
+  );
+  stageCtx.restore();
+}
+
 // 오오라: 발밑 글로우 + 떠오르는 반짝이 (상태 없이 시간 기반)
 function drawAura(actor: Actor, time: number): void {
   const auraId = actor.appearance.aura;
-  if (!auraId || !(auraId in AURA_COLORS)) return;
+  if (!auraId) return;
+  if (auraId.startsWith('aura-fx-')) {
+    drawFxAura(actor, time, auraId.slice(8));
+    return;
+  }
+  if (!(auraId in AURA_COLORS)) return;
   const colors = AURA_COLORS[auraId];
   const main = colors ? colors[0] : `hsl(${(time / 15) % 360} 85% 60%)`;
   const glow = colors ? colors[1] : `hsl(${(time / 15 + 90) % 360} 85% 75%)`;
