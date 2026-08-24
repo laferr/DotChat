@@ -16,6 +16,7 @@ const NET_CHANNELS = new Set([
   'self:update',
   'self:unread',
   'self:coins',
+  'self:wallet',
   'net:history',
   'net:player-read',
   'net:slot-win',
@@ -56,6 +57,9 @@ contextBridge.exposeInMainWorld('overlay', {
   claimGift: (): Promise<unknown> => ipcRenderer.invoke('claim-gift'),
   getCoins: (): Promise<number> => ipcRenderer.invoke('get-coins'),
   playSlot: (): Promise<unknown> => ipcRenderer.invoke('slot-play'),
+  getWallet: (): Promise<unknown> => ipcRenderer.invoke('get-wallet'),
+  buyItem: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy', itemId),
+  getRanking: (): Promise<unknown[]> => ipcRenderer.invoke('ranking'),
   equip: (payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }) =>
     ipcRenderer.send('equip', payload),
   toggleChat: () => ipcRenderer.send('toggle-chat'),

@@ -16,6 +16,7 @@ import {
   PlayerState,
   sanitizeAppearance,
   ServerToClientEvents,
+  SHOP_ITEMS,
 } from '@dotchat/shared';
 
 // 개발 모드는 설치판과 싱글 인스턴스 락이 충돌하지 않도록 별도 userData 사용
@@ -295,6 +296,13 @@ function connect(): void {
   socket.on('coins', (coins) => {
     myCoins = coins;
     broadcast('self:coins', coins);
+  });
+
+  socket.on('wallet', (data) => {
+    myCoins = data.coins;
+    myItems = data.items;
+    broadcast('self:coins', myCoins);
+    broadcast('self:wallet', data);
   });
 
   socket.on('slot-win', (data) => {
@@ -664,8 +672,43 @@ ipcMain.handle('claim-gift', (): GiftResult => {
 // ---- 슬롯머신 (판정은 서버, 파츠 당첨 시 로컬 지급) ----
 
 let myCoins = 0;
+let myItems: string[] = [];
 
 ipcMain.handle('get-coins', () => myCoins);
+
+ipcMain.handle('get-wallet', () => ({ coins: myCoins, items: myItems }));
+
+ipcMain.handle('shop-buy', (_e, itemId: string) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('buy', String(itemId), (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') myCoins = res.coins;
+      if (Array.isArray(res.items)) myItems = res.items;
+      broadcast('self:coins', myCoins);
+      broadcast('self:wallet', { coins: myCoins, items: myItems });
+      resolve(res);
+    });
+  });
+});
+
+ipcMain.handle('ranking', () => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve([]);
+      return;
+    }
+    (socket as any).timeout(10000).emit('ranking', (err: unknown, rows: unknown) => {
+      resolve(err || !Array.isArray(rows) ? [] : rows);
+    });
+  });
+});
 
 ipcMain.handle('slot-play', () => {
   return new Promise((resolve) => {
@@ -723,6 +766,21 @@ ipcMain.on('equip', (_e, payload: { slot?: unknown; name?: unknown; h?: unknown;
       if (race.ears) inventory.equipped.ears = { name: race.name };
       else delete inventory.equipped.ears;
     }
+    pushAppearance();
+    return;
+  }
+
+  // 코인 상점 치장 슬롯
+  if (slot === 'aura' || slot === 'bubble' || slot === 'namecolor') {
+    const field = slot === 'aura' ? 'aura' : slot === 'bubble' ? 'bubbleSkin' : 'nameColor';
+    if (!choice) {
+      delete inventory.equipped[field];
+      pushAppearance();
+      return;
+    }
+    const item = SHOP_ITEMS.find((i) => i.id === choice.name);
+    if (!item || !myItems.includes(item.id)) return;
+    inventory.equipped[field] = slot === 'namecolor' ? item.value : item.id;
     pushAppearance();
     return;
   }

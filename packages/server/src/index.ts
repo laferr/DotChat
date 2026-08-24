@@ -5,11 +5,13 @@ import * as path from 'path';
 import { Server } from 'socket.io';
 import {
   ACTION_IDS,
+  Appearance,
   CHAT_HISTORY_MAX,
   CHAT_RETENTION_DAYS,
   ChatMessage,
   COIN_PER_MINUTE,
   COIN_STARTER,
+  SHOP_ITEMS,
   SLOT_COST,
   SlotKind,
   ClientToServerEvents,
@@ -79,20 +81,48 @@ loadHistory();
 // ---- 코인 지갑 (닉네임#태그 키, 볼륨 저장, 서버 권위) ----
 
 const COINS_PATH = path.join(UPLOAD_DIR, 'coins.json');
-let wallets: Record<string, number> = {};
+
+interface Wallet {
+  coins: number;
+  items: string[];
+}
+
+let wallets: Record<string, Wallet> = {};
 
 function loadWallets(): void {
   try {
     const raw = JSON.parse(fs.readFileSync(COINS_PATH, 'utf8'));
     if (raw && typeof raw === 'object') {
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'number' && Number.isFinite(v)) wallets[k] = Math.max(0, Math.floor(v));
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          wallets[k] = { coins: Math.max(0, Math.floor(v)), items: [] }; // 구버전(숫자만) 마이그레이션
+        } else if (v && typeof v === 'object') {
+          const w = v as { coins?: unknown; items?: unknown };
+          wallets[k] = {
+            coins: Math.max(0, Math.floor(Number(w.coins) || 0)),
+            items: Array.isArray(w.items) ? w.items.filter((i) => typeof i === 'string') : [],
+          };
+        }
       }
     }
     console.log(`[coins] ${Object.keys(wallets).length}개 지갑 로드`);
   } catch {
     wallets = {};
   }
+}
+
+// 미구매 상점 치장은 외형에서 제거 (조작 방지)
+function stripUnownedCosmetics(appearance: Appearance, key: string): Appearance {
+  const items = wallets[key]?.items ?? [];
+  if (appearance.aura && !items.includes(appearance.aura)) delete appearance.aura;
+  if (appearance.bubbleSkin && !items.includes(appearance.bubbleSkin)) delete appearance.bubbleSkin;
+  if (
+    appearance.nameColor &&
+    !SHOP_ITEMS.some((i) => i.kind === 'namecolor' && i.value === appearance.nameColor && items.includes(i.id))
+  ) {
+    delete appearance.nameColor;
+  }
+  return appearance;
 }
 
 function saveWallets(): void {
@@ -117,9 +147,10 @@ setInterval(() => {
     const key = walletKey(player);
     if (!credited.has(key)) {
       credited.add(key);
-      wallets[key] = (wallets[key] ?? 0) + COIN_PER_MINUTE;
+      wallets[key] = wallets[key] ?? { coins: 0, items: [] };
+      wallets[key].coins += COIN_PER_MINUTE;
     }
-    io.sockets.sockets.get(socketId)?.emit('coins', wallets[key]);
+    io.sockets.sockets.get(socketId)?.emit('coins', wallets[key].coins);
   }
   saveWallets();
 }, 60 * 1000);
@@ -228,16 +259,17 @@ io.on('connection', (socket) => {
       walking: true,
       lastReadTs: 0, // 채팅창을 열어 읽기 전까지는 안읽음으로 집계
     };
-    players.set(socket.id, player);
     // 신규 지갑(기존 유저의 첫 업데이트 접속 포함)에 기본 코인 지급
     const key = walletKey(player);
     if (!(key in wallets)) {
-      wallets[key] = COIN_STARTER;
+      wallets[key] = { coins: COIN_STARTER, items: [] };
       saveWallets();
       console.log(`[coins] ${key} 신규 지갑 +${COIN_STARTER}`);
     }
+    stripUnownedCosmetics(player.appearance, key);
+    players.set(socket.id, player);
     socket.emit('welcome', { selfId: socket.id, players: [...players.values()] });
-    socket.emit('coins', wallets[key]);
+    socket.emit('wallet', { coins: wallets[key].coins, items: [...wallets[key].items] });
     socket.emit('chat-history', chatHistory.slice(-100));
     socket.broadcast.emit('player-joined', player);
     console.log(`+ ${nickname}#${tag} [${appearance.race.name}] — ${players.size}명 접속중`);
@@ -295,22 +327,22 @@ io.on('connection', (socket) => {
       return;
     }
     const key = walletKey(player);
-    const balance = wallets[key] ?? 0;
-    if (balance < SLOT_COST) {
-      reply({ ok: false, error: `코인이 부족해요. (${balance}/${SLOT_COST})` });
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [] });
+    if (wallet.coins < SLOT_COST) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${SLOT_COST})` });
       return;
     }
     lastSlotAt.set(socket.id, now);
     const roll = Math.random() * 100;
     const row = SLOT_TABLE.find((r) => roll < r.upto)!;
-    wallets[key] = balance - SLOT_COST + row.delta;
+    wallet.coins = wallet.coins - SLOT_COST + row.delta;
     saveWallets();
     reply({
       ok: true,
       kind: row.kind,
       delta: row.delta,
       reels: slotReels(row.kind),
-      coins: wallets[key],
+      coins: wallet.coins,
     });
     if (row.kind === 'part' || row.kind === 'jackpot' || row.kind === 'mega') {
       io.emit('slot-win', {
@@ -320,8 +352,46 @@ io.on('connection', (socket) => {
         kind: row.kind,
         delta: row.delta,
       });
-      console.log(`[slot] ${key}: ${row.kind} (+${row.delta}) 잔액 ${wallets[key]}`);
+      console.log(`[slot] ${key}: ${row.kind} (+${row.delta}) 잔액 ${wallet.coins}`);
     }
+  });
+
+  socket.on('buy', (itemId, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const item = SHOP_ITEMS.find((i) => i.id === String(itemId));
+    if (!item) {
+      reply({ ok: false, error: '없는 상품이에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [] });
+    if (wallet.items.includes(item.id)) {
+      reply({ ok: false, error: '이미 보유한 상품이에요.', coins: wallet.coins, items: [...wallet.items] });
+      return;
+    }
+    if (wallet.coins < item.price) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${item.price})`, coins: wallet.coins });
+      return;
+    }
+    wallet.coins -= item.price;
+    wallet.items.push(item.id);
+    saveWallets();
+    reply({ ok: true, coins: wallet.coins, items: [...wallet.items] });
+    console.log(`[shop] ${key}: ${item.id} 구매 (-${item.price}) 잔액 ${wallet.coins}`);
+  });
+
+  socket.on('ranking', (ack) => {
+    if (typeof ack !== 'function') return;
+    const rows = Object.entries(wallets)
+      .map(([name, w]) => ({ name, coins: w.coins }))
+      .sort((a, b) => b.coins - a.coins)
+      .slice(0, 5);
+    ack(rows);
   });
 
   socket.on('read', (ts) => {
@@ -337,6 +407,7 @@ io.on('connection', (socket) => {
     const player = players.get(socket.id);
     const appearance = sanitizeAppearance(raw);
     if (!player || !appearance) return;
+    stripUnownedCosmetics(appearance, walletKey(player));
     player.appearance = appearance;
     socket.broadcast.emit('player-appearance', { id: socket.id, appearance });
     console.log(`[appearance] ${player.nickname} → ${appearance.race.name}`);

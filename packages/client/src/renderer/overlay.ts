@@ -78,6 +78,9 @@ interface OverlayApi {
   claimGift(): Promise<GiftClaimResult>;
   getCoins(): Promise<number>;
   playSlot(): Promise<unknown>;
+  getWallet(): Promise<{ coins: number; items: string[] }>;
+  buyItem(itemId: string): Promise<unknown>;
+  getRanking(): Promise<unknown[]>;
   equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
   toggleChat(): void;
   closeChat(): void;
@@ -421,8 +424,9 @@ function drawBubble(actor: Actor, now: number): void {
   const remain = (bubble.until - now) / 1000;
   stageCtx.globalAlpha = Math.min(1, remain / 0.3);
 
-  stageCtx.fillStyle = '#fffdf7';
-  stageCtx.strokeStyle = '#4a2837';
+  const bubbleStyle = BUBBLE_STYLES[actor.appearance.bubbleSkin ?? ''] ?? BUBBLE_STYLES.default;
+  stageCtx.fillStyle = bubbleStyle.fill;
+  stageCtx.strokeStyle = bubbleStyle.stroke;
   stageCtx.lineWidth = 1.5;
   roundRect(bx, by, w, h, 6);
   stageCtx.fill();
@@ -446,7 +450,7 @@ function drawBubble(actor: Actor, now: number): void {
       stageCtx.imageSmoothingEnabled = false;
     }
   } else {
-    stageCtx.fillStyle = '#3a2430';
+    stageCtx.fillStyle = bubbleStyle.text;
     bubble.lines.forEach((line, i) => {
       stageCtx.fillText(line, bx + padX, by + padY + (i + 1) * lineHeight - 4);
     });
@@ -465,14 +469,43 @@ function drawName(actor: Actor): void {
   stageCtx.strokeStyle = 'rgba(0,0,0,0.7)';
   stageCtx.lineWidth = 3;
   stageCtx.strokeText(actor.nickname, x, y);
-  stageCtx.fillStyle = '#fffdf7';
+  stageCtx.fillStyle = actor.appearance.nameColor ?? '#fffdf7';
   stageCtx.fillText(actor.nickname, x, y);
   stageCtx.globalAlpha = 1;
+}
+
+// 오오라: 발밑 글로우 + 떠오르는 반짝이 (상태 없이 시간 기반)
+function drawAura(actor: Actor, time: number): void {
+  const auraId = actor.appearance.aura;
+  if (!auraId || !(auraId in AURA_COLORS)) return;
+  const colors = AURA_COLORS[auraId];
+  const main = colors ? colors[0] : `hsl(${(time / 15) % 360} 85% 60%)`;
+  const glow = colors ? colors[1] : `hsl(${(time / 15 + 90) % 360} 85% 75%)`;
+  const box = actorBox(actor);
+
+  stageCtx.save();
+  stageCtx.globalAlpha = 0.22 + 0.08 * Math.sin(time / 320);
+  stageCtx.fillStyle = main;
+  stageCtx.beginPath();
+  stageCtx.ellipse(actor.x, viewH - 3, box.w * 0.85, 4 * viewScale, 0, 0, Math.PI * 2);
+  stageCtx.fill();
+
+  const size = Math.max(2, Math.round(viewScale * 1.5));
+  for (let i = 0; i < 6; i++) {
+    const rise = ((time / 16 + i * 41) % 110) / 110; // 0→1 상승 후 리셋
+    const px = actor.x + Math.cos(time / 600 + i * 2.1) * box.w * 0.6;
+    const py = viewH - 6 - rise * box.h * 1.15;
+    stageCtx.globalAlpha = 0.85 * (1 - rise);
+    stageCtx.fillStyle = i % 2 ? main : glow;
+    stageCtx.fillRect(Math.round(px), Math.round(py), size, size);
+  }
+  stageCtx.restore();
 }
 
 function drawActor(actor: Actor, now: number): void {
   const frame = currentFrame(actor);
   if (!frame) return;
+  drawAura(actor, now);
   const size = PH_CELL * viewScale;
   const top = cellTop(actor);
   const left = Math.round(actor.x - size / 2);

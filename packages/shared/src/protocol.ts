@@ -17,10 +17,16 @@ export interface PartChoice {
   v?: number;
 }
 
-/** PixelHeroes 파츠 조합 외형 */
+/** PixelHeroes 파츠 조합 외형 (+ 코인 상점 치장) */
 export interface Appearance {
   /** 종족 — Body/Head/Arms 세트, hsv는 피부톤 */
   race: PartChoice;
+  /** 코인 상점: 오오라 아이템 id */
+  aura?: string;
+  /** 코인 상점: 말풍선 스킨 id */
+  bubbleSkin?: string;
+  /** 코인 상점: 닉네임 색 (#rrggbb) */
+  nameColor?: string;
   eyes?: PartChoice | null;
   ears?: PartChoice | null;
   hair?: PartChoice | null;
@@ -141,6 +147,10 @@ export interface ClientToServerEvents {
   read: (ts: number) => void;
   /** 슬롯머신 1회 (비용 SLOT_COST, 판정은 서버) */
   slot: (ack: (res: SlotResult) => void) => void;
+  /** 상점 구매 */
+  buy: (itemId: string, ack: (res: { ok: boolean; error?: string; coins?: number; items?: string[] }) => void) => void;
+  /** 코인 랭킹 톱5 */
+  ranking: (ack: (rows: { name: string; coins: number }[]) => void) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */
   image: (
     payload: { data: ArrayBuffer; mime: string; thumb: string; w: number; h: number },
@@ -161,6 +171,8 @@ export interface ServerToClientEvents {
   'player-read': (data: { id: string; ts: number }) => void;
   /** 내 코인 잔액 (접속/적립/슬롯 정산 시) */
   coins: (coins: number) => void;
+  /** 내 지갑 전체 (잔액 + 보유 상점 아이템) */
+  wallet: (data: { coins: number; items: string[] }) => void;
   /** 슬롯 대박 전체 알림 */
   'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
 }
@@ -191,8 +203,43 @@ export function sanitizeAppearance(raw: unknown): Appearance | null {
     const choice = part(source[slot]);
     if (choice) result[slot] = choice;
   }
+  const aura = String(source.aura ?? '');
+  if (SHOP_ITEMS.some((i) => i.kind === 'aura' && i.id === aura)) result.aura = aura;
+  const bubbleSkin = String(source.bubbleSkin ?? '');
+  if (SHOP_ITEMS.some((i) => i.kind === 'bubble' && i.id === bubbleSkin)) result.bubbleSkin = bubbleSkin;
+  const nameColor = String(source.nameColor ?? '');
+  if (/^#[0-9a-fA-F]{6}$/.test(nameColor)) result.nameColor = nameColor;
   return result;
 }
+
+// ---- 코인 상점 ----
+
+export interface ShopItem {
+  id: string;
+  kind: 'aura' | 'bubble' | 'namecolor';
+  name: string;
+  price: number;
+  /** namecolor의 실제 색상값 */
+  value?: string;
+}
+
+export const SHOP_ITEMS: ShopItem[] = [
+  { id: 'aura-spark', kind: 'aura', name: '골드 스파크', price: 40 },
+  { id: 'aura-ember', kind: 'aura', name: '불꽃 오오라', price: 40 },
+  { id: 'aura-frost', kind: 'aura', name: '서리 오오라', price: 40 },
+  { id: 'aura-shadow', kind: 'aura', name: '섀도 오오라', price: 60 },
+  { id: 'aura-rainbow', kind: 'aura', name: '무지개 오오라', price: 120 },
+  { id: 'bubble-dark', kind: 'bubble', name: '다크 말풍선', price: 30 },
+  { id: 'bubble-mint', kind: 'bubble', name: '민트 말풍선', price: 30 },
+  { id: 'bubble-pink', kind: 'bubble', name: '핑크 말풍선', price: 30 },
+  { id: 'bubble-gold', kind: 'bubble', name: '금테 말풍선', price: 50 },
+  { id: 'bubble-royal', kind: 'bubble', name: '로열 말풍선', price: 50 },
+  { id: 'name-gold', kind: 'namecolor', name: '골드 닉네임', price: 20, value: '#ffd66e' },
+  { id: 'name-sky', kind: 'namecolor', name: '하늘 닉네임', price: 20, value: '#6ec3ff' },
+  { id: 'name-lime', kind: 'namecolor', name: '라임 닉네임', price: 20, value: '#8be06a' },
+  { id: 'name-pink', kind: 'namecolor', name: '핑크 닉네임', price: 20, value: '#ff8dc7' },
+  { id: 'name-red', kind: 'namecolor', name: '레드 닉네임', price: 20, value: '#ff6b6b' },
+];
 
 /** 말풍선 표시 시간(ms): 기본 5초 + 글자당 0.05초, 최대 10초 */
 export function bubbleDurationMs(text: string): number {

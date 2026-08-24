@@ -88,6 +88,7 @@
     const nick = document.createElement('span');
     nick.className = 'nick';
     nick.textContent = msg.tag ? `${msg.nickname}#${msg.tag}` : msg.nickname;
+    if (msg.senderAppearance?.nameColor) nick.style.color = msg.senderAppearance.nameColor;
     const time = document.createElement('span');
     time.className = 'time';
     time.textContent = formatTime(msg.ts);
@@ -167,7 +168,11 @@
     if (text.startsWith('/')) {
       const word = text.slice(1).split(/\s+/)[0];
       if (word === '명령어' || word === '도움말') {
-        addSystemMessage(`명령어: ${Object.keys(CHAT_COMMANDS).map((c) => '/' + c).join(' ')}`);
+        addSystemMessage(`명령어: ${Object.keys(CHAT_COMMANDS).map((c) => '/' + c).join(' ')} /랭킹`);
+        return;
+      }
+      if (word === '랭킹') {
+        void showRanking();
         return;
       }
       const command = CHAT_COMMANDS[word];
@@ -259,7 +264,6 @@
 
   // ---- 외모 변경 패널 (파츠 슬롯 + HSV) ----
 
-  const appearanceBtn = document.getElementById('appearance-btn') as HTMLButtonElement;
   const panel = document.getElementById('appearance-panel')!;
   const panelClose = document.getElementById('panel-close') as HTMLButtonElement;
   const slotTabs = document.getElementById('slot-tabs')!;
@@ -418,12 +422,6 @@
   }
   for (const el of [hsvH, hsvS, hsvV]) el.addEventListener('change', applySliderChange);
 
-  appearanceBtn.addEventListener('click', () => {
-    optionsPanel.classList.remove('open');
-    slotPanel.classList.remove('open');
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) void renderPanel();
-  });
   panelClose.addEventListener('click', () => panel.classList.remove('open'));
   window.overlay.on('self:appearance', () => {
     if (panel.classList.contains('open')) void renderPanel();
@@ -435,7 +433,6 @@
 
   // ---- 슬롯머신 ----
 
-  const slotBtn = document.getElementById('slot-btn') as HTMLButtonElement;
   const slotPanel = document.getElementById('slot-panel')!;
   const slotClose = document.getElementById('slot-close') as HTMLButtonElement;
   const slotBalance = document.getElementById('slot-balance')!;
@@ -521,11 +518,6 @@
   }
 
   slotSpin.addEventListener('click', () => void spinSlot());
-  slotBtn.addEventListener('click', () => {
-    panel.classList.remove('open');
-    optionsPanel.classList.remove('open');
-    slotPanel.classList.toggle('open');
-  });
   slotClose.addEventListener('click', () => slotPanel.classList.remove('open'));
 
   window.overlay.on('self:coins', (data) => updateCoins(Number(data) || 0));
@@ -539,7 +531,6 @@
 
   // ---- 옵션 패널 (투명도 / 표시 배율) ----
 
-  const optionsBtn = document.getElementById('options-btn') as HTMLButtonElement;
   const optionsPanel = document.getElementById('options-panel')!;
   const optionsClose = document.getElementById('options-close') as HTMLButtonElement;
   const opacitySlider = document.getElementById('opacity-slider') as HTMLInputElement;
@@ -618,17 +609,12 @@
     }
   }
 
-  optionsBtn.addEventListener('click', async () => {
-    panel.classList.remove('open');
-    slotPanel.classList.remove('open');
-    optionsPanel.classList.toggle('open');
-    if (optionsPanel.classList.contains('open')) {
-      const s = await window.overlay.getSettings();
-      showOpacity(s.opacity);
-      showScale(s.scale);
-      applyChatTheme(s.chatColor ?? currentChatColor);
-    }
-  });
+  async function loadOptions(): Promise<void> {
+    const s = await window.overlay.getSettings();
+    showOpacity(s.opacity);
+    showScale(s.scale);
+    applyChatTheme(s.chatColor ?? currentChatColor);
+  }
   optionsClose.addEventListener('click', () => optionsPanel.classList.remove('open'));
   opacitySlider.addEventListener('input', () => {
     const v = Number(opacitySlider.value) / 100;
@@ -647,6 +633,153 @@
     if (optionsPanel.classList.contains('open')) {
       showOpacity(s.opacity);
       showScale(s.scale);
+    }
+  });
+
+  // ---- 상점 (오오라 / 말풍선 스킨 / 닉네임 색) ----
+
+  const shopPanel = document.getElementById('shop-panel')!;
+  const shopClose = document.getElementById('shop-close') as HTMLButtonElement;
+  const shopList = document.getElementById('shop-list')!;
+  const shopCoinsEl = document.getElementById('shop-coins')!;
+
+  function stylePreview(el: HTMLElement, item: CosmeticItem): void {
+    if (item.kind === 'aura') {
+      const colors = AURA_COLORS[item.id];
+      el.style.borderRadius = '50%';
+      el.style.width = '26px';
+      el.style.background = colors
+        ? `radial-gradient(circle, ${colors[1]}, ${colors[0]})`
+        : 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)';
+    } else if (item.kind === 'bubble') {
+      const st = BUBBLE_STYLES[item.id] ?? BUBBLE_STYLES.default;
+      el.style.background = st.fill;
+      el.style.border = `2px solid ${st.stroke}`;
+      el.style.borderRadius = '8px';
+    } else {
+      el.textContent = 'Aa';
+      el.style.color = item.value ?? '#fff';
+      el.style.fontWeight = '700';
+    }
+  }
+
+  async function renderShop(): Promise<void> {
+    const wallet = (await window.overlay.getWallet()) as { coins: number; items: string[] };
+    updateCoins(wallet.coins);
+    shopCoinsEl.textContent = `🪙 ${wallet.coins}`;
+    const inv = await window.overlay.getInventory();
+    const eq = inv.equipped;
+    shopList.innerHTML = '';
+    let lastKind = '';
+    for (const item of COSMETIC_ITEMS) {
+      if (item.kind !== lastKind) {
+        lastKind = item.kind;
+        const head = document.createElement('div');
+        head.className = 'shop-group';
+        head.textContent =
+          item.kind === 'aura' ? '✨ 오오라' : item.kind === 'bubble' ? '💬 말풍선 스킨' : '🎨 닉네임 색상';
+        shopList.appendChild(head);
+      }
+      const row = document.createElement('div');
+      row.className = 'shop-item';
+      const preview = document.createElement('div');
+      preview.className = 'shop-preview';
+      stylePreview(preview, item);
+      const name = document.createElement('span');
+      name.className = 'shop-name';
+      name.textContent = item.name;
+      const btn = document.createElement('button');
+      btn.className = 'shop-btn';
+      const owned = wallet.items.includes(item.id);
+      const equipped =
+        item.kind === 'aura'
+          ? eq.aura === item.id
+          : item.kind === 'bubble'
+            ? eq.bubbleSkin === item.id
+            : eq.nameColor === item.value;
+      if (!owned) {
+        btn.textContent = `${item.price} 🪙`;
+        btn.disabled = wallet.coins < item.price;
+        btn.addEventListener('click', async () => {
+          const res = (await window.overlay.buyItem(item.id)) as { ok: boolean; error?: string };
+          addSystemMessage(res.ok ? `🛒 '${item.name}' 구매 완료!` : (res.error ?? '구매에 실패했어요.'));
+          void renderShop();
+        });
+      } else {
+        const slotKey = item.kind === 'aura' ? 'aura' : item.kind === 'bubble' ? 'bubble' : 'namecolor';
+        btn.textContent = equipped ? '해제' : '장착';
+        btn.classList.toggle('equipped', equipped);
+        btn.addEventListener('click', () => {
+          window.overlay.equip({ slot: slotKey, name: equipped ? null : item.id });
+          setTimeout(() => void renderShop(), 150);
+        });
+      }
+      row.append(preview, name, btn);
+      shopList.appendChild(row);
+    }
+  }
+
+  shopClose.addEventListener('click', () => shopPanel.classList.remove('open'));
+  window.overlay.on('self:wallet', () => {
+    if (shopPanel.classList.contains('open')) void renderShop();
+  });
+
+  // ---- 코인 랭킹 ----
+
+  async function showRanking(): Promise<void> {
+    const rows = (await window.overlay.getRanking()) as { name: string; coins: number }[];
+    if (!rows.length) {
+      addSystemMessage('랭킹 정보를 가져오지 못했어요.');
+      return;
+    }
+    const medals = ['🥇', '🥈', '🥉', '4위', '5위'];
+    addSystemMessage('🏆 코인 랭킹 TOP5');
+    rows.forEach((r, i) => addSystemMessage(`${medals[i]} ${r.name} — ${r.coins} 🪙`));
+  }
+
+  // ---- ☰ 메뉴 드롭다운 ----
+
+  const menuBtn = document.getElementById('menu-btn') as HTMLButtonElement;
+  const menuDropdown = document.getElementById('menu-dropdown')!;
+
+  function closeAllPanels(): void {
+    panel.classList.remove('open');
+    optionsPanel.classList.remove('open');
+    slotPanel.classList.remove('open');
+    shopPanel.classList.remove('open');
+  }
+
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menuDropdown.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!menuDropdown.contains(e.target as Node)) menuDropdown.classList.remove('open');
+  });
+  menuDropdown.addEventListener('click', (e) => {
+    const item = (e.target as HTMLElement).closest('button');
+    if (!item) return;
+    menuDropdown.classList.remove('open');
+    closeAllPanels();
+    switch (item.dataset.menu) {
+      case 'slot':
+        slotPanel.classList.add('open');
+        break;
+      case 'shop':
+        shopPanel.classList.add('open');
+        void renderShop();
+        break;
+      case 'appearance':
+        panel.classList.add('open');
+        void renderPanel();
+        break;
+      case 'ranking':
+        void showRanking();
+        break;
+      case 'options':
+        optionsPanel.classList.add('open');
+        void loadOptions();
+        break;
     }
   });
 

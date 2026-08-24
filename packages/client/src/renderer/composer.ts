@@ -14,6 +14,10 @@ interface PartChoice {
 interface Appearance {
   /** 종족 — Body/Head/Arms(+기본 Eyes/Ears) 세트. hsv는 피부톤 */
   race: PartChoice;
+  /** 코인 상점 치장 */
+  aura?: string;
+  bubbleSkin?: string;
+  nameColor?: string;
   eyes?: PartChoice | null;
   ears?: PartChoice | null;
   hair?: PartChoice | null;
@@ -67,6 +71,52 @@ const PH_ICON_SIZE = 32;
 const PH_FOOT_OFFSET = 8;
 
 type PartImageProvider = (layer: string, name: string) => Promise<HTMLImageElement | null>;
+
+// ---- 코인 상점 치장 정의 (shared/protocol.ts SHOP_ITEMS와 동일하게 유지) ----
+
+interface CosmeticItem {
+  id: string;
+  kind: 'aura' | 'bubble' | 'namecolor';
+  name: string;
+  price: number;
+  value?: string;
+}
+
+const COSMETIC_ITEMS: CosmeticItem[] = [
+  { id: 'aura-spark', kind: 'aura', name: '골드 스파크', price: 40 },
+  { id: 'aura-ember', kind: 'aura', name: '불꽃 오오라', price: 40 },
+  { id: 'aura-frost', kind: 'aura', name: '서리 오오라', price: 40 },
+  { id: 'aura-shadow', kind: 'aura', name: '섀도 오오라', price: 60 },
+  { id: 'aura-rainbow', kind: 'aura', name: '무지개 오오라', price: 120 },
+  { id: 'bubble-dark', kind: 'bubble', name: '다크 말풍선', price: 30 },
+  { id: 'bubble-mint', kind: 'bubble', name: '민트 말풍선', price: 30 },
+  { id: 'bubble-pink', kind: 'bubble', name: '핑크 말풍선', price: 30 },
+  { id: 'bubble-gold', kind: 'bubble', name: '금테 말풍선', price: 50 },
+  { id: 'bubble-royal', kind: 'bubble', name: '로열 말풍선', price: 50 },
+  { id: 'name-gold', kind: 'namecolor', name: '골드 닉네임', price: 20, value: '#ffd66e' },
+  { id: 'name-sky', kind: 'namecolor', name: '하늘 닉네임', price: 20, value: '#6ec3ff' },
+  { id: 'name-lime', kind: 'namecolor', name: '라임 닉네임', price: 20, value: '#8be06a' },
+  { id: 'name-pink', kind: 'namecolor', name: '핑크 닉네임', price: 20, value: '#ff8dc7' },
+  { id: 'name-red', kind: 'namecolor', name: '레드 닉네임', price: 20, value: '#ff6b6b' },
+];
+
+const BUBBLE_STYLES: Record<string, { fill: string; stroke: string; text: string }> = {
+  default: { fill: '#fffdf7', stroke: '#4a2837', text: '#3a2430' },
+  'bubble-dark': { fill: '#2b2230', stroke: '#8d7d88', text: '#f0e8ec' },
+  'bubble-mint': { fill: '#e2f7ef', stroke: '#3fa66a', text: '#1d4a33' },
+  'bubble-pink': { fill: '#ffe7f1', stroke: '#e06fa8', text: '#7a2c52' },
+  'bubble-gold': { fill: '#fff8e1', stroke: '#d9a63e', text: '#6b4a00' },
+  'bubble-royal': { fill: '#efe4ff', stroke: '#8a5fd9', text: '#3d2373' },
+};
+
+// null = 무지개(시간 기반 색상 순환)
+const AURA_COLORS: Record<string, [string, string] | null> = {
+  'aura-spark': ['#ffd66e', '#fff3c4'],
+  'aura-ember': ['#ff7b3f', '#ffd23f'],
+  'aura-frost': ['#9fdcff', '#e8f7ff'],
+  'aura-shadow': ['#8a5fd9', '#c9aef5'],
+  'aura-rainbow': null,
+};
 
 // 유니티 TextureHelper.AdjustColor 포팅 (검정/투명 픽셀 보존)
 function phAdjustPixels(data: Uint8ClampedArray, hue: number, sat: number, val: number): void {
