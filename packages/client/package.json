@@ -43,6 +43,13 @@
         ]
       }
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "laferr",
+        "repo": "DotChat"
+      }
+    ],
     "win": {
       "target": "nsis"
     },
