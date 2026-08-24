@@ -420,6 +420,7 @@
 
   appearanceBtn.addEventListener('click', () => {
     optionsPanel.classList.remove('open');
+    slotPanel.classList.remove('open');
     panel.classList.toggle('open');
     if (panel.classList.contains('open')) void renderPanel();
   });
@@ -430,6 +431,110 @@
   // 패널이 열린 채로 선물상자를 획득해도 새 파츠가 바로 보이도록
   window.overlay.on('self:inventory', () => {
     if (panel.classList.contains('open')) void renderPanel();
+  });
+
+  // ---- 슬롯머신 ----
+
+  const slotBtn = document.getElementById('slot-btn') as HTMLButtonElement;
+  const slotPanel = document.getElementById('slot-panel')!;
+  const slotClose = document.getElementById('slot-close') as HTMLButtonElement;
+  const slotBalance = document.getElementById('slot-balance')!;
+  const coinBalanceEl = document.getElementById('coin-balance')!;
+  const reelEls = [...document.querySelectorAll('#slot-reels span')] as HTMLElement[];
+  const slotResult = document.getElementById('slot-result')!;
+  const slotSpin = document.getElementById('slot-spin') as HTMLButtonElement;
+
+  const SLOT_SYMBOLS = ['🍒', '🍋', '⭐', '🎁', '💎', '7️⃣'];
+  let coins = 0;
+  let spinning = false;
+
+  interface SlotPlayResult {
+    ok: boolean;
+    error?: string;
+    kind?: string;
+    delta?: number;
+    reels?: string[];
+    coins?: number;
+    partLabel?: string | null;
+  }
+
+  function updateCoins(value: number): void {
+    coins = value;
+    coinBalanceEl.textContent = `🪙 ${value}`;
+    slotBalance.textContent = `🪙 ${value}`;
+    if (!spinning) slotSpin.disabled = value < 3;
+  }
+
+  function slotResultText(res: SlotPlayResult): string {
+    switch (res.kind) {
+      case 'small':
+        return '🍒 +1 코인';
+      case 'back':
+        return '🍒🍒🍒 본전! +3 코인';
+      case 'double':
+        return '🍋 더블! +6 코인';
+      case 'triple':
+        return '⭐ 트리플! +9 코인';
+      case 'part':
+        return res.partLabel ? `🎁 파츠 당첨! '${res.partLabel}' 획득!` : '🎁 이미 모든 파츠 보유!';
+      case 'jackpot':
+        return '💎 잭팟!! +20 코인!';
+      case 'mega':
+        return res.partLabel
+          ? `7️⃣ 메가 잭팟!!! +60 코인 + '${res.partLabel}'!`
+          : '7️⃣ 메가 잭팟!!! +60 코인!';
+      default:
+        return '꽝... 다음 기회에!';
+    }
+  }
+
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function spinSlot(): Promise<void> {
+    if (spinning) return;
+    spinning = true;
+    slotSpin.disabled = true;
+    slotResult.textContent = '두구두구...';
+    const shuffle = setInterval(() => {
+      for (const reel of reelEls) {
+        reel.textContent = SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
+      }
+    }, 80);
+    const [res] = await Promise.all([
+      window.overlay.playSlot() as Promise<SlotPlayResult>,
+      delay(1000),
+    ]);
+    clearInterval(shuffle);
+    if (!res.ok || !res.reels) {
+      for (const reel of reelEls) reel.textContent = '❔';
+      slotResult.textContent = res.error ?? '오류가 발생했어요.';
+    } else {
+      for (let i = 0; i < reelEls.length; i++) {
+        reelEls[i].textContent = res.reels[i];
+        await delay(280);
+      }
+      slotResult.textContent = slotResultText(res);
+      if (typeof res.coins === 'number') updateCoins(res.coins);
+    }
+    spinning = false;
+    slotSpin.disabled = coins < 3;
+  }
+
+  slotSpin.addEventListener('click', () => void spinSlot());
+  slotBtn.addEventListener('click', () => {
+    panel.classList.remove('open');
+    optionsPanel.classList.remove('open');
+    slotPanel.classList.toggle('open');
+  });
+  slotClose.addEventListener('click', () => slotPanel.classList.remove('open'));
+
+  window.overlay.on('self:coins', (data) => updateCoins(Number(data) || 0));
+  window.overlay.on('net:slot-win', (data) => {
+    const d = data as { id: string; nickname: string; tag: string; kind: string; delta: number };
+    if (d.id === chatSelfId) return; // 본인은 슬롯 결과창으로 충분
+    const label =
+      d.kind === 'mega' ? '메가 잭팟(7️⃣7️⃣7️⃣)을' : d.kind === 'jackpot' ? '잭팟(💎💎💎)을' : '파츠(🎁🎁🎁)를';
+    addSystemMessage(`🎰 ${d.nickname}#${d.tag}님이 ${label} 터뜨렸어요!`);
   });
 
   // ---- 옵션 패널 (투명도 / 표시 배율) ----
@@ -515,6 +620,7 @@
 
   optionsBtn.addEventListener('click', async () => {
     panel.classList.remove('open');
+    slotPanel.classList.remove('open');
     optionsPanel.classList.toggle('open');
     if (optionsPanel.classList.contains('open')) {
       const s = await window.overlay.getSettings();
@@ -579,6 +685,8 @@
 
   const updateState = (await window.overlay.getUpdateState()) as { version: string } | null;
   if (updateState) showUpdateBell(updateState);
+
+  updateCoins(await window.overlay.getCoins());
 
   applyChatTheme((await window.overlay.getSettings()).chatColor ?? currentChatColor);
 

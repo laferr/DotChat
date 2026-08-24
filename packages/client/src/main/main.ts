@@ -292,6 +292,15 @@ function connect(): void {
     broadcast('net:player-read', data);
   });
 
+  socket.on('coins', (coins) => {
+    myCoins = coins;
+    broadcast('self:coins', coins);
+  });
+
+  socket.on('slot-win', (data) => {
+    broadcast('net:slot-win', data);
+  });
+
   socket.on('chat', (msg) => {
     if (msg.image) msg.image = { ...msg.image, url: `${SERVER_URL}${msg.image.url}` };
     // 서버가 외형 스냅샷을 못 붙였으면(구버전 서버) 접속자 정보로 보강
@@ -621,28 +630,65 @@ function giftPool(): string[] {
   ];
 }
 
-ipcMain.handle('claim-gift', (): GiftResult => {
+// 미보유 파츠(종족 세트 포함) 1개 랜덤 지급 — 선물상자/슬롯 공용
+function grantRandomPart(): { id: string; label: string } | null {
   const pool = giftPool();
   const unowned = pool.filter((id) => !inventory.owned.includes(id));
-  const base = { ownedCount: inventory.owned.length, total: pool.length };
-  if (unowned.length === 0) {
-    return { isNew: false, kind: null, id: null, label: null, ...base };
-  }
+  if (unowned.length === 0) return null;
   const id = randomOf(unowned);
   inventory.owned.push(id);
   saveInventory();
   broadcast('self:inventory');
-  const isRace = id.startsWith('race:');
-  const label = isRace ? `${id.slice(5)} 종족 세트` : id.split('/')[1];
-  console.log(`[gift] ${id} 획득 (${inventory.owned.length}/${pool.length})`);
+  const label = id.startsWith('race:') ? `${id.slice(5)} 종족 세트` : id.split('/')[1];
+  console.log(`[part] ${id} 획득 (${inventory.owned.length}/${pool.length})`);
+  return { id, label };
+}
+
+ipcMain.handle('claim-gift', (): GiftResult => {
+  const pool = giftPool();
+  const base = { ownedCount: inventory.owned.length, total: pool.length };
+  const grant = grantRandomPart();
+  if (!grant) {
+    return { isNew: false, kind: null, id: null, label: null, ...base };
+  }
   return {
     isNew: true,
-    kind: isRace ? 'race' : 'part',
-    id,
-    label,
-    ownedCount: inventory.owned.length + 0,
+    kind: grant.id.startsWith('race:') ? 'race' : 'part',
+    id: grant.id,
+    label: grant.label,
+    ownedCount: inventory.owned.length,
     total: pool.length,
   };
+});
+
+// ---- 슬롯머신 (판정은 서버, 파츠 당첨 시 로컬 지급) ----
+
+let myCoins = 0;
+
+ipcMain.handle('get-coins', () => myCoins);
+
+ipcMain.handle('slot-play', () => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('slot', (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (res.ok && (res.kind === 'part' || res.kind === 'mega')) {
+        const grant = grantRandomPart();
+        res.partLabel = grant?.label ?? null;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      resolve(res);
+    });
+  });
 });
 
 function pushAppearance(): void {

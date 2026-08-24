@@ -15,8 +15,10 @@ const NET_CHANNELS = new Set([
   'self:settings',
   'self:update',
   'self:unread',
+  'self:coins',
   'net:history',
   'net:player-read',
+  'net:slot-win',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -52,6 +54,8 @@ contextBridge.exposeInMainWorld('overlay', {
   }): Promise<unknown> => ipcRenderer.invoke('send-image', payload),
   openImage: (url: string) => ipcRenderer.send('open-image', url),
   claimGift: (): Promise<unknown> => ipcRenderer.invoke('claim-gift'),
+  getCoins: (): Promise<number> => ipcRenderer.invoke('get-coins'),
+  playSlot: (): Promise<unknown> => ipcRenderer.invoke('slot-play'),
   equip: (payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }) =>
     ipcRenderer.send('equip', payload),
   toggleChat: () => ipcRenderer.send('toggle-chat'),

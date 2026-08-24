@@ -241,8 +241,67 @@
         border-radius: 6px;
         cursor: zoom-in;
       }
+      header .coins {
+        font-size: 11px;
+        font-weight: 700;
+        color: #ffd66e;
+      }
+      #slot-panel .slot-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 0 14px 14px;
+      }
+      #slot-reels {
+        display: flex;
+        gap: 10px;
+      }
+      #slot-reels span {
+        width: 58px;
+        height: 68px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        background: var(--bg);
+        border: 2px solid var(--header);
+        border-radius: 10px;
+      }
+      #slot-result {
+        min-height: 18px;
+        font-weight: 700;
+        text-align: center;
+      }
+      #slot-spin {
+        border: 0;
+        background: var(--accent);
+        color: #fffdf7;
+        font-weight: 700;
+        font-size: 14px;
+        border-radius: 8px;
+        padding: 10px 22px;
+        cursor: pointer;
+      }
+      #slot-spin:hover:enabled {
+        background: var(--accent-hover);
+      }
+      #slot-spin:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .slot-body .hint {
+        font-size: 10px;
+        color: var(--text-dim);
+        line-height: 1.6;
+        text-align: center;
+        margin: 0;
+      }
       #appearance-panel,
-      #options-panel {
+      #options-panel,
+      #slot-panel {
         position: absolute;
         left: 0;
         right: 0;
@@ -255,7 +314,8 @@
         z-index: 5;
       }
       #appearance-panel.open,
-      #options-panel.open {
+      #options-panel.open,
+      #slot-panel.open {
         display: flex;
       }
       .options-body {
@@ -458,12 +518,29 @@
     <header>
       <span class="title">DotChat</span>
       <span class="online" id="online">접속 확인 중…</span>
+      <span class="coins" id="coin-balance">🪙 -</span>
       <span class="spacer"></span>
       <button id="update-bell" title="새 업데이트" hidden>🔔</button>
+      <button id="slot-btn" title="슬롯머신">🎰</button>
       <button id="appearance-btn" title="외모 변경">👕</button>
       <button id="options-btn" title="옵션">⚙️</button>
       <button id="close-btn" title="닫기">✕</button>
     </header>
+    <div id="slot-panel">
+      <div class="panel-head">
+        <span>슬롯머신 <span id="slot-balance"></span></span>
+        <button id="slot-close">✕</button>
+      </div>
+      <div class="slot-body">
+        <div id="slot-reels"><span>❔</span><span>❔</span><span>❔</span></div>
+        <div id="slot-result">코인 3개로 한 판 돌려보세요!</div>
+        <button id="slot-spin">돌리기 (3 🪙)</button>
+        <p class="hint">
+          🍒🍒 +1 · 🍒🍒🍒 +3 · 🍋🍋🍋 +6 · ⭐⭐⭐ +9<br />
+          🎁🎁🎁 파츠 당첨 · 💎💎💎 +20 · 7️⃣7️⃣7️⃣ 메가 잭팟 (+60 & 파츠)
+        </p>
+      </div>
+    </div>
     <div id="options-panel">
       <div class="panel-head">
         <span>옵션</span>

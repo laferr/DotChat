@@ -111,6 +111,24 @@ export interface ChatMessage {
 export const CHAT_RETENTION_DAYS = 3;
 export const CHAT_HISTORY_MAX = 300;
 
+// ---- 코인 경제 / 슬롯머신 ----
+export const COIN_STARTER = 10; // 첫 로그인(신규 지갑) 지급
+export const COIN_PER_MINUTE = 1; // 접속 1분당 적립
+export const SLOT_COST = 3;
+
+export type SlotKind = 'miss' | 'small' | 'back' | 'double' | 'triple' | 'part' | 'jackpot' | 'mega';
+
+export interface SlotResult {
+  ok: boolean;
+  error?: string;
+  kind?: SlotKind;
+  /** 코인 증감(비용 제외한 당첨금) */
+  delta?: number;
+  reels?: string[];
+  /** 정산 후 잔액 */
+  coins?: number;
+}
+
 export interface ClientToServerEvents {
   hello: (data: { nickname: string; tag: string; appearance: Appearance }) => void;
   move: (data: MovePayload) => void;
@@ -121,6 +139,8 @@ export interface ClientToServerEvents {
   action: (data: { action: ActionId; text: string }) => void;
   /** 이 시각까지 읽었음을 보고 (채팅창이 보이는 동안) */
   read: (ts: number) => void;
+  /** 슬롯머신 1회 (비용 SLOT_COST, 판정은 서버) */
+  slot: (ack: (res: SlotResult) => void) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */
   image: (
     payload: { data: ArrayBuffer; mime: string; thumb: string; w: number; h: number },
@@ -139,6 +159,10 @@ export interface ServerToClientEvents {
   'chat-history': (msgs: ChatMessage[]) => void;
   /** 누군가의 읽음 위치 갱신 */
   'player-read': (data: { id: string; ts: number }) => void;
+  /** 내 코인 잔액 (접속/적립/슬롯 정산 시) */
+  coins: (coins: number) => void;
+  /** 슬롯 대박 전체 알림 */
+  'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
 }
 
 /** 서버측 외형 검증/정제 — 알 수 없는 키 제거, 문자열 길이 제한, 수치 클램프 */

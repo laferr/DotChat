@@ -76,6 +76,8 @@ interface OverlayApi {
   }): Promise<{ ok: boolean; error?: string }>;
   openImage(url: string): void;
   claimGift(): Promise<GiftClaimResult>;
+  getCoins(): Promise<number>;
+  playSlot(): Promise<unknown>;
   equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
   toggleChat(): void;
   closeChat(): void;
@@ -885,6 +887,15 @@ function wireNet(): void {
 
   window.overlay.on('self:unread', (data) => {
     unreadCount = Number(data) || 0;
+  });
+
+  window.overlay.on('net:slot-win', (data) => {
+    const d = data as { id: string; kind: string };
+    const actor = d.id === selfId ? me : remotes.get(d.id);
+    if (!actor) return;
+    const text = d.kind === 'mega' ? '7️⃣ 메가 잭팟!!!' : d.kind === 'jackpot' ? '💎 잭팟!!' : '🎰 파츠 당첨!';
+    showBubble(actor, text);
+    spawnHearts(actor.x, actorBox(actor).y);
   });
 }
 

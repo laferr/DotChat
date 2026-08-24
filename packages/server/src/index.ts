@@ -8,6 +8,10 @@ import {
   CHAT_HISTORY_MAX,
   CHAT_RETENTION_DAYS,
   ChatMessage,
+  COIN_PER_MINUTE,
+  COIN_STARTER,
+  SLOT_COST,
+  SlotKind,
   ClientToServerEvents,
   DEFAULT_PORT,
   IMAGE_MAX_BYTES,
@@ -71,6 +75,85 @@ function recordChat(msg: ChatMessage): void {
 }
 
 loadHistory();
+
+// ---- 코인 지갑 (닉네임#태그 키, 볼륨 저장, 서버 권위) ----
+
+const COINS_PATH = path.join(UPLOAD_DIR, 'coins.json');
+let wallets: Record<string, number> = {};
+
+function loadWallets(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(COINS_PATH, 'utf8'));
+    if (raw && typeof raw === 'object') {
+      for (const [k, v] of Object.entries(raw)) {
+        if (typeof v === 'number' && Number.isFinite(v)) wallets[k] = Math.max(0, Math.floor(v));
+      }
+    }
+    console.log(`[coins] ${Object.keys(wallets).length}개 지갑 로드`);
+  } catch {
+    wallets = {};
+  }
+}
+
+function saveWallets(): void {
+  try {
+    fs.writeFileSync(COINS_PATH, JSON.stringify(wallets), 'utf8');
+  } catch (err) {
+    console.log('[coins] 저장 실패:', String(err));
+  }
+}
+
+function walletKey(p: PlayerState): string {
+  return `${p.nickname}#${p.tag}`;
+}
+
+loadWallets();
+
+// 접속 1분당 코인 적립 (같은 지갑 다중 접속은 1회만)
+setInterval(() => {
+  if (players.size === 0) return;
+  const credited = new Set<string>();
+  for (const [socketId, player] of players) {
+    const key = walletKey(player);
+    if (!credited.has(key)) {
+      credited.add(key);
+      wallets[key] = (wallets[key] ?? 0) + COIN_PER_MINUTE;
+    }
+    io.sockets.sockets.get(socketId)?.emit('coins', wallets[key]);
+  }
+  saveWallets();
+}, 60 * 1000);
+
+// 슬롯 확률 테이블 (누적 %) — 기대환급 ~2.9코인 + 6% 파츠
+const SLOT_TABLE: { upto: number; kind: SlotKind; delta: number; reels: string[] | null }[] = [
+  { upto: 41, kind: 'miss', delta: 0, reels: null },
+  { upto: 61, kind: 'small', delta: 1, reels: null },
+  { upto: 76, kind: 'back', delta: 3, reels: ['🍒', '🍒', '🍒'] },
+  { upto: 86, kind: 'double', delta: 6, reels: ['🍋', '🍋', '🍋'] },
+  { upto: 91, kind: 'triple', delta: 9, reels: ['⭐', '⭐', '⭐'] },
+  { upto: 96, kind: 'part', delta: 0, reels: ['🎁', '🎁', '🎁'] },
+  { upto: 99, kind: 'jackpot', delta: 20, reels: ['💎', '💎', '💎'] },
+  { upto: 100, kind: 'mega', delta: 60, reels: ['7️⃣', '7️⃣', '7️⃣'] },
+];
+const SLOT_SYMBOLS = ['🍒', '🍋', '⭐', '🎁', '💎', '7️⃣'];
+const lastSlotAt = new Map<string, number>();
+
+function slotReels(kind: SlotKind): string[] {
+  const fixed = SLOT_TABLE.find((r) => r.kind === kind)?.reels;
+  if (fixed) return fixed;
+  if (kind === 'small') {
+    // 체리 2개 + 다른 심볼
+    const other = SLOT_SYMBOLS[1 + Math.floor(Math.random() * (SLOT_SYMBOLS.length - 1))];
+    return ['🍒', '🍒', other];
+  }
+  // 꽝: 트리플/체리2가 안 나오게 셔플
+  for (;;) {
+    const reels = Array.from({ length: 3 }, () => SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]);
+    const triple = reels[0] === reels[1] && reels[1] === reels[2];
+    const cherryPair = reels.filter((s) => s === '🍒').length >= 2;
+    if (!triple && !cherryPair) return reels;
+  }
+}
 
 function cleanupUploads(): void {
   const cutoff = Date.now() - IMAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -146,7 +229,15 @@ io.on('connection', (socket) => {
       lastReadTs: 0, // 채팅창을 열어 읽기 전까지는 안읽음으로 집계
     };
     players.set(socket.id, player);
+    // 신규 지갑(기존 유저의 첫 업데이트 접속 포함)에 기본 코인 지급
+    const key = walletKey(player);
+    if (!(key in wallets)) {
+      wallets[key] = COIN_STARTER;
+      saveWallets();
+      console.log(`[coins] ${key} 신규 지갑 +${COIN_STARTER}`);
+    }
     socket.emit('welcome', { selfId: socket.id, players: [...players.values()] });
+    socket.emit('coins', wallets[key]);
     socket.emit('chat-history', chatHistory.slice(-100));
     socket.broadcast.emit('player-joined', player);
     console.log(`+ ${nickname}#${tag} [${appearance.race.name}] — ${players.size}명 접속중`);
@@ -189,6 +280,48 @@ io.on('connection', (socket) => {
     io.emit('chat', msg);
     recordChat(msg);
     console.log(`[action] ${player.nickname}#${player.tag}: ${action} "${text}"`);
+  });
+
+  socket.on('slot', (ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const now = Date.now();
+    if (now - (lastSlotAt.get(socket.id) ?? 0) < 1000) {
+      reply({ ok: false, error: '너무 빨라요!' });
+      return;
+    }
+    const key = walletKey(player);
+    const balance = wallets[key] ?? 0;
+    if (balance < SLOT_COST) {
+      reply({ ok: false, error: `코인이 부족해요. (${balance}/${SLOT_COST})` });
+      return;
+    }
+    lastSlotAt.set(socket.id, now);
+    const roll = Math.random() * 100;
+    const row = SLOT_TABLE.find((r) => roll < r.upto)!;
+    wallets[key] = balance - SLOT_COST + row.delta;
+    saveWallets();
+    reply({
+      ok: true,
+      kind: row.kind,
+      delta: row.delta,
+      reels: slotReels(row.kind),
+      coins: wallets[key],
+    });
+    if (row.kind === 'part' || row.kind === 'jackpot' || row.kind === 'mega') {
+      io.emit('slot-win', {
+        id: socket.id,
+        nickname: player.nickname,
+        tag: player.tag,
+        kind: row.kind,
+        delta: row.delta,
+      });
+      console.log(`[slot] ${key}: ${row.kind} (+${row.delta}) 잔액 ${wallets[key]}`);
+    }
   });
 
   socket.on('read', (ts) => {
@@ -290,6 +423,7 @@ io.on('connection', (socket) => {
       players.delete(socket.id);
       lastChatAt.delete(socket.id);
       imageTimes.delete(socket.id);
+      lastSlotAt.delete(socket.id);
       io.emit('player-left', socket.id);
       console.log(`- ${player.nickname} — ${players.size}명 접속중`);
     }
