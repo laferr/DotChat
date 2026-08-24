@@ -76,7 +76,7 @@ interface Window {
   overlay: OverlayApi;
 }
 
-let viewScale = 1; // 표시 배율 (옵션에서 1|2|3)
+let viewScale = 2; // 표시 배율 (옵션에서 1|2|3)
 const WALK_SPEED_MIN = 30; // px/s — 걸을 때마다 이 범위에서 랜덤
 const WALK_SPEED_MAX = 85;
 const EDGE_MARGIN = 40;
@@ -86,9 +86,9 @@ const HOVER_PAD = 8;
 const MOVE_SEND_INTERVAL = 0.15; // 초
 const REMOTE_LERP = 8;
 
-// 캐릭터가 64px 셀 안에서 실제로 차지하는 대략적 영역 (히트박스/말풍선 기준)
-const ART_W = 30;
-const ART_H = 42;
+// 캐릭터가 64px 셀 안에서 실제로 차지하는 대략적 영역 (히트박스/말풍선·닉네임 기준)
+const ART_W = 26;
+const ART_H = 33;
 
 const BUBBLE_FONT = '12px "Segoe UI", "Malgun Gothic", sans-serif';
 const NAME_FONT = '10px "Segoe UI", "Malgun Gothic", sans-serif';

@@ -90,19 +90,16 @@ function randomOf<T>(arr: T[]): T {
 }
 
 function starterInventory(): Inventory {
-  // 첫 로그인: 랜덤 종족 세트 + 랜덤 머리카락 + 기본 갑옷(TravelerTunic)
-  const race = manifest ? randomOf(manifest.races) : { name: 'Human', ears: false };
+  // 첫 로그인: Human 종족 세트 + 랜덤 머리카락 + 기본 갑옷(TravelerTunic)
   const hair = manifest ? randomOf(manifest.layers.Hair) : 'Hair1';
-  const equipped: Appearance = {
-    race: { name: race.name },
-    hair: { name: hair },
-    armor: { name: 'TravelerTunic' },
-  };
-  if (race.ears) equipped.ears = { name: race.name };
   return {
     version: 2,
-    owned: [`race:${race.name}`, `Hair/${hair}`, 'Armor/TravelerTunic'],
-    equipped,
+    owned: ['race:Human', `Hair/${hair}`, 'Armor/TravelerTunic'],
+    equipped: {
+      race: { name: 'Human' },
+      hair: { name: hair },
+      armor: { name: 'TravelerTunic' },
+    },
   };
 }
 
@@ -178,11 +175,11 @@ function loadSettings(): Settings {
     const scale = Number(raw.scale);
     return {
       opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0.1, opacity)) : 1,
-      scale: [1, 2, 3].includes(scale) ? scale : 1,
+      scale: [1, 2, 3].includes(scale) ? scale : 2, // 기본 2배
       serverUrl: typeof raw.serverUrl === 'string' && raw.serverUrl ? raw.serverUrl : undefined,
     };
   } catch {
-    return { opacity: 1, scale: 1 };
+    return { opacity: 1, scale: 2 };
   }
 }
 
