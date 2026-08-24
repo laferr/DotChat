@@ -78,6 +78,20 @@ export interface ChatImage {
   h: number;
 }
 
+/** 채팅 명령어로 재생 가능한 액션 애니메이션 */
+export const ACTION_IDS = [
+  'slash',
+  'jab',
+  'shot',
+  'block',
+  'roll',
+  'jump',
+  'death',
+  'crawl',
+  'ready',
+] as const;
+export type ActionId = (typeof ACTION_IDS)[number];
+
 export interface ChatMessage {
   id: string;
   nickname: string;
@@ -85,6 +99,8 @@ export interface ChatMessage {
   text: string;
   ts: number;
   image?: ChatImage;
+  /** 액션 명령어 — 수신 클라이언트가 해당 캐릭터의 애니메이션 재생 */
+  action?: ActionId;
 }
 
 export interface ClientToServerEvents {
@@ -93,6 +109,8 @@ export interface ClientToServerEvents {
   chat: (text: string) => void;
   /** 외형 교체 알림 — 획득 판정은 클라이언트 로컬 */
   appearance: (appearance: Appearance) => void;
+  /** 액션 명령어 (대사 포함) — 서버가 chat 메시지로 브로드캐스트 */
+  action: (data: { action: ActionId; text: string }) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */
   image: (
     payload: { data: ArrayBuffer; mime: string; thumb: string; w: number; h: number },

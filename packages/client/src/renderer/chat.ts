@@ -61,12 +61,42 @@
     sendBtn.disabled = !connected;
   }
 
+  // 채팅 명령어 → 액션 (대사는 메인 프로세스가 랜덤 선택)
+  const CHAT_COMMANDS: Record<string, string> = {
+    공격: 'attack', // 활 장착 시 자동으로 활쏘기
+    베기: 'slash',
+    찌르기: 'jab',
+    쏘기: 'shot',
+    막기: 'block',
+    구르기: 'roll',
+    점프: 'jump',
+    죽은척: 'death',
+    엎드려: 'crawl',
+    전투준비: 'ready',
+  };
+
   function send(): void {
     const text = inputEl.value.trim();
     if (!text) return;
-    window.overlay.sendChat(text);
     inputEl.value = '';
     inputEl.focus();
+
+    if (text.startsWith('/')) {
+      const word = text.slice(1).split(/\s+/)[0];
+      if (word === '명령어' || word === '도움말') {
+        addSystemMessage(`명령어: ${Object.keys(CHAT_COMMANDS).map((c) => '/' + c).join(' ')}`);
+        return;
+      }
+      const command = CHAT_COMMANDS[word];
+      if (command) {
+        window.overlay.sendAction(command);
+        return;
+      }
+      addSystemMessage(`알 수 없는 명령어예요. /명령어 로 목록을 볼 수 있어요.`);
+      return;
+    }
+
+    window.overlay.sendChat(text);
   }
 
   // ---- 이미지 전송 ----

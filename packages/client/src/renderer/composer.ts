@@ -30,7 +30,22 @@ interface Appearance {
 interface ComposedFrames {
   idle: HTMLCanvasElement[];
   run: HTMLCanvasElement[];
+  /** 액션 애니메이션 (slash/jab/shot/block/roll/jump/death/crawl/ready) */
+  anims: Record<string, HTMLCanvasElement[]>;
 }
+
+// 액션 행 좌표 (캔버스 top 기준: top = 928 - unityY - 64)
+const PH_ACTION_ROWS: Record<string, { y: number; count: number }> = {
+  ready: { y: 96, count: 2 },
+  crawl: { y: 224, count: 4 },
+  jump: { y: 352, count: 3 },
+  jab: { y: 480, count: 3 },
+  slash: { y: 544, count: 4 },
+  shot: { y: 608, count: 4 },
+  block: { y: 736, count: 2 },
+  death: { y: 800, count: 3 },
+  roll: { y: 864, count: 9 },
+};
 
 const PH_CELL = 64;
 // 캔버스 좌상단 기준 프레임 좌표 (유니티 meta의 y를 상하 반전: top = 928 - y - 64)
@@ -222,9 +237,15 @@ class PartComposer {
       return frame;
     };
 
+    const anims: Record<string, HTMLCanvasElement[]> = {};
+    for (const [id, row] of Object.entries(PH_ACTION_ROWS)) {
+      anims[id] = Array.from({ length: row.count }, (_v, i) => buildFrame(i * PH_CELL, row.y));
+    }
+
     return {
       idle: PH_FRAMES.idle.map((f) => buildFrame(f.x, f.y)),
       run: PH_FRAMES.run.map((f) => buildFrame(f.x, f.y)),
+      anims,
     };
   }
 }

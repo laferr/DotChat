@@ -70,3 +70,18 @@ setInterval(() => {
   socket.emit('chat', LINES[lineIdx % LINES.length]);
   lineIdx++;
 }, 7000);
+
+// 주기적으로 액션 명령 시연
+const ACTIONS = [
+  ['slash', '이얍~!'],
+  ['roll', '데굴데굴~'],
+  ['jump', '폴짝!'],
+  ['block', '철벽 방어!'],
+  ['death', '으윽... 죽은 척...'],
+];
+let actionIdx = 0;
+setInterval(() => {
+  const [action, text] = ACTIONS[actionIdx % ACTIONS.length];
+  socket.emit('action', { action, text });
+  actionIdx++;
+}, 25000);

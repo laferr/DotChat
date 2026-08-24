@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { io, Socket } from 'socket.io-client';
 import {
+  ActionId,
   Appearance,
   AppearanceSlot,
   APPEARANCE_SLOTS,
@@ -16,6 +17,11 @@ import {
   sanitizeAppearance,
   ServerToClientEvents,
 } from '@dotchat/shared';
+
+// 개발 모드는 설치판과 싱글 인스턴스 락이 충돌하지 않도록 별도 userData 사용
+if (!app.isPackaged) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'DotChatDev'));
+}
 
 // 오버레이 창 높이 — 캐릭터 + 말풍선이 들어갈 공간
 const OVERLAY_HEIGHT = 260;
@@ -484,6 +490,35 @@ ipcMain.on('move', (_e, data: MovePayload) => {
 
 ipcMain.on('chat-send', (_e, text: string) => {
   if (typeof text === 'string' && socket?.connected) socket.emit('chat', text);
+});
+
+// 액션 명령어 — 대사는 메인이 랜덤 선택, /공격은 장착 무기에 따라 베기/활쏘기 자동
+const ACTION_QUIPS: Record<string, string[]> = {
+  slash: ['이얍~!', '받아라!', '공격!', '하앗!'],
+  jab: ['푹!', '찌른다!', '급소 노리기!'],
+  shot: ['슝~!', '받아라 화살!', '명중이다!'],
+  block: ['막는다!', '철벽 방어!', '어림없지!'],
+  roll: ['데굴데굴~', '회피 기동!', '구른다!'],
+  jump: ['폴짝!', '점프~!', '히얍!'],
+  death: ['으윽... 쓰러졌다...', '여기까지인가...', '죽은 척...'],
+  crawl: ['살금살금...', '포복 전진!', '들키면 안 돼...'],
+  ready: ['덤벼라!', '전투 준비 완료!', '언제든지 와라!'],
+};
+
+ipcMain.on('action-send', (_e, command: string) => {
+  if (!socket?.connected || typeof command !== 'string') return;
+  let action = command;
+  if (command === 'attack') {
+    // 활 계열 무기 장착 시 활쏘기, 아니면 베기
+    const weapon = inventory.equipped.weapon?.name ?? '';
+    action = /bow/i.test(weapon) ? 'shot' : 'slash';
+  }
+  const quips = ACTION_QUIPS[action];
+  if (!quips) return;
+  socket.emit('action', {
+    action: action as ActionId,
+    text: randomOf(quips),
+  });
 });
 
 ipcMain.handle(

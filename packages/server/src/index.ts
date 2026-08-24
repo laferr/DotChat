@@ -4,6 +4,7 @@ import * as http from 'http';
 import * as path from 'path';
 import { Server } from 'socket.io';
 import {
+  ACTION_IDS,
   ClientToServerEvents,
   DEFAULT_PORT,
   IMAGE_MAX_BYTES,
@@ -125,6 +126,28 @@ io.on('connection', (socket) => {
       dir: player.dir,
       walking: player.walking,
     });
+  });
+
+  socket.on('action', (data) => {
+    const player = players.get(socket.id);
+    if (!player) return;
+    const action = String(data?.action ?? '');
+    if (!(ACTION_IDS as readonly string[]).includes(action)) return;
+    const now = Date.now();
+    if (now - (lastChatAt.get(socket.id) ?? 0) < 300) return; // 도배 방지 공유
+    lastChatAt.set(socket.id, now);
+    const text = String(data?.text ?? '')
+      .trim()
+      .slice(0, MAX_CHAT_LEN);
+    io.emit('chat', {
+      id: socket.id,
+      nickname: player.nickname,
+      tag: player.tag,
+      text,
+      ts: now,
+      action: action as (typeof ACTION_IDS)[number],
+    });
+    console.log(`[action] ${player.nickname}#${player.tag}: ${action} "${text}"`);
   });
 
   socket.on('appearance', (raw) => {

@@ -17,6 +17,7 @@ interface NetChatMessage {
   text: string;
   ts: number;
   image?: { url: string; thumb: string; w: number; h: number };
+  action?: string;
 }
 
 interface GiftClaimResult {
@@ -58,6 +59,7 @@ interface OverlayApi {
   getChatHistory(): Promise<NetChatMessage[]>;
   sendMove(data: { x: number; dir: -1 | 1; walking: boolean }): void;
   sendChat(text: string): void;
+  sendAction(command: string): void;
   sendImage(payload: {
     buffer: ArrayBuffer;
     mime: string;
@@ -156,6 +158,50 @@ interface Actor {
   hopVy: number;
   hopY: number;
   bubble: Bubble | null;
+  /** 재생 중인 액션 (/공격 등) */
+  action: string | null;
+  actionStart: number;
+  actionUntil: number;
+}
+
+// 액션 재생 정의: loop = 반복, hold = 마지막 프레임 유지
+const ACTION_MS = 3000;
+const ACTION_PLAY: Record<string, { fps: number; mode: 'loop' | 'hold' }> = {
+  slash: { fps: 10, mode: 'loop' },
+  jab: { fps: 10, mode: 'loop' },
+  shot: { fps: 8, mode: 'loop' },
+  block: { fps: 6, mode: 'hold' },
+  roll: { fps: 14, mode: 'loop' },
+  jump: { fps: 8, mode: 'loop' },
+  death: { fps: 6, mode: 'hold' },
+  crawl: { fps: 8, mode: 'loop' },
+  ready: { fps: 4, mode: 'loop' },
+};
+
+function actionActive(actor: Actor): boolean {
+  return actor.action !== null && performance.now() < actor.actionUntil;
+}
+
+function playAction(actor: Actor, action: string): void {
+  if (!ACTION_PLAY[action]) return;
+  actor.action = action;
+  actor.actionStart = performance.now();
+  actor.actionUntil = actor.actionStart + ACTION_MS;
+}
+
+// 점프 액션 중엔 실제로 폴짝폴짝 (모든 액터 공통 훅)
+function updateHop(actor: Actor, dt: number): void {
+  if (actor.hopVy !== 0 || actor.hopY !== 0) {
+    actor.hopVy += 700 * dt;
+    actor.hopY += actor.hopVy * dt;
+    if (actor.hopY >= 0) {
+      actor.hopY = 0;
+      actor.hopVy = 0;
+    }
+  }
+  if (actionActive(actor) && actor.action === 'jump' && actor.hopY === 0 && actor.hopVy === 0) {
+    actor.hopVy = -160;
+  }
 }
 
 function setAppearance(actor: Actor, appearance: Appearance): void {
@@ -182,6 +228,9 @@ function makeActor(nickname: string, appearance: Appearance, x: number): Actor {
     hopVy: 0,
     hopY: 0,
     bubble: null,
+    action: null,
+    actionStart: 0,
+    actionUntil: 0,
   };
   setAppearance(actor, appearance);
   return actor;
@@ -229,30 +278,27 @@ function updateSelf(dt: number): void {
   selfModeTime -= dt;
   if (selfModeTime <= 0) pickNextMode();
 
-  me.walking = selfMode === 'walk';
   me.animClock += dt;
-  if (me.walking) {
-    me.x += me.dir * selfSpeed * dt;
-    const minX = EDGE_MARGIN + (ART_W * viewScale) / 2;
-    const maxX = viewW - EDGE_MARGIN - (ART_W * viewScale) / 2;
-    if (me.x <= minX) {
-      me.x = minX;
-      me.dir = 1;
-    } else if (me.x >= maxX) {
-      me.x = maxX;
-      me.dir = -1;
+  // 액션 재생 중엔 이동 정지
+  if (actionActive(me)) {
+    me.walking = false;
+  } else {
+    me.walking = selfMode === 'walk';
+    if (me.walking) {
+      me.x += me.dir * selfSpeed * dt;
+      const minX = EDGE_MARGIN + (ART_W * viewScale) / 2;
+      const maxX = viewW - EDGE_MARGIN - (ART_W * viewScale) / 2;
+      if (me.x <= minX) {
+        me.x = minX;
+        me.dir = 1;
+      } else if (me.x >= maxX) {
+        me.x = maxX;
+        me.dir = -1;
+      }
     }
   }
 
-  // 점프(클릭 리액션)
-  if (me.hopVy !== 0 || me.hopY !== 0) {
-    me.hopVy += 700 * dt;
-    me.hopY += me.hopVy * dt;
-    if (me.hopY >= 0) {
-      me.hopY = 0;
-      me.hopVy = 0;
-    }
-  }
+  updateHop(me, dt);
 }
 
 // 서버로 내 위치 전송 (변화 있을 때만, 150ms 간격)
@@ -279,7 +325,7 @@ function sendMoveIfNeeded(dt: number): void {
 function updateRemotes(dt: number): void {
   for (const actor of remotes.values()) {
     actor.animClock += dt;
-    if (actor.targetX !== null) {
+    if (actor.targetX !== null && !actionActive(actor)) {
       const diff = actor.targetX - actor.x;
       if (Math.abs(diff) < 0.5) {
         actor.x = actor.targetX;
@@ -287,6 +333,7 @@ function updateRemotes(dt: number): void {
         actor.x += diff * Math.min(1, dt * REMOTE_LERP);
       }
     }
+    updateHop(actor, dt);
   }
 }
 
@@ -303,6 +350,16 @@ function addRemote(p: NetPlayer): void {
 
 function currentFrame(actor: Actor): HTMLCanvasElement | null {
   if (!actor.frames) return null;
+  if (actionActive(actor)) {
+    const anim = actor.frames.anims[actor.action!];
+    const play = ACTION_PLAY[actor.action!];
+    if (anim && play) {
+      const t = (performance.now() - actor.actionStart) / 1000;
+      const raw = Math.floor(t * play.fps);
+      const idx = play.mode === 'loop' ? raw % anim.length : Math.min(raw, anim.length - 1);
+      return anim[idx];
+    }
+  }
   if (actor.walking) {
     const idx = Math.floor(actor.animClock * RUN_FPS) % actor.frames.run.length;
     return actor.frames.run[idx];
@@ -784,8 +841,9 @@ function wireNet(): void {
     const msg = data as NetChatMessage;
     const actor = msg.id === selfId ? me : remotes.get(msg.id);
     if (!actor) return;
+    if (msg.action) playAction(actor, msg.action);
     if (msg.image) showImageBubble(actor, msg.image);
-    else showBubble(actor, msg.text);
+    else if (msg.text) showBubble(actor, msg.text);
   });
 
   window.overlay.on('net:player-appearance', (data) => {
