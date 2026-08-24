@@ -135,8 +135,12 @@ function saveSettings(): void {
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8');
 }
 
+// 패키징 앱은 공식 서버, 개발 모드는 로컬 서버가 기본
+const PUBLIC_SERVER = 'https://dotchat-production-e868.up.railway.app';
 const SERVER_URL =
-  process.env.DOTCHAT_SERVER ?? settings.serverUrl ?? `http://localhost:${DEFAULT_PORT}`;
+  process.env.DOTCHAT_SERVER ??
+  settings.serverUrl ??
+  (app.isPackaged ? PUBLIC_SERVER : `http://localhost:${DEFAULT_PORT}`);
 
 // ---- 네트워크 (소켓은 메인 프로세스가 소유, 렌더러에는 IPC로 중계) ----
 
