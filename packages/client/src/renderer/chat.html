@@ -52,10 +52,15 @@
       header .title {
         font-weight: 700;
         color: #fffdf7;
+        white-space: nowrap;
       }
       header .online {
         font-size: 11px;
         color: var(--nick);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
       }
       header .spacer {
         flex: 1;
@@ -69,6 +74,7 @@
         cursor: pointer;
         padding: 2px 8px;
         border-radius: 5px;
+        flex-shrink: 0;
       }
       header button:hover {
         background: var(--header-hover);
@@ -191,6 +197,7 @@
       }
       #chat-input {
         flex: 1;
+        min-width: 0;
         border: 1px solid var(--header);
         background: var(--bg-input);
         color: var(--text);
@@ -210,6 +217,14 @@
         border-radius: 7px;
         padding: 0 14px;
         cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      /* 창이 좁아지면 전송버튼 숨김 (Enter로 전송 가능) */
+      @media (max-width: 340px) {
+        #send-btn {
+          display: none;
+        }
       }
       #send-btn:hover {
         background: var(--accent-hover);
@@ -245,6 +260,8 @@
         font-size: 11px;
         font-weight: 700;
         color: #ffd66e;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
       #slot-panel .slot-body {
         flex: 1;
