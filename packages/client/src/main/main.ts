@@ -223,7 +223,7 @@ const players = new Map<string, PlayerState>();
 const chatLog: ChatMessage[] = [];
 
 function broadcast(channel: string, payload?: unknown): void {
-  for (const win of [overlayWindow, chatWindow]) {
+  for (const win of [overlayWindow, chatWindow, fishdexWindow]) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   }
 }
@@ -407,6 +407,13 @@ function createOverlay(): void {
   screen.on('display-metrics-changed', reposition);
   screen.on('display-added', reposition);
   screen.on('display-removed', reposition);
+
+  // 다른 앱 실행 등으로 최상단(z-order)이 풀리는 경우 대비 — 주기적으로 재고정
+  setInterval(() => {
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    }
+  }, 5000);
 }
 
 // ---- 채팅 창 ----
@@ -465,6 +472,38 @@ function toggleChat(): void {
     chatWindow = null;
   });
 }
+
+// ---- 낚시도감 창 (픽셀 고정 크기 팝업) ----
+
+let fishdexWindow: BrowserWindow | null = null;
+
+function toggleFishdex(): void {
+  if (fishdexWindow && !fishdexWindow.isDestroyed()) {
+    if (fishdexWindow.isVisible()) fishdexWindow.hide();
+    else fishdexWindow.show();
+    return;
+  }
+  fishdexWindow = new BrowserWindow({
+    width: 512,
+    height: 318,
+    useContentSize: true,
+    show: false,
+    frame: false,
+    resizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    webPreferences: { preload: PRELOAD },
+  });
+  pipeConsole(fishdexWindow, 'fishdex');
+  fishdexWindow.loadFile(path.join(RENDERER_DIR, 'fishdex.html'));
+  fishdexWindow.once('ready-to-show', () => fishdexWindow?.show());
+  fishdexWindow.on('closed', () => {
+    fishdexWindow = null;
+  });
+}
+
+ipcMain.on('toggle-fishdex', () => toggleFishdex());
+ipcMain.on('close-fishdex', () => fishdexWindow?.hide());
 
 // ---- IPC: 오버레이/공통 ----
 

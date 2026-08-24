@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('overlay', {
     ipcRenderer.send('equip', payload),
   toggleChat: () => ipcRenderer.send('toggle-chat'),
   closeChat: () => ipcRenderer.send('close-chat'),
+  toggleFishdex: () => ipcRenderer.send('toggle-fishdex'),
+  closeFishdex: () => ipcRenderer.send('close-fishdex'),
   on: (channel: string, callback: (data: unknown) => void) => {
     if (NET_CHANNELS.has(channel)) {
       ipcRenderer.on(channel, (_e, data) => callback(data));

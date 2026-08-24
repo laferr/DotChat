@@ -766,17 +766,10 @@
     });
   }
 
-  // ---- 낚시도감 ----
-
-  const fishdexPanel = document.getElementById('fishdex-panel')!;
-  const fishdexClose = document.getElementById('fishdex-close') as HTMLButtonElement;
-  const fishdexBook = document.getElementById('fishdex-book')!;
-  const fishdexGrid = document.getElementById('fishdex-grid')!;
-  const fishdexCount = document.getElementById('fishdex-count')!;
+  // ---- 엑스트라 이미지 로더 (이모지/리액션 공용) ----
 
   let extrasManifest: ExtrasManifest | null = null;
   const fishSheetCache = new Map<string, Promise<HTMLImageElement | null>>();
-  let bookBgReady = false;
 
   function loadImageFromExtra(rel: string): Promise<HTMLImageElement | null> {
     let cached = fishSheetCache.get(rel);
@@ -794,50 +787,6 @@
     }
     return cached;
   }
-
-  async function renderFishdex(): Promise<void> {
-    if (!extrasManifest) extrasManifest = await window.overlay.getExtras();
-    if (!extrasManifest) return;
-    if (!bookBgReady) {
-      // 책 이미지 상단(펼친 책 영역)만 크롭해서 배경으로
-      const book = await loadImageFromExtra('book.png');
-      if (book) {
-        const crop = document.createElement('canvas');
-        crop.width = 256;
-        crop.height = 146;
-        crop.getContext('2d')!.drawImage(book, 0, 0, 256, 146, 0, 0, 256, 146);
-        fishdexBook.style.backgroundImage = `url(${crop.toDataURL()})`;
-        bookBgReady = true;
-      }
-    }
-    const wallet = (await window.overlay.getWallet()) as { fish?: string[] };
-    const caught = new Set(wallet.fish ?? []);
-    fishdexCount.textContent = `${caught.size}/${extrasManifest.fish.length}`;
-    fishdexGrid.innerHTML = '';
-    for (const fishId of extrasManifest.fish) {
-      const cell = document.createElement('div');
-      const isCaught = caught.has(fishId);
-      cell.className = isCaught ? 'fish-cell' : 'fish-cell uncaught';
-      cell.title = isCaught ? fishId : '???';
-      const thumb = document.createElement('canvas');
-      thumb.width = 16;
-      thumb.height = 16;
-      cell.appendChild(thumb);
-      void loadImageFromExtra(`fish/${fishId}.png`).then((img) => {
-        if (!img) return;
-        const tctx = thumb.getContext('2d')!;
-        tctx.imageSmoothingEnabled = false;
-        // 1번 프레임 = 물고기, 3번 프레임 = 그림자(미획득 실루엣)
-        tctx.drawImage(img, isCaught ? 0 : 32, 0, 16, 16, 0, 0, 16, 16);
-      });
-      fishdexGrid.appendChild(cell);
-    }
-  }
-
-  fishdexClose.addEventListener('click', () => fishdexPanel.classList.remove('open'));
-  window.overlay.on('self:wallet', () => {
-    if (fishdexPanel.classList.contains('open')) void renderFishdex();
-  });
 
   // ---- 리액션 이모지 피커 ----
 
@@ -922,7 +871,6 @@
     slotPanel.classList.remove('open');
     shopPanel.classList.remove('open');
     minigamePanel.classList.remove('open');
-    fishdexPanel.classList.remove('open');
   }
 
   menuBtn.addEventListener('click', (e) => {
@@ -943,8 +891,7 @@
         void renderMinigame();
         break;
       case 'fishdex':
-        fishdexPanel.classList.add('open');
-        void renderFishdex();
+        window.overlay.toggleFishdex();
         break;
       case 'slot':
         slotPanel.classList.add('open');

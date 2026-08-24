@@ -99,6 +99,8 @@ interface OverlayApi {
   equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
   toggleChat(): void;
   closeChat(): void;
+  toggleFishdex(): void;
+  closeFishdex(): void;
   on(channel: string, callback: (data: unknown) => void): void;
 }
 interface Window {
@@ -815,8 +817,38 @@ let extras: ExtrasManifest | null = null;
 const rodStrips: Record<string, HTMLImageElement | null> = {};
 const fishReady = new Map<string, HTMLImageElement | null>();
 let reactionSheet: HTMLImageElement | null = null;
-let arrowImg: HTMLImageElement | null = null;
+let arrowSprite: HTMLCanvasElement | null = null; // 하단 좌측 가로 화살 (bbox 트림)
 let trapImg: HTMLImageElement | null = null;
+
+// 화살 시트(16px 셀 12x3)의 하단 좌측 셀에서 실제 픽셀 영역만 잘라냄
+function buildArrowSprite(img: HTMLImageElement): HTMLCanvasElement | null {
+  const cell = document.createElement('canvas');
+  cell.width = 16;
+  cell.height = 16;
+  const cctx = cell.getContext('2d')!;
+  cctx.drawImage(img, 0, 32, 16, 16, 0, 0, 16, 16);
+  const data = cctx.getImageData(0, 0, 16, 16).data;
+  let minX = 16;
+  let minY = 16;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      if (data[(y * 16 + x) * 4 + 3] > 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null;
+  const sprite = document.createElement('canvas');
+  sprite.width = maxX - minX + 1;
+  sprite.height = maxY - minY + 1;
+  sprite.getContext('2d')!.drawImage(cell, minX, minY, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height);
+  return sprite;
+}
 
 function loadExtraImage(rel: string): Promise<HTMLImageElement | null> {
   return window.overlay.loadExtra(rel).then((dataUrl) => {
@@ -841,7 +873,7 @@ async function initExtras(): Promise<void> {
   if (!extras) return;
   const jobs: Promise<unknown>[] = [
     loadExtraImage('reaction.png').then((img) => (reactionSheet = img)),
-    loadExtraImage('rungame/Arrow.png').then((img) => (arrowImg = img)),
+    loadExtraImage('rungame/Arrow.png').then((img) => (arrowSprite = img ? buildArrowSprite(img) : null)),
     loadExtraImage('rungame/Trap3.png').then((img) => (trapImg = img)),
   ];
   for (const [phase, file] of Object.entries(extras.tools.files)) {
@@ -966,7 +998,8 @@ function drawFishingStop(): void {
   const box = actorBox(me);
   const w = 56;
   const h = 18;
-  fishStopRect = { x: me.x - w / 2, y: box.y - 40, w, h };
+  // 닉네임 바로 아래
+  fishStopRect = { x: me.x - w / 2, y: box.y - 2, w, h };
   stageCtx.globalAlpha = fishStopHover ? 1 : 0.85;
   stageCtx.fillStyle = fishStopHover ? '#a23352' : '#4a2837';
   stageCtx.strokeStyle = '#fffdf7';
@@ -1059,14 +1092,16 @@ function updateRunner(dt: number, now: number): void {
     let oB: number;
     if (obs.type === 'arrow') {
       const cy = viewH - 24 * vs;
-      oL = obs.x - 10 * vs;
-      oR = obs.x + 10 * vs;
-      oT = cy - 3 * vs;
-      oB = cy + 3 * vs;
+      const halfW = (arrowSprite ? arrowSprite.width : 14) * 0.8 * vs;
+      const halfH = Math.max(2.5 * vs, (arrowSprite ? arrowSprite.height : 6) * 0.7 * vs);
+      oL = obs.x - halfW;
+      oR = obs.x + halfW;
+      oT = cy - halfH;
+      oB = cy + halfH;
     } else {
-      oL = obs.x - 8 * vs;
-      oR = obs.x + 8 * vs;
-      oT = viewH - 11 * vs;
+      oL = obs.x - 12 * vs;
+      oR = obs.x + 12 * vs;
+      oT = viewH - 13 * vs;
       oB = viewH;
     }
     if (charR > oL && charL < oR && charBottom > oT && charTop < oB) {
@@ -1080,19 +1115,32 @@ function drawRunner(time: number): void {
   if (!runnerState.active) return;
   const vs = viewScale;
   for (const obs of runnerState.obstacles) {
-    if (obs.type === 'arrow' && arrowImg) {
-      // 하단 좌측 프레임(24x24)을 좌우반전 → 왼쪽으로 날아옴
-      const s = 1.1 * vs;
+    if (obs.type === 'arrow' && arrowSprite) {
+      // 하단 좌측 가로 화살(오른쪽 향함)을 좌우반전 → 왼쪽으로 날아옴
+      const s = 1.6 * vs;
       const cy = viewH - 24 * vs;
+      const w = arrowSprite.width * s;
+      const h = arrowSprite.height * s;
       stageCtx.save();
       stageCtx.translate(obs.x, cy);
       stageCtx.scale(-1, 1);
-      stageCtx.drawImage(arrowImg, 0, 24, 24, 24, -12 * s, -12 * s, 24 * s, 24 * s);
+      stageCtx.drawImage(arrowSprite, Math.round(-w / 2), Math.round(-h / 2), w, h);
       stageCtx.restore();
     } else if (obs.type === 'trap' && trapImg) {
-      const frame = Math.floor(time / 130) % 4;
-      const s = 1.3 * vs;
-      stageCtx.drawImage(trapImg, frame * 16, 0, 16, 16, Math.round(obs.x - 8 * s), Math.round(viewH - 16 * s + 3 * vs), 16 * s, 16 * s);
+      // Trap3: 32x16 2프레임
+      const frame = Math.floor(time / 280) % 2;
+      const s = 1.2 * vs;
+      stageCtx.drawImage(
+        trapImg,
+        frame * 32,
+        0,
+        32,
+        16,
+        Math.round(obs.x - 16 * s),
+        Math.round(viewH - 16 * s + 2 * vs),
+        32 * s,
+        16 * s,
+      );
     }
   }
   // HUD
