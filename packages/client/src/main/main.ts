@@ -484,11 +484,13 @@ function toggleFishdex(): void {
     return;
   }
   fishdexWindow = new BrowserWindow({
-    width: 512,
-    height: 318,
+    width: 532,
+    height: 316,
     useContentSize: true,
     show: false,
     frame: false,
+    transparent: true, // 책 그림만 보이도록
+    hasShadow: false,
     resizable: false,
     skipTaskbar: true,
     alwaysOnTop: true,

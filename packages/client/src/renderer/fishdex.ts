@@ -41,9 +41,9 @@
     bookEl.style.backgroundSize = '512px 292px';
   }
 
-  // 페이지 배치 (1x 좌표 기준, x2로 렌더): 페이지당 4x6칸
-  const PAGE_X = [18, 134];
-  const PAGE_Y = 12;
+  // 페이지 배치 (1x 좌표, x2 렌더) — book.png 픽셀 스캔 실측: 좌 18~117 / 우 123~221 / 세로 4~123
+  const PAGE_X = [22, 127];
+  const PAGE_Y = 11;
   const DX = 25;
   const DY = 18;
   const PER_PAGE = 24;

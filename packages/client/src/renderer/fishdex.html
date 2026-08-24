@@ -10,64 +10,58 @@
       html,
       body {
         margin: 0;
-        width: 512px;
-        height: 318px;
+        width: 532px;
+        height: 316px;
         overflow: hidden;
         font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
-        font-size: 13px;
         background: transparent;
       }
-      body {
-        display: flex;
-        flex-direction: column;
-        background: #2b2230;
-        color: #f0e8ec;
-        border: 1px solid #4a2837;
-        border-radius: 10px;
-      }
-      header {
-        -webkit-app-region: drag;
-        height: 26px;
+      #count {
+        position: absolute;
+        left: 10px;
+        top: 0;
+        height: 20px;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 4px;
         padding: 0 10px;
         background: #4a2837;
-        border-radius: 9px 9px 0 0;
+        color: #fffdf7;
+        font-size: 11px;
+        font-weight: 700;
+        border: 1px solid #fffdf7;
+        border-radius: 10px;
         user-select: none;
       }
-      header .title {
-        font-weight: 700;
-        font-size: 12px;
+      #close-btn {
+        position: absolute;
+        right: 10px;
+        top: 0;
+        width: 26px;
+        height: 20px;
+        border: 1px solid #fffdf7;
+        background: #4a2837;
         color: #fffdf7;
-      }
-      header .count {
         font-size: 11px;
-        color: #f2a6b4;
-      }
-      header .spacer {
-        flex: 1;
-      }
-      header button {
-        -webkit-app-region: no-drag;
-        border: 0;
-        background: transparent;
-        color: #f0e8ec;
-        font-size: 13px;
+        font-weight: 700;
+        border-radius: 10px;
         cursor: pointer;
-        padding: 1px 7px;
-        border-radius: 5px;
+        line-height: 1;
       }
-      header button:hover {
-        background: #6b3b52;
+      #close-btn:hover {
+        background: #a23352;
       }
       #book {
-        position: relative;
+        -webkit-app-region: drag; /* 책을 잡고 드래그 이동 */
+        position: absolute;
+        left: 10px;
+        top: 24px;
         width: 512px;
         height: 292px;
         image-rendering: pixelated;
       }
       .fish {
+        -webkit-app-region: no-drag;
         position: absolute;
         width: 32px;
         height: 32px;
@@ -82,12 +76,8 @@
     </style>
   </head>
   <body>
-    <header>
-      <span class="title">📖 낚시도감</span>
-      <span class="count" id="count"></span>
-      <span class="spacer"></span>
-      <button id="close-btn" title="닫기">✕</button>
-    </header>
+    <span id="count"></span>
+    <button id="close-btn" title="닫기">✕</button>
     <div id="book"></div>
     <script src="../../dist/renderer/fishdex.js"></script>
   </body>
