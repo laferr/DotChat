@@ -31,6 +31,9 @@ interface EffectDef {
   fh: number;
   cols: number;
   count: number;
+  scale?: number;
+  dy?: number;
+  mode?: string;
 }
 
 interface ExtrasManifest {
@@ -547,26 +550,41 @@ function drawFxAura(actor: Actor, time: number, effectId: string): void {
   }
   const sheet = effectSheets.get(effectId);
   if (!sheet) return;
-  const frame = Math.floor(time / 85) % def.count;
-  const sx = (frame % def.cols) * def.fw;
-  const sy = Math.floor(frame / def.cols) * def.fh;
   const vs = viewScale;
-  const size = 46 * vs; // 캐릭터를 감싸는 크기
+  const size = 46 * (def.scale ?? 1) * vs; // 캐릭터를 감싸는 크기
   const cx = actor.x;
-  const cy = viewH - (ART_H / 2) * vs + actor.hopY;
+  const cy = viewH - (ART_H / 2) * vs + (def.dy ?? 0) * vs + actor.hopY;
   stageCtx.save();
   stageCtx.globalAlpha = 0.85;
-  stageCtx.drawImage(
-    sheet,
-    sx,
-    sy,
-    def.fw,
-    def.fh,
-    Math.round(cx - size / 2),
-    Math.round(cy - size / 2),
-    size,
-    size,
-  );
+  if (def.mode === 'scroll') {
+    // 단일 텍스처를 원형 마스크 안에서 위로 스크롤 (독기포 상승 연출)
+    stageCtx.beginPath();
+    stageCtx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+    stageCtx.clip();
+    const t = size / 150; // 텍스처의 ~150px 창을 표시
+    const dw = def.fw * t;
+    const dh = def.fh * t;
+    const scroll = ((time * 0.025) % def.fh) * t;
+    const dx = cx - dw / 2;
+    const baseY = cy - dh / 2 - scroll;
+    stageCtx.drawImage(sheet, dx, baseY, dw, dh);
+    stageCtx.drawImage(sheet, dx, baseY + dh, dw, dh);
+  } else {
+    const frame = Math.floor(time / 85) % def.count;
+    const sx = (frame % def.cols) * def.fw;
+    const sy = Math.floor(frame / def.cols) * def.fh;
+    stageCtx.drawImage(
+      sheet,
+      sx,
+      sy,
+      def.fw,
+      def.fh,
+      Math.round(cx - size / 2),
+      Math.round(cy - size / 2),
+      size,
+      size,
+    );
+  }
   stageCtx.restore();
 }
 

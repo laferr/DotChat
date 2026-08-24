@@ -59,15 +59,16 @@ fs.copyFileSync(path.join(SRC, 'speech bubble, emojis, reaction.png'), path.join
 fs.copyFileSync(path.join(SRC, 'Book.png'), path.join(DEST, 'book.png'));
 
 // 이펙트 오오라 (상점 판매용) — 프레임 크기는 파일별 정의
+// scale: 표시 배율, dy: 중심 하향(px, 배율 전), mode: 'scroll'은 단일 텍스처 상승 스크롤
 const EFFECT_DEFS = [
-  { id: 'ChargeUp', file: 'ChargeUp.png', fw: 48, fh: 48 },
-  { id: 'HeartBeat', file: 'HeartBeat.png', fw: 16, fh: 16 },
-  { id: 'Poison', file: 'Poison.png', fw: 64, fh: 64 },
-  { id: 'pipo021', file: 'pipo-mapeffect021_192.png', fw: 192, fh: 192 },
-  { id: 'pipo022', file: 'pipo-mapeffect022_192.png', fw: 192, fh: 192 },
-  { id: 'pipo023', file: 'pipo-mapeffect023_192.png', fw: 192, fh: 192 },
-  { id: 'pipo024', file: 'pipo-mapeffect024_192.png', fw: 192, fh: 192 },
-  { id: 'pipo025', file: 'pipo-mapeffect025_192.png', fw: 192, fh: 192 },
+  { id: 'ChargeUp', file: 'ChargeUp.png', fw: 48, fh: 48, scale: 1, dy: 2 },
+  { id: 'HeartBeat', file: 'HeartBeat.png', fw: 32, fh: 16, scale: 1, dy: 2 },
+  { id: 'Poison', file: 'Poison.png', fw: 256, fh: 256, scale: 1, dy: 3, mode: 'scroll' },
+  { id: 'pipo021', file: 'pipo-mapeffect021_192.png', fw: 192, fh: 192, scale: 1.5, dy: 5 },
+  { id: 'pipo022', file: 'pipo-mapeffect022_192.png', fw: 192, fh: 192, scale: 1.5, dy: 5 },
+  { id: 'pipo023', file: 'pipo-mapeffect023_192.png', fw: 192, fh: 192, scale: 1.5, dy: 5 },
+  { id: 'pipo024', file: 'pipo-mapeffect024_192.png', fw: 192, fh: 192, scale: 1.5, dy: 5 },
+  { id: 'pipo025', file: 'pipo-mapeffect025_192.png', fw: 192, fh: 192, scale: 1.5, dy: 5 },
 ];
 fs.mkdirSync(path.join(DEST, 'effects'), { recursive: true });
 const effects = [];
