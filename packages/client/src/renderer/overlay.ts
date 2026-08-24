@@ -39,6 +39,8 @@ interface EffectDef {
 
 interface ExtrasManifest {
   fish: string[];
+  /** 새 물고기 (단일 이미지, fish2/) — box/treasure_chest 특수 어획물 포함 */
+  fish2?: string[];
   tools: { frameW: number; frameH: number; strips: Record<string, number>; files: Record<string, string> };
   reaction: { cell: number; cols: number; rows: number };
   effects?: EffectDef[];
@@ -115,7 +117,13 @@ interface OverlayApi {
   getMinigameState(): Promise<{ runnerRemainSec: number }>;
   startMinigame(game: string): Promise<{ ok: boolean; error?: string }>;
   sendFishing(data: { phase: string; fishId?: string }): void;
-  reportFish(fishId: string): Promise<{ ok: boolean; error?: string; isNew?: boolean; delta?: number }>;
+  reportFish(fishId: string): Promise<{
+    ok: boolean;
+    error?: string;
+    isNew?: boolean;
+    delta?: number;
+    item?: { id: string; name: string };
+  }>;
   endRunner(seconds: number): Promise<{ ok: boolean; error?: string; delta?: number }>;
   sendReaction(index: number): void;
   equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
@@ -993,10 +1001,26 @@ function loadExtraImage(rel: string): Promise<HTMLImageElement | null> {
   });
 }
 
+// 새 물고기(fish2)는 단일 이미지, 구 물고기(fish)는 64x16 4프레임 스트립
+function isFish2(id: string): boolean {
+  return extras?.fish2?.includes(id) === true;
+}
+
 function loadFishImage(id: string): void {
   if (fishReady.has(id)) return;
   fishReady.set(id, null);
-  void loadExtraImage(`fish/${id}.png`).then((img) => fishReady.set(id, img));
+  const rel = isFish2(id) ? `fish2/${id}.png` : `fish/${id}.png`;
+  void loadExtraImage(rel).then((img) => fishReady.set(id, img));
+}
+
+// 어획물 롤 — 상자 0.5% / 보물상자 0.2% 고정, 나머지는 전체 물고기 균등
+function rollFishCatch(): string {
+  const fish2 = extras?.fish2 ?? [];
+  const roll = Math.random() * 100;
+  if (roll < 0.2 && fish2.includes('treasure_chest')) return 'treasure_chest';
+  if (roll < 0.7 && fish2.includes('box')) return 'box';
+  const pool = [...(extras?.fish ?? []), ...fish2.filter((f) => f !== 'box' && f !== 'treasure_chest')];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 async function initExtras(): Promise<void> {
@@ -1058,12 +1082,17 @@ function updateSelfFishing(now: number): void {
       break;
     case 'reeling':
       if (t >= (f.reelDur ?? 1.5)) {
-        const fishId = extras.fish[Math.floor(Math.random() * extras.fish.length)];
+        const fishId = rollFishCatch();
         loadFishImage(fishId);
         setSelfFishingPhase('caught', fishId);
         void window.overlay.reportFish(fishId).then((res) => {
-          if (res.ok) {
-            showBubble(me, `🎣 ${fishId}! ${res.isNew ? 'NEW! ' : ''}+${res.delta}🪙`);
+          if (!res.ok) return;
+          if (fishId === 'box') {
+            showBubble(me, `📦 상자 발견! +${res.delta}🪙`);
+          } else if (fishId === 'treasure_chest') {
+            showBubble(me, res.item ? `💰 보물상자!! '${res.item.name}' 획득!` : `💰 보물상자!! +${res.delta}🪙`);
+          } else {
+            showBubble(me, `🎣 ${fishId.replace(/_/g, ' ')}! ${res.isNew ? 'NEW! ' : ''}+${res.delta}🪙`);
           }
         });
       }
@@ -1114,7 +1143,17 @@ function drawFishing(actor: Actor, time: number): void {
       const fx = actor.x + (62 - 30 * p) * vs;
       const fy = viewH - 4 * vs - 44 * vs * p - Math.sin(p * Math.PI) * 6 * vs;
       const fs = 16 * 1.5 * vs;
-      stageCtx.drawImage(fishImg, 0, 0, 16, 16, Math.round(fx - fs / 2), Math.round(fy - fs / 2), fs, fs);
+      if (isFish2(f.fishId)) {
+        // 단일 이미지: 전체를 비율 유지로 축소
+        const nw = fishImg.naturalWidth || 16;
+        const nh = fishImg.naturalHeight || 16;
+        const s = fs / Math.max(nw, nh);
+        const dw = nw * s;
+        const dh = nh * s;
+        stageCtx.drawImage(fishImg, 0, 0, nw, nh, Math.round(fx - dw / 2), Math.round(fy - dh / 2), dw, dh);
+      } else {
+        stageCtx.drawImage(fishImg, 0, 0, 16, 16, Math.round(fx - fs / 2), Math.round(fy - fs / 2), fs, fs);
+      }
     }
   }
   stageCtx.restore();

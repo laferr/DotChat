@@ -39,6 +39,27 @@ for (const file of walk(path.join(SRC, 'Fish'))) {
 }
 fish.sort();
 
+// 새 물고기 (NewFish/ — 단일 이미지, 크기 자유) → fish2/
+// 구 도감(fish)과 이름이 겹치면 접미사 '2', "(1)" 같은 중복 표기는 정리
+const SKIP_NEW = new Set(['box_turtle_spawn_egg']); // 물고기가 아닌 아이콘 제외
+fs.mkdirSync(path.join(DEST, 'fish2'), { recursive: true });
+const fish2 = [];
+const newDir = path.join(SRC, 'NewFish');
+if (fs.existsSync(newDir)) {
+  for (const file of walk(newDir)) {
+    if (!file.endsWith('.png')) continue;
+    let name = path
+      .basename(file, '.png')
+      .trim()
+      .replace(/\s*\(\d+\)$/, '2');
+    if (SKIP_NEW.has(name)) continue;
+    while (fish.includes(name) || fish2.includes(name)) name += '2';
+    fs.copyFileSync(file, path.join(DEST, 'fish2', `${name}.png`));
+    fish2.push(name);
+  }
+  fish2.sort();
+}
+
 // 낚싯대 애니메이션 스트립 (96x64 프레임)
 const TOOL_STRIPS = {
   casting: 'tools_casting_strip15.png',
@@ -83,6 +104,7 @@ for (const def of EFFECT_DEFS) {
 
 const manifest = {
   fish,
+  fish2,
   tools: {
     frameW: 96,
     frameH: 64,
@@ -93,5 +115,5 @@ const manifest = {
   effects,
 };
 fs.writeFileSync(path.join(DEST, 'manifest-extras.json'), JSON.stringify(manifest, null, 2), 'utf8');
-console.log(`물고기 ${fish.length}종 + 도구/러너/리액션 임포트 완료 → ${DEST}`);
-console.log(JSON.stringify(fish));
+console.log(`물고기 ${fish.length}종 + 새 물고기 ${fish2.length}종 + 도구/러너/리액션 임포트 완료 → ${DEST}`);
+console.log('fish2 =', JSON.stringify(fish2));

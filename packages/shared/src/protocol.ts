@@ -163,11 +163,21 @@ export interface ClientToServerEvents {
   ranking: (ack: (rows: { name: string; coins: number }[]) => void) => void;
   /** 낚시 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화) */
   'fishing-state': (data: { phase: FishingPhase; fishId?: string }) => void;
-  /** 물고기 획득 정산 (도감 기록 + 코인) */
+  /** 물고기 획득 정산 (도감 기록 + 코인, box/보물상자는 특수 보상 — item은 상점 아이템 당첨) */
   fish: (
     fishId: string,
-    ack: (res: { ok: boolean; error?: string; isNew?: boolean; delta?: number; coins?: number }) => void,
+    ack: (res: {
+      ok: boolean;
+      error?: string;
+      isNew?: boolean;
+      delta?: number;
+      coins?: number;
+      item?: { id: string; name: string };
+      items?: string[];
+    }) => void,
   ) => void;
+  /** 보유 파츠 목록 동기화 — 클라 목록을 서버 지갑에 합집합 등록, ack로 병합 결과 반환 */
+  'parts-sync': (parts: string[], ack: (res: { ok: boolean; parts?: string[] }) => void) => void;
   /** 러너 생존 시간 보고 → 코인 정산 */
   'runner-score': (
     seconds: number,
@@ -260,9 +270,47 @@ export const FISH_IDS = [
   'Tiger Trout', 'Tuna', 'Walleye', 'Zombie Fish',
 ] as const;
 
+/** 새 물고기 (assets/extras/fish2/ 단일 이미지 — tools/import-extras.mjs가 생성하는 fish2 목록과 동일해야 함) */
+export const FISH_IDS_EXTRA = [
+  'AldebaranAlewife', 'Amanita_Fungifin', 'Angelfish', 'ArcturusAstroidean', 'Batfish', 'Bloodfin',
+  'Bomb_Fish', 'Brimlish', 'Bumblebee_Tuna', 'Bunnyfish', 'Catfish2', 'Chaos_Fish', 'Cloudfish',
+  'Clownfish2', 'CoastalDemonfish', 'CoralskinFoolfish', 'CragBullhead', 'Crimson_Tigerfish',
+  'Cursedfish', 'Dirtfish', 'DragoonDrizzlefish', 'Dynamite_Fish', 'EnchantedStarfish',
+  'EutrophicSandfish', 'FishofEleum', 'FishofFlight', 'Flarefin_Koi', 'GleamingCucumber',
+  'GlimmeringGemfish', 'Gorecodile', 'GreenwaveLoach', 'Havocfish', 'Jewelfish', 'MoltenFishron',
+  'Pengfish', 'Pixiefish', 'PrismaticGuppy', 'Prismite', 'ProcyonidPrawn', 'Rock_Lobster',
+  'Rockfish', 'Serpentuna', 'Shadowfish', 'Slimefish', 'Spadefish', 'SparklingEmpress',
+  'SpecularSturgeon', 'Squidoom', 'StuffedFish', 'SunbeamFish', 'SunkenSailfish',
+  'The_Fish_of_Cthulhu', 'TwinklingPollox', 'Zombie_Fish', 'arapaima', 'arrau_turtle',
+  'atlantic_cod', 'atlantic_halibut', 'atlantic_herring', 'bayad', 'blackfish', 'bluegill',
+  'boulti', 'box', 'box_turtle', 'brown_shrooma', 'brown_trout', 'capitaine', 'carp', 'catfish',
+  'fish_bones', 'gar', 'goldfish', 'jellyfish', 'largemouth_bass', 'leech', 'message_in_a_bottle',
+  'minnow', 'muskellunge', 'pacific_halibut', 'perch', 'pink_salmon', 'piranha', 'pollock',
+  'rainbow_trout', 'raw_aero_mono', 'raw_amber_goby', 'raw_bark_angel', 'raw_beaked_herring',
+  'raw_blind_sailfin', 'raw_circus_fish', 'raw_copperflame_anthias', 'raw_demon_herring',
+  'raw_drooping_gourami', 'raw_duality_damselfish', 'raw_eyelash_fish', 'raw_forkfish',
+  'raw_frosty_fin_fish', 'raw_hatchetfish', 'raw_lobster', 'raw_mono_stick', 'raw_mossthorn',
+  'raw_picklefish', 'raw_rhino_tetra', 'raw_sailor_barb', 'raw_sneep_snorp', 'raw_spindlefish',
+  'raw_triple_twirl_pleco', 'red_grouper', 'red_shrooma', 'smallmouth_bass', 'starshell_turtle',
+  'synodontis', 'tambaqui', 'tin_can', 'treasure_chest', 'tuna',
+] as const;
+
 export const FISH_FIRST_COIN = 5; // 처음 잡은 물고기
 export const FISH_REPEAT_COIN = 1; // 이미 잡은 물고기
 export const FISH_MIN_INTERVAL_MS = 8000; // 서버측 최소 낚시 간격 (사이클 ~12초)
+
+// 특수 어획물 — 확률은 클라이언트 롤(overlay.ts에 중복 하드코딩), 보상 정산은 서버
+export const FISH_BOX_ID = 'box'; // 0.5%
+export const FISH_CHEST_ID = 'treasure_chest'; // 0.2%
+export const FISH_BOX_COIN_MIN = 2;
+export const FISH_BOX_COIN_MAX = 10;
+export const FISH_CHEST_COIN_MIN = 20;
+export const FISH_CHEST_COIN_MAX = 50;
+
+/** 보유 파츠 서버 동기화 한도 */
+export const PARTS_SYNC_MAX = 3000;
+/** 파츠 id 형식: "race:이름" 또는 "레이어/이름" */
+export const PART_ID_RE = /^(race:[\w\- \[\]]+|[A-Za-z]+\/[\w\- \[\]]+)$/;
 
 export const FISHING_PHASES = ['casting', 'waiting', 'reeling', 'caught', 'stop'] as const;
 export type FishingPhase = (typeof FISHING_PHASES)[number];

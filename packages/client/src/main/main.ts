@@ -281,6 +281,8 @@ function connect(): void {
       broadcast('self:update-hint', { version: data.serverVersion });
       updateCheckNow?.();
     }
+    // 보유 파츠를 서버 지갑과 동기화 (클라 목록 등록 + 서버 목록 내려받기)
+    syncParts();
   });
 
   socket.on('player-joined', (player) => {
@@ -581,6 +583,8 @@ ipcMain.handle('load-part', (_e, layer: string, name: string) => {
 
 interface ExtrasManifest {
   fish: string[];
+  /** 새 물고기 (단일 이미지, fish2/ 디렉토리) */
+  fish2?: string[];
   tools: { frameW: number; frameH: number; strips: Record<string, number>; files: Record<string, string> };
   reaction: { cell: number; cols: number; rows: number };
 }
@@ -613,7 +617,9 @@ ipcMain.handle('load-extra', (_e, relPath: string) => {
     /^rungame\/(Arrow|Trap3)\.png$/.test(rel) ||
     /^effects\/[\w\-]+\.png$/.test(rel) ||
     (/^fish\/[\w\- ]+\.png$/.test(rel) &&
-      extrasManifest?.fish.includes(rel.slice(5, -4)) === true);
+      extrasManifest?.fish.includes(rel.slice(5, -4)) === true) ||
+    (/^fish2\/[\w\- ]+\.png$/.test(rel) &&
+      extrasManifest?.fish2?.includes(rel.slice(6, -4)) === true);
   if (allowed && extrasManifest) {
     try {
       result = `data:image/png;base64,${fs.readFileSync(path.join(EXTRAS_DIR, rel)).toString('base64')}`;
@@ -771,6 +777,24 @@ function giftPool(): string[] {
   ];
 }
 
+// 보유 파츠를 서버 지갑에 동기화 (클라 기준 합집합)
+// 서버에만 있던 파츠는 로컬로 내려받아 다른 PC에서도 수집품을 이어받는다
+function syncParts(): void {
+  if (!socket?.connected) return;
+  (socket as any).timeout(10000).emit('parts-sync', inventory.owned, (err: unknown, res: any) => {
+    if (err || !res?.ok || !Array.isArray(res.parts)) return;
+    const before = inventory.owned.length;
+    const merged = new Set(inventory.owned);
+    for (const p of res.parts) if (typeof p === 'string') merged.add(p);
+    if (merged.size !== before) {
+      inventory.owned = [...merged];
+      saveInventory();
+      broadcast('self:inventory');
+      console.log(`[parts] 서버 지갑에서 파츠 ${merged.size - before}개 내려받음 (총 ${merged.size})`);
+    }
+  });
+}
+
 // 미보유 파츠(종족 세트 포함) 1개 랜덤 지급 — 선물상자/슬롯 공용
 function grantRandomPart(): { id: string; label: string } | null {
   const pool = giftPool();
@@ -780,6 +804,7 @@ function grantRandomPart(): { id: string; label: string } | null {
   inventory.owned.push(id);
   saveInventory();
   broadcast('self:inventory');
+  syncParts(); // 새 파츠 즉시 서버 등록
   const label = id.startsWith('race:') ? `${id.slice(5)} 종족 세트` : id.split('/')[1];
   console.log(`[part] ${id} 획득 (${inventory.owned.length}/${pool.length})`);
   return { id, label };
@@ -1005,8 +1030,10 @@ ipcMain.handle('fish-caught', (_e, fishId: string) => {
         myCoins = res.coins;
         broadcast('self:coins', myCoins);
       }
-      if (res.ok && res.isNew) {
-        myFish.push(String(fishId));
+      // 보물상자에서 상점 아이템 당첨 시 서버가 지갑에 넣어 보내줌
+      if (res.ok && Array.isArray(res.items)) myItems = res.items;
+      if (res.ok && res.isNew) myFish.push(String(fishId));
+      if (res.ok && (res.isNew || res.item)) {
         broadcast('self:wallet', { coins: myCoins, items: myItems, fish: myFish });
       }
       resolve(res);
