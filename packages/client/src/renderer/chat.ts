@@ -9,6 +9,29 @@
 
   let chatSelfId: string | null = null;
 
+  // ---- 읽음 확인: 접속자별 읽음 위치 + 내 메시지 안읽음 배지 ----
+
+  const readStates = new Map<string, number>(); // playerId → lastReadTs
+  const readBadges: { ts: number; el: HTMLElement }[] = [];
+  let latestTs = 0;
+
+  function recomputeReadBadges(): void {
+    for (const badge of readBadges) {
+      let count = 0;
+      for (const [pid, rts] of readStates) {
+        if (pid !== chatSelfId && rts < badge.ts) count++;
+      }
+      badge.el.textContent = count > 0 ? String(count) : '';
+    }
+  }
+
+  function maybeMarkRead(): void {
+    if (document.visibilityState === 'visible' && latestTs > 0) {
+      window.overlay.markRead(latestTs);
+    }
+  }
+  document.addEventListener('visibilitychange', maybeMarkRead);
+
   function formatTime(ts: number): string {
     const d = new Date(ts);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -84,10 +107,27 @@
       body.textContent = msg.text;
     }
 
-    content.append(meta, body);
+    // 내 메시지엔 안읽은 사람 수 배지 (말풍선 왼쪽, 카톡 스타일)
+    const row = document.createElement('div');
+    row.className = 'bubble-row';
+    if (msg.id === chatSelfId) {
+      const badge = document.createElement('span');
+      badge.className = 'read-count';
+      row.append(badge, body);
+      readBadges.push({ ts: msg.ts, el: badge });
+      if (readBadges.length > 200) readBadges.shift();
+    } else {
+      row.append(body);
+    }
+
+    content.append(meta, row);
     wrap.append(avatar, content);
     messagesEl.appendChild(wrap);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    latestTs = Math.max(latestTs, msg.ts);
+    maybeMarkRead();
+    if (msg.id === chatSelfId) recomputeReadBadges();
   }
 
   function addSystemMessage(text: string): void {
@@ -545,6 +585,7 @@
   const state = await window.overlay.getNetState();
   chatSelfId = state.selfId;
   setStatus(state.connected, state.online);
+  for (const p of state.players) readStates.set(p.id, p.lastReadTs ?? 0);
 
   const history = await window.overlay.getChatHistory();
   for (const msg of history) addMessage(msg);
@@ -553,10 +594,34 @@
   // 서버 보관 내역 도착(접속/재접속) 시 목록 갱신
   window.overlay.on('net:history', (data) => {
     messagesEl.innerHTML = '';
+    readBadges.length = 0;
     for (const msg of data as NetChatMessage[]) addMessage(msg);
+    recomputeReadBadges();
   });
   window.overlay.on('net:welcome', (data) => {
-    chatSelfId = (data as { selfId: string }).selfId;
+    const d = data as { selfId: string; players: NetPlayer[] };
+    chatSelfId = d.selfId;
+    readStates.clear();
+    for (const p of d.players) readStates.set(p.id, p.lastReadTs ?? 0);
+    recomputeReadBadges();
+  });
+  window.overlay.on('net:player-joined', (data) => {
+    const p = data as NetPlayer;
+    readStates.set(p.id, p.lastReadTs ?? 0);
+    recomputeReadBadges();
+  });
+  window.overlay.on('net:player-left', (data) => {
+    readStates.delete(data as string);
+    recomputeReadBadges();
+  });
+  window.overlay.on('net:player-read', (data) => {
+    const d = data as { id: string; ts: number };
+    readStates.set(d.id, d.ts);
+    recomputeReadBadges();
+  });
+  window.overlay.on('net:reset', () => {
+    readStates.clear();
+    recomputeReadBadges();
   });
   window.overlay.on('net:status', (data) => {
     const s = data as { connected: boolean; online: number };

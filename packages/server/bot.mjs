@@ -45,6 +45,11 @@ socket.on('connect', () => {
   console.log(`bot connected as ${nickname} (${socket.id})`);
   socket.emit('hello', { nickname, tag: '9999', appearance });
 });
+
+// 읽음 확인 시연: 메시지를 받고 4초 뒤 읽음 처리
+socket.on('chat', (msg) => {
+  setTimeout(() => socket.emit('read', msg.ts), 4000);
+});
 socket.on('disconnect', () => console.log('bot disconnected'));
 
 setInterval(() => {

@@ -60,6 +60,8 @@ export interface PlayerState {
   x: number;
   dir: -1 | 1;
   walking: boolean;
+  /** 이 시각(ts)까지의 채팅을 읽음 — 읽음 확인 카운트용 */
+  lastReadTs: number;
 }
 
 export interface MovePayload {
@@ -117,6 +119,8 @@ export interface ClientToServerEvents {
   appearance: (appearance: Appearance) => void;
   /** 액션 명령어 (대사 포함) — 서버가 chat 메시지로 브로드캐스트 */
   action: (data: { action: ActionId; text: string }) => void;
+  /** 이 시각까지 읽었음을 보고 (채팅창이 보이는 동안) */
+  read: (ts: number) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */
   image: (
     payload: { data: ArrayBuffer; mime: string; thumb: string; w: number; h: number },
@@ -133,6 +137,8 @@ export interface ServerToClientEvents {
   chat: (msg: ChatMessage) => void;
   /** 접속 직후 최근 채팅 내역 (서버 보관분) */
   'chat-history': (msgs: ChatMessage[]) => void;
+  /** 누군가의 읽음 위치 갱신 */
+  'player-read': (data: { id: string; ts: number }) => void;
 }
 
 /** 서버측 외형 검증/정제 — 알 수 없는 키 제거, 문자열 길이 제한, 수치 클램프 */

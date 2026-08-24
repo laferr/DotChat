@@ -8,6 +8,7 @@ interface NetPlayer {
   x: number; // 0~1 정규화
   dir: -1 | 1;
   walking: boolean;
+  lastReadTs: number;
 }
 
 interface NetChatMessage {
@@ -65,6 +66,7 @@ interface OverlayApi {
   sendMove(data: { x: number; dir: -1 | 1; walking: boolean }): void;
   sendChat(text: string): void;
   sendAction(command: string): void;
+  markRead(ts: number): void;
   sendImage(payload: {
     buffer: ArrayBuffer;
     mime: string;
@@ -713,6 +715,7 @@ async function claimGift(): Promise<void> {
 
 const CHAT_BTN = { w: 38, h: 30, marginX: 10, marginY: 6 };
 let chatBtnHover = false;
+let unreadCount = 0;
 
 function chatBtnRect(): { x: number; y: number; w: number; h: number } {
   return {
@@ -739,6 +742,24 @@ function drawChatButton(): void {
     stageCtx.beginPath();
     stageCtx.arc(r.x + r.w / 2 + dx, cy, 2, 0, Math.PI * 2);
     stageCtx.fill();
+  }
+
+  // 안읽은 채팅 수 배지 (빨간 원 + 흰 숫자, 99 초과 시 99+)
+  if (unreadCount > 0) {
+    const label = unreadCount > 99 ? '99+' : String(unreadCount);
+    stageCtx.font = 'bold 9px "Segoe UI", sans-serif';
+    const textW = stageCtx.measureText(label).width;
+    const bw = Math.max(14, textW + 8);
+    const bx = r.x + r.w - bw / 2 - 2;
+    const by = r.y - 5;
+    stageCtx.fillStyle = '#ff3b30';
+    stageCtx.strokeStyle = '#fffdf7';
+    stageCtx.lineWidth = 1.5;
+    roundRect(bx - bw / 2, by - 7, bw, 14, 7);
+    stageCtx.fill();
+    stageCtx.stroke();
+    stageCtx.fillStyle = '#ffffff';
+    stageCtx.fillText(label, bx - textW / 2, by + 3.5);
   }
   stageCtx.globalAlpha = 1;
 }
@@ -860,6 +881,10 @@ function wireNet(): void {
 
   window.overlay.on('self:settings', (data) => {
     applySettings(data as { opacity: number; scale: number });
+  });
+
+  window.overlay.on('self:unread', (data) => {
+    unreadCount = Number(data) || 0;
   });
 }
 

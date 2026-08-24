@@ -143,6 +143,7 @@ io.on('connection', (socket) => {
       x: clamp01(0.1 + Math.random() * 0.8),
       dir: 1,
       walking: true,
+      lastReadTs: 0, // 채팅창을 열어 읽기 전까지는 안읽음으로 집계
     };
     players.set(socket.id, player);
     socket.emit('welcome', { selfId: socket.id, players: [...players.values()] });
@@ -188,6 +189,15 @@ io.on('connection', (socket) => {
     io.emit('chat', msg);
     recordChat(msg);
     console.log(`[action] ${player.nickname}#${player.tag}: ${action} "${text}"`);
+  });
+
+  socket.on('read', (ts) => {
+    const player = players.get(socket.id);
+    if (!player) return;
+    const clamped = Math.min(Number(ts) || 0, Date.now());
+    if (clamped <= player.lastReadTs) return;
+    player.lastReadTs = clamped;
+    io.emit('player-read', { id: socket.id, ts: clamped });
   });
 
   socket.on('appearance', (raw) => {

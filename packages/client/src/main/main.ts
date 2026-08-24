@@ -212,6 +212,7 @@ const SERVER_URL =
 
 let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 let selfId: string | null = null;
+let unreadCount = 0;
 const players = new Map<string, PlayerState>();
 const chatLog: ChatMessage[] = [];
 
@@ -285,6 +286,12 @@ function connect(): void {
     broadcast('net:player-appearance', data);
   });
 
+  socket.on('player-read', (data) => {
+    const p = players.get(data.id);
+    if (p) p.lastReadTs = data.ts;
+    broadcast('net:player-read', data);
+  });
+
   socket.on('chat', (msg) => {
     if (msg.image) msg.image = { ...msg.image, url: `${SERVER_URL}${msg.image.url}` };
     // 서버가 외형 스냅샷을 못 붙였으면(구버전 서버) 접속자 정보로 보강
@@ -292,6 +299,11 @@ function connect(): void {
     chatLog.push(msg);
     if (chatLog.length > 150) chatLog.shift();
     broadcast('net:chat', msg);
+    // 채팅창이 닫혀 있는 동안 도착한 남의 메시지 → 안읽음 배지
+    if (msg.id !== selfId && (!chatWindow || chatWindow.isDestroyed() || !chatWindow.isVisible())) {
+      unreadCount++;
+      broadcast('self:unread', unreadCount);
+    }
   });
 
   socket.on('chat-history', (msgs) => {
@@ -375,6 +387,13 @@ function chatBounds() {
   };
 }
 
+function clearUnread(): void {
+  if (unreadCount !== 0) {
+    unreadCount = 0;
+    broadcast('self:unread', 0);
+  }
+}
+
 function toggleChat(): void {
   if (chatWindow && !chatWindow.isDestroyed()) {
     if (chatWindow.isVisible()) {
@@ -382,6 +401,7 @@ function toggleChat(): void {
     } else {
       chatWindow.show();
       chatWindow.focus();
+      clearUnread();
     }
     return;
   }
@@ -405,6 +425,7 @@ function toggleChat(): void {
   chatWindow.once('ready-to-show', () => {
     chatWindow?.show();
     chatWindow?.focus();
+    clearUnread();
   });
   chatWindow.on('closed', () => {
     chatWindow = null;
@@ -513,6 +534,12 @@ ipcMain.on('move', (_e, data: MovePayload) => {
 
 ipcMain.on('chat-send', (_e, text: string) => {
   if (typeof text === 'string' && socket?.connected) socket.emit('chat', text);
+});
+
+// 채팅창이 보이는 상태에서 읽음 위치 보고
+ipcMain.on('read-mark', (_e, ts: number) => {
+  if (socket?.connected && Number.isFinite(Number(ts))) socket.emit('read', Number(ts));
+  clearUnread();
 });
 
 // 액션 명령어 — 대사는 메인이 랜덤 선택, /공격은 장착 무기에 따라 베기/활쏘기 자동

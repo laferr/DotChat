@@ -14,7 +14,9 @@ const NET_CHANNELS = new Set([
   'self:inventory',
   'self:settings',
   'self:update',
+  'self:unread',
   'net:history',
+  'net:player-read',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -40,6 +42,7 @@ contextBridge.exposeInMainWorld('overlay', {
   sendMove: (data: { x: number; dir: -1 | 1; walking: boolean }) => ipcRenderer.send('move', data),
   sendChat: (text: string) => ipcRenderer.send('chat-send', text),
   sendAction: (command: string) => ipcRenderer.send('action-send', command),
+  markRead: (ts: number) => ipcRenderer.send('read-mark', ts),
   sendImage: (payload: {
     buffer: ArrayBuffer;
     mime: string;
