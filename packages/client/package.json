@@ -1,6 +1,6 @@
 {
   "name": "@dotchat/client",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "작업표시줄 위 도트 캐릭터 온라인 채팅",
   "author": "DotChat",
