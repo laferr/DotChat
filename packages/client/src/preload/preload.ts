@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('overlay', {
   setScale: (value: number) => ipcRenderer.send('set-scale', value),
   setChatColor: (value: string) => ipcRenderer.send('set-chat-color', value),
   setPinned: (data: { text: string; enabled: boolean }) => ipcRenderer.send('set-pinned', data),
+  getDisplays: (): Promise<unknown[]> => ipcRenderer.invoke('get-displays'),
+  setDisplay: (id: number) => ipcRenderer.send('set-display', id),
   getNetState: (): Promise<unknown> => ipcRenderer.invoke('net-state'),
   getChatHistory: (): Promise<unknown[]> => ipcRenderer.invoke('chat-history'),
   getUpdateState: (): Promise<unknown> => ipcRenderer.invoke('update-state'),

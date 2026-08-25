@@ -585,26 +585,39 @@
         line-height: 1.5;
         margin: 0;
       }
-      #scale-btns {
+      #scale-btns,
+      #display-btns {
         display: flex;
         gap: 6px;
+        flex-wrap: wrap;
       }
-      #scale-btns button {
+      #scale-btns button,
+      #display-btns button {
         flex: 1;
+        min-width: 72px;
         border: 1px solid var(--header);
         background: var(--bg);
         color: var(--text);
         border-radius: 6px;
-        padding: 6px 0;
+        padding: 6px 4px;
         cursor: pointer;
         font-weight: 700;
+        white-space: nowrap;
       }
-      #scale-btns button:hover {
+      #scale-btns button:hover,
+      #display-btns button:hover {
         border-color: var(--accent);
       }
-      #scale-btns button.active {
+      #scale-btns button.active,
+      #display-btns button.active {
         background: var(--self-bubble);
         border-color: var(--accent);
+      }
+      #display-btns .display-res {
+        display: block;
+        font-size: 10px;
+        font-weight: 400;
+        color: var(--text-dim);
       }
       #color-row {
         display: flex;
@@ -885,6 +898,9 @@
           <button data-scale="3">x3</button>
         </div>
         <p class="hint">캐릭터 표시 배율입니다. (원본 64px 기준)</p>
+        <label>표시 디스플레이</label>
+        <div id="display-btns"></div>
+        <p class="hint">캐릭터가 걸어다닐 모니터입니다. 채팅창도 같은 모니터에 열립니다.</p>
         <label>채팅창 테마 색상</label>
         <div id="color-row">
           <div id="color-swatches"></div>

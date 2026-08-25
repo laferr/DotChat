@@ -622,11 +622,33 @@
     }
   }
 
+  // ---- 표시 디스플레이 선택 ----
+
+  const displayBtns = document.getElementById('display-btns')!;
+
+  async function renderDisplays(): Promise<void> {
+    const list = await window.overlay.getDisplays();
+    displayBtns.innerHTML = '';
+    for (const d of list) {
+      const btn = document.createElement('button');
+      btn.classList.toggle('active', d.current);
+      const name = document.createElement('span');
+      name.textContent = `모니터 ${d.index}${d.primary ? ' (주)' : ''}`;
+      const res = document.createElement('span');
+      res.className = 'display-res';
+      res.textContent = `${d.width}×${d.height}`;
+      btn.append(name, res);
+      btn.addEventListener('click', () => window.overlay.setDisplay(d.id));
+      displayBtns.appendChild(btn);
+    }
+  }
+
   async function loadOptions(): Promise<void> {
     const s = await window.overlay.getSettings();
     showOpacity(s.opacity);
     showScale(s.scale);
     applyChatTheme(s.chatColor ?? currentChatColor);
+    void renderDisplays();
   }
   optionsClose.addEventListener('click', () => optionsPanel.classList.remove('open'));
   opacitySlider.addEventListener('input', () => {
@@ -646,6 +668,7 @@
     if (optionsPanel.classList.contains('open')) {
       showOpacity(s.opacity);
       showScale(s.scale);
+      void renderDisplays();
     }
   });
 

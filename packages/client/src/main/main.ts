@@ -183,6 +183,8 @@ interface Settings {
   pinnedMsg: string;
   /** 고정메시지 표시 여부 */
   pinnedOn: boolean;
+  /** 오버레이를 띄울 디스플레이 (Electron display id, 없거나 분리되면 주 모니터) */
+  displayId?: number;
   serverUrl?: string;
 }
 
@@ -201,6 +203,7 @@ function loadSettings(): Settings {
       chatColor: /^#[0-9a-fA-F]{6}$/.test(String(raw.chatColor)) ? raw.chatColor : DEFAULT_CHAT_COLOR,
       pinnedMsg: sanitizePinned(raw.pinnedMsg),
       pinnedOn: raw.pinnedOn === true,
+      displayId: Number.isFinite(Number(raw.displayId)) ? Number(raw.displayId) : undefined,
       serverUrl: typeof raw.serverUrl === 'string' && raw.serverUrl ? raw.serverUrl : undefined,
     };
   } catch {
@@ -375,8 +378,14 @@ function connect(): void {
 
 // ---- 오버레이 창 ----
 
+// 설정된 디스플레이 — 모니터가 분리됐으면 주 모니터로 폴백
+function targetDisplay(): Electron.Display {
+  const displays = screen.getAllDisplays();
+  return displays.find((d) => d.id === settings.displayId) ?? screen.getPrimaryDisplay();
+}
+
 function overlayBounds() {
-  const wa = screen.getPrimaryDisplay().workArea;
+  const wa = targetDisplay().workArea;
   return {
     x: wa.x,
     y: wa.y + wa.height - OVERLAY_HEIGHT,
@@ -442,7 +451,8 @@ function createOverlay(): void {
 // ---- 채팅 창 ----
 
 function chatBounds() {
-  const wa = screen.getPrimaryDisplay().workArea;
+  // 채팅창도 오버레이와 같은 디스플레이에
+  const wa = targetDisplay().workArea;
   return {
     x: wa.x + wa.width - CHAT_SIZE.width - 12,
     y: wa.y + wa.height - CHAT_SIZE.height - 12,
@@ -675,6 +685,32 @@ ipcMain.on('set-pinned', (_e, data: { text?: unknown; enabled?: unknown }) => {
   saveSettings();
   broadcast('self:settings', settings);
   if (socket?.connected) socket.emit('pinned', effectivePinned());
+});
+
+// ---- 디스플레이 선택 (오버레이/채팅창을 띄울 모니터) ----
+
+ipcMain.handle('get-displays', () => {
+  const primaryId = screen.getPrimaryDisplay().id;
+  const currentId = targetDisplay().id;
+  return screen.getAllDisplays().map((d, i) => ({
+    id: d.id,
+    index: i + 1,
+    width: d.size.width,
+    height: d.size.height,
+    primary: d.id === primaryId,
+    current: d.id === currentId,
+  }));
+});
+
+ipcMain.on('set-display', (_e, id: unknown) => {
+  const display = screen.getAllDisplays().find((d) => d.id === Number(id));
+  if (!display) return;
+  settings.displayId = display.id;
+  saveSettings();
+  overlayWindow?.setBounds(overlayBounds());
+  if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setBounds(chatBounds());
+  broadcast('self:settings', settings);
+  console.log(`[display] 오버레이 → 디스플레이 ${display.id} (${display.size.width}x${display.size.height})`);
 });
 
 ipcMain.handle('net-state', () => ({

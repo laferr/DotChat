@@ -85,6 +85,10 @@ interface OverlayApi {
   setScale(value: number): void;
   setChatColor(value: string): void;
   setPinned(data: { text: string; enabled: boolean }): void;
+  getDisplays(): Promise<
+    { id: number; index: number; width: number; height: number; primary: boolean; current: boolean }[]
+  >;
+  setDisplay(id: number): void;
   getNetState(): Promise<{
     selfId: string | null;
     connected: boolean;
@@ -184,6 +188,12 @@ function resizeStage(): void {
   stage.style.height = `${viewH}px`;
   stageCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   stageCtx.imageSmoothingEnabled = false;
+  // 디스플레이 전환 등으로 뷰포트가 좁아졌을 때 캐릭터가 화면 밖에 남지 않도록
+  if (me) {
+    const minX = EDGE_MARGIN + (ART_W * viewScale) / 2;
+    const maxX = viewW - EDGE_MARGIN - (ART_W * viewScale) / 2;
+    me.x = Math.max(minX, Math.min(maxX, me.x));
+  }
 }
 
 // ---- 파츠 합성기 (composer.ts) ----
