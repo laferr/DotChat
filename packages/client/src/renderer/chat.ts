@@ -548,6 +548,8 @@
   const forgeClose = document.getElementById('forge-close') as HTMLButtonElement;
   const forgeBalance = document.getElementById('forge-balance')!;
   const forgeRod = document.getElementById('forge-rod')!;
+  const forgeGlow = document.getElementById('forge-glow')!;
+  const forgeStage = document.getElementById('forge-stage')!;
   const forgeSparks = document.getElementById('forge-sparks')!;
   const forgeFlash = document.getElementById('forge-flash')!;
   const forgeResult = document.getElementById('forge-result')!;
@@ -589,6 +591,7 @@
     const fails = w.rodFails ?? 0;
     forgeBalance.textContent = `🪙 ${w.coins}`;
     forgeRod.className = `rod-tier-${rodTier(stars)}`;
+    forgeGlow.className = `glow-tier-${rodTier(stars)}`; // 뒤 은은한 후광도 티어 색
     renderForgeStars(stars, popIndex);
     if (stars >= FORGE_MAX) {
       forgeRates.innerHTML = '🌈 <b>30성 만렙!</b> 전설의 낚싯대입니다.';
@@ -663,6 +666,7 @@
     forgeFlash.className = '';
     forgeFallstar.className = '';
     forgeRod.classList.add('charging');
+    forgeStage.classList.add('charging'); // 글로우도 빠르게 고동
     spawnConvergeSparks();
 
     const [res] = await Promise.all([
@@ -670,6 +674,7 @@
       delay(1700), // 두구두구 최소 연출 시간
     ]);
     forgeRod.classList.remove('charging');
+    forgeStage.classList.remove('charging');
 
     if (!res.ok) {
       forgeSparks.innerHTML = '';
