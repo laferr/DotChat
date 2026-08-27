@@ -1168,9 +1168,15 @@
     const d = new Date(item.ts);
     const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     el.innerHTML = `<span class="tk-time">${time}</span>`;
-    el.appendChild(
-      document.createTextNode(item.kind === 'ad' && item.from ? `${item.text} — ${item.from}` : item.text),
-    );
+    if (item.kind === 'stocks') {
+      const span = document.createElement('span');
+      span.innerHTML = formatStocksTickerHtml(item.text);
+      el.appendChild(span);
+    } else {
+      el.appendChild(
+        document.createTextNode(item.kind === 'ad' && item.from ? `${item.text} — ${item.from}` : item.text),
+      );
+    }
     return el;
   }
 

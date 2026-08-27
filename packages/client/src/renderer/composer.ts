@@ -194,6 +194,18 @@ const STOCK_DEFS: { id: string; name: string; initial: number }[] = [
   { id: 'botsoon', name: '봇순이엔터', initial: 5 },
 ];
 
+// 전광판 시세 텍스트 색입히기 — 업체명 노랑(기본색), 주가 흰색, ▲빨강 ▼파랑 —흰색, 구분선 흰색
+function formatStocksTickerHtml(text: string): string {
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc
+    .replace(/▲[\d.,]+%/g, (m) => `<span style="color:#ff5a5a">${m}</span>`)
+    .replace(/▼[\d.,]+%/g, (m) => `<span style="color:#5aa0ff">${m}</span>`)
+    .replace(/💀상폐중/g, '<span style="color:#ff5a5a">💀상폐중</span>')
+    .replace(/(?<=\s)[\d,]+(?=\s|$)/g, (m) => `<span style="color:#f5f5f5">${m}</span>`)
+    .replace(/(?<=\s)—(?=\s|$)/g, '<span style="color:#f5f5f5">—</span>')
+    .replace(/\|/g, '<span style="color:#f5f5f5">|</span>');
+}
+
 const BUBBLE_STYLES: Record<string, { fill: string; stroke: string; text: string }> = {
   default: { fill: '#fffdf7', stroke: '#4a2837', text: '#3a2430' },
   'bubble-dark': { fill: '#2b2230', stroke: '#8d7d88', text: '#f0e8ec' },
