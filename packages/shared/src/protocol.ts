@@ -308,6 +308,11 @@ export interface ServerToClientEvents {
   }) => void;
   /** 슬롯 대박 전체 알림 */
   'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
+  /** 코인 랭킹 TOP5 + 내 순위 (접속 직후 1회 + 분당 코인 틱마다 개인화 전송) */
+  'ranking-update': (data: {
+    rows: { name: string; coins: number }[];
+    me?: { rank: number; coins: number };
+  }) => void;
 }
 
 // ---- 그림 쪽지 (64x64 픽셀 그림을 특정 유저에게 전달) ----

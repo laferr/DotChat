@@ -239,6 +239,7 @@ const SERVER_URL =
 let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 let selfId: string | null = null;
 let unreadCount = 0;
+let lastRanking: unknown = null;
 const players = new Map<string, PlayerState>();
 const chatLog: ChatMessage[] = [];
 
@@ -389,6 +390,11 @@ function connect(): void {
     broadcast('net:slot-win', data);
   });
 
+  socket.on('ranking-update', (data) => {
+    lastRanking = data;
+    broadcast('net:ranking', data);
+  });
+
   socket.on('chat', (msg) => {
     if (msg.image) msg.image = { ...msg.image, url: `${SERVER_URL}${msg.image.url}` };
     // 서버가 외형 스냅샷을 못 붙였으면(구버전 서버) 접속자 정보로 보강
@@ -416,8 +422,12 @@ function connect(): void {
 // ---- 오버레이 창 ----
 
 // 설정된 디스플레이 — 모니터가 분리됐으면 주 모니터로 폴백
+// DOTCHAT_DISPLAY env가 있으면 설정보다 우선 ('primary' 또는 디스플레이 id) — 개발용 앱을 설치본과 다른 모니터에 띄울 때 사용
 function targetDisplay(): Electron.Display {
   const displays = screen.getAllDisplays();
+  const env = process.env.DOTCHAT_DISPLAY;
+  if (env === 'primary') return screen.getPrimaryDisplay();
+  if (env) return displays.find((d) => d.id === Number(env)) ?? screen.getPrimaryDisplay();
   return displays.find((d) => d.id === settings.displayId) ?? screen.getPrimaryDisplay();
 }
 
@@ -1097,6 +1107,8 @@ ipcMain.handle('shop-buy', (_e, itemId: string) => {
   });
 });
 
+ipcMain.handle('ranking-cached', () => lastRanking);
+
 ipcMain.handle('ranking', () => {
   return new Promise((resolve) => {
     if (!socket?.connected) {
@@ -1223,11 +1235,18 @@ function unregisterRunnerKeys(): void {
   globalShortcut.unregister('Down');
 }
 
+/** overlay가 fishing-send로 보고하는 현재 낚시 진행 여부 */
+let fishingActive = false;
+
 ipcMain.handle('minigame-state', () => ({
   runnerRemainSec: Math.max(0, Math.ceil((lastRunnerStart + RUNNER_COOLDOWN_MS - Date.now()) / 1000)),
+  fishingActive,
 }));
 
 ipcMain.handle('minigame-start', (_e, game: string) => {
+  if (!extrasManifest) {
+    return { ok: false, error: '미니게임 에셋이 없어요. tools/import-extras.mjs를 먼저 실행해 주세요.' };
+  }
   if (game === 'fishing') {
     broadcast('self:minigame', { game: 'fishing' });
     return { ok: true };
@@ -1247,6 +1266,7 @@ ipcMain.handle('minigame-start', (_e, game: string) => {
 
 // 낚시 상태 변화를 서버에 중계 (다른 접속자 화면 동기화)
 ipcMain.on('fishing-send', (_e, data: { phase?: unknown; fishId?: unknown; trophy?: unknown }) => {
+  fishingActive = String(data?.phase ?? 'stop') !== 'stop';
   if (!socket?.connected) return;
   socket.emit('fishing-state', {
     phase: String(data?.phase ?? 'stop') as any,

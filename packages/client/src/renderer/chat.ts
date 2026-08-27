@@ -185,7 +185,7 @@
         return;
       }
       if (word === '랭킹') {
-        void showRanking();
+        openRankBar();
         return;
       }
       const command = CHAT_COMMANDS[word];
@@ -1548,6 +1548,7 @@
   const minigamePanel = document.getElementById('minigame-panel')!;
   const minigameClose = document.getElementById('minigame-close') as HTMLButtonElement;
   const runnerCdEl = document.getElementById('runner-cd')!;
+  const fishingDescEl = document.getElementById('fishing-desc')!;
 
   async function renderMinigame(): Promise<void> {
     const state = await window.overlay.getMinigameState();
@@ -1555,6 +1556,9 @@
       state.runnerRemainSec > 0
         ? `쿨타임 ${state.runnerRemainSec}초 남음`
         : '5분마다 1회 · ↑점프 ↓엎드리기';
+    fishingDescEl.innerHTML = state.fishingActive
+      ? '🟢 낚시 중 — 누르면 중지'
+      : '쿨타임 없음 · 물고기 도감 수집<br />(다시 누르면 시작/중지)';
   }
 
   minigameClose.addEventListener('click', () => minigamePanel.classList.remove('open'));
@@ -1567,7 +1571,15 @@
         void renderMinigame();
         return;
       }
-      addSystemMessage(game === 'fishing' ? '🎣 낚시 시작/중지를 전환했어요.' : '🏃 달리기 시작! (↑점프 ↓엎드리기)');
+      if (game === 'fishing') {
+        // 토글 결과(시작/중지)는 overlay가 fishing-send로 보고한 뒤에야 확정된다
+        setTimeout(async () => {
+          const st = await window.overlay.getMinigameState();
+          addSystemMessage(st.fishingActive ? '🎣 낚시를 시작했어요.' : '🎣 낚시를 중지했어요.');
+        }, 250);
+      } else {
+        addSystemMessage('🏃 달리기 시작! (↑점프 ↓엎드리기)');
+      }
       minigamePanel.classList.remove('open');
     });
   }
@@ -1653,18 +1665,77 @@
     }
   });
 
-  // ---- 코인 랭킹 ----
+  // ---- 코인 랭킹 바 (헤더 아래 상시 표시 — ✕로 완전 숨김, /랭킹·메뉴로 재표시) ----
 
-  async function showRanking(): Promise<void> {
-    const rows = (await window.overlay.getRanking()) as { name: string; coins: number }[];
-    if (!rows.length) {
-      addSystemMessage('랭킹 정보를 가져오지 못했어요.');
-      return;
-    }
-    const medals = ['🥇', '🥈', '🥉', '4위', '5위'];
-    addSystemMessage('🏆 코인 랭킹 TOP5');
-    rows.forEach((r, i) => addSystemMessage(`${medals[i]} ${r.name} — ${r.coins} 🪙`));
+  const rankBar = document.getElementById('rank-bar')!;
+  const rankHead = document.getElementById('rank-head') as HTMLButtonElement;
+  const rankTop = document.getElementById('rank-top')!;
+  const rankCloseBtn = document.getElementById('rank-close') as HTMLButtonElement;
+  const rankList = document.getElementById('rank-list')!;
+  let rankHidden = localStorage.getItem('rank-hidden') === '1';
+  let rankOpen = localStorage.getItem('rank-open') === '1';
+  let rankHasData = false;
+
+  function syncRankOpen(): void {
+    rankBar.hidden = rankHidden || !rankHasData;
+    rankList.hidden = !rankOpen;
   }
+
+  function renderRanking(raw: unknown): void {
+    const data = raw as
+      | { rows?: { name: string; coins: number }[]; me?: { rank: number; coins: number } }
+      | null;
+    const rows = Array.isArray(raw) ? (raw as { name: string; coins: number }[]) : (data?.rows ?? []);
+    if (rows.length === 0) return;
+    rankHasData = true;
+    const me = Array.isArray(raw) ? undefined : data?.me;
+    rankTop.textContent = me
+      ? `1위 ${rows[0].name} · ${rows[0].coins} 🪙 — 나 ${me.rank}위`
+      : `1위 ${rows[0].name} · ${rows[0].coins} 🪙`;
+    const medals = ['🥇', '🥈', '🥉', '4위', '5위'];
+    const items = rows.map((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'rank-row';
+      row.textContent = `${medals[i] ?? `${i + 1}위`} ${r.name} — ${r.coins} 🪙`;
+      return row;
+    });
+    if (me) {
+      const mine = document.createElement('div');
+      mine.className = 'rank-row me';
+      mine.textContent = `🙋 나 — ${me.rank}위 · ${me.coins} 🪙`;
+      items.push(mine);
+    }
+    rankList.replaceChildren(...items);
+    syncRankOpen();
+  }
+
+  function openRankBar(): void {
+    rankHidden = false;
+    rankOpen = true;
+    localStorage.setItem('rank-hidden', '0');
+    localStorage.setItem('rank-open', '1');
+    syncRankOpen();
+    if (!rankHasData) addSystemMessage('랭킹 정보가 아직 없어요. 서버 연결을 확인해 주세요.');
+  }
+
+  rankHead.addEventListener('click', () => {
+    rankOpen = !rankOpen;
+    localStorage.setItem('rank-open', rankOpen ? '1' : '0');
+    syncRankOpen();
+  });
+
+  rankCloseBtn.addEventListener('click', () => {
+    rankHidden = true;
+    localStorage.setItem('rank-hidden', '1');
+    syncRankOpen();
+  });
+
+  syncRankOpen();
+  window.overlay.on('net:ranking', renderRanking);
+  void window.overlay.getRankingCached().then((cached) => {
+    if (cached) renderRanking(cached);
+    else void window.overlay.getRanking().then(renderRanking);
+  });
 
   // ---- ☰ 메뉴 드롭다운 ----
 
@@ -1737,7 +1808,7 @@
         void loadPinned();
         break;
       case 'ranking':
-        void showRanking();
+        openRankBar();
         break;
       case 'options':
         optionsPanel.classList.add('open');

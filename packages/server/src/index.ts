@@ -451,6 +451,23 @@ function walletKey(p: PlayerState): string {
 
 loadWallets();
 
+// ---- 코인 랭킹 TOP5 + 내 순위 — 분당 코인 틱에 얹어 개인화 전송 ----
+function rankingSorted(): { name: string; coins: number }[] {
+  return Object.entries(wallets)
+    .map(([name, w]) => ({ name, coins: w.coins }))
+    .sort((a, b) => b.coins - a.coins);
+}
+function rankingRows(): { name: string; coins: number }[] {
+  return rankingSorted().slice(0, 5);
+}
+function rankingPayloadFor(key: string, sorted = rankingSorted()) {
+  const idx = sorted.findIndex((r) => r.name === key);
+  return {
+    rows: sorted.slice(0, 5),
+    me: idx >= 0 ? { rank: idx + 1, coins: sorted[idx].coins } : undefined,
+  };
+}
+
 // 접속 1분당 코인 적립 (같은 지갑 다중 접속은 1회만)
 setInterval(() => {
   if (players.size === 0) return;
@@ -463,6 +480,10 @@ setInterval(() => {
       wallets[key].coins += COIN_PER_MINUTE;
     }
     io.sockets.sockets.get(socketId)?.emit('coins', wallets[key].coins);
+  }
+  const sorted = rankingSorted();
+  for (const [socketId, player] of players) {
+    io.sockets.sockets.get(socketId)?.emit('ranking-update', rankingPayloadFor(walletKey(player), sorted));
   }
   saveWallets();
 }, 60 * 1000);
@@ -607,6 +628,7 @@ io.on('connection', (socket) => {
       stocks: { ...(wallets[key].stocks ?? {}) },
     });
     socket.emit('stocks', stocksSnapshot());
+    socket.emit('ranking-update', rankingPayloadFor(key));
     socket.emit('chat-history', chatHistory.slice(-100));
     // 미확인 그림 쪽지 배달
     if (notesStore[key]?.length) socket.emit('notes', [...notesStore[key]]);
@@ -1212,11 +1234,7 @@ io.on('connection', (socket) => {
 
   socket.on('ranking', (ack) => {
     if (typeof ack !== 'function') return;
-    const rows = Object.entries(wallets)
-      .map(([name, w]) => ({ name, coins: w.coins }))
-      .sort((a, b) => b.coins - a.coins)
-      .slice(0, 5);
-    ack(rows);
+    ack(rankingRows());
   });
 
   socket.on('read', (ts) => {

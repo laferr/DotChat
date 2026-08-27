@@ -117,9 +117,10 @@ interface OverlayApi {
   getWallet(): Promise<{ coins: number; items: string[]; rodStars?: number; rodFails?: number }>;
   buyItem(itemId: string): Promise<unknown>;
   getRanking(): Promise<unknown[]>;
+  getRankingCached(): Promise<unknown>;
   getExtras(): Promise<ExtrasManifest | null>;
   loadExtra(relPath: string): Promise<string | null>;
-  getMinigameState(): Promise<{ runnerRemainSec: number }>;
+  getMinigameState(): Promise<{ runnerRemainSec: number; fishingActive: boolean }>;
   startMinigame(game: string): Promise<{ ok: boolean; error?: string }>;
   sendFishing(data: { phase: string; fishId?: string; trophy?: boolean }): void;
   reportFish(fishId: string, trophy?: boolean): Promise<{

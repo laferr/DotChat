@@ -31,6 +31,7 @@ const NET_CHANNELS = new Set([
   'self:note',
   'self:minigame',
   'self:runner-key',
+  'net:ranking',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -79,6 +80,7 @@ contextBridge.exposeInMainWorld('overlay', {
   getWallet: (): Promise<unknown> => ipcRenderer.invoke('get-wallet'),
   buyItem: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy', itemId),
   getRanking: (): Promise<unknown[]> => ipcRenderer.invoke('ranking'),
+  getRankingCached: (): Promise<unknown> => ipcRenderer.invoke('ranking-cached'),
   getExtras: (): Promise<unknown> => ipcRenderer.invoke('get-extras'),
   loadExtra: (relPath: string): Promise<string | null> => ipcRenderer.invoke('load-extra', relPath),
   getMinigameState: (): Promise<unknown> => ipcRenderer.invoke('minigame-state'),

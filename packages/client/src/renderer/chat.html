@@ -1349,6 +1349,70 @@
         color: var(--text-dim);
         min-height: 56px;
       }
+      /* 코인 랭킹 바 (헤더 아래 상시 표시) */
+      #rank-bar {
+        flex: none;
+        background: var(--bg-input);
+        border-bottom: 1px solid var(--header);
+        font-size: 12px;
+      }
+      #rank-row {
+        display: flex;
+        align-items: stretch;
+      }
+      #rank-head {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        padding: 4px 10px;
+        border: none;
+        background: none;
+        color: var(--text-dim);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      #rank-close {
+        flex: none;
+        padding: 0 10px;
+        border: none;
+        background: none;
+        color: var(--text-dim);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      #rank-close:hover {
+        background: var(--header-hover);
+      }
+      #rank-head:hover {
+        background: var(--header-hover);
+      }
+      #rank-top {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        text-align: left;
+      }
+      #rank-list {
+        padding: 0 10px 6px;
+      }
+      .rank-row {
+        padding: 2px 0;
+        color: var(--text-dim);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .rank-row.me {
+        border-top: 1px solid var(--header);
+        margin-top: 2px;
+        padding-top: 4px;
+      }
     </style>
   </head>
   <body>
@@ -1361,6 +1425,15 @@
       <button id="menu-btn" title="메뉴">☰</button>
       <button id="close-btn" title="닫기">✕</button>
     </header>
+    <div id="rank-bar" hidden>
+      <div id="rank-row">
+        <button id="rank-head" title="코인 랭킹 TOP5 펼치기/접기">
+          <span>🏆</span><span id="rank-top">랭킹 집계 중…</span>
+        </button>
+        <button id="rank-close" title="랭킹 숨기기 (/랭킹 으로 다시 표시)">✕</button>
+      </div>
+      <div id="rank-list" hidden></div>
+    </div>
     <div id="menu-dropdown">
       <button data-menu="minigame">🕹️ 미니게임</button>
       <button data-menu="slot">🎰 슬롯머신</button>
@@ -1384,7 +1457,7 @@
         <button class="mg-card" data-game="fishing">
           <span class="mg-icon">🎣</span>
           <span class="mg-name">낚시</span>
-          <span class="mg-desc">쿨타임 없음 · 물고기 도감 수집<br />(다시 누르면 시작/중지)</span>
+          <span class="mg-desc" id="fishing-desc">쿨타임 없음 · 물고기 도감 수집<br />(다시 누르면 시작/중지)</span>
         </button>
         <button class="mg-card" data-game="runner">
           <span class="mg-icon">🏃</span>
