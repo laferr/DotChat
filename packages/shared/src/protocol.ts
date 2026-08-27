@@ -210,6 +210,35 @@ export interface ClientToServerEvents {
   ) => void;
   /** 쪽지 열람 → 서버 보관함에서 삭제 */
   'note-read': (noteId: string) => void;
+  /** 주식 매수 (현재가 × 수량, 무수수료) */
+  'stock-buy': (
+    stockId: string,
+    qty: number,
+    ack: (res: {
+      ok: boolean;
+      error?: string;
+      coins?: number;
+      holding?: { qty: number; avg: number };
+    }) => void,
+  ) => void;
+  /** 주식 매도 (현재가 × 수량, 무수수료) */
+  'stock-sell': (
+    stockId: string,
+    qty: number,
+    ack: (res: {
+      ok: boolean;
+      error?: string;
+      coins?: number;
+      holding?: { qty: number; avg: number };
+    }) => void,
+  ) => void;
+  /** 전광판 유료 광고 (TICKER_AD_COST 코인, 쿨타임) */
+  'ticker-send': (
+    text: string,
+    ack: (res: { ok: boolean; error?: string; coins?: number }) => void,
+  ) => void;
+  /** 전광판 기록 조회 (최신순) */
+  'ticker-log': (ack: (items: TickerItem[]) => void) => void;
   /** 보유 파츠 목록 동기화 — 클라 목록을 서버 지갑에 합집합 등록, ack로 병합 결과 반환 */
   'parts-sync': (parts: string[], ack: (res: { ok: boolean; parts?: string[] }) => void) => void;
   /** 러너 생존 시간 보고 → 코인 정산 */
@@ -241,7 +270,7 @@ export interface ServerToClientEvents {
   'player-read': (data: { id: string; ts: number }) => void;
   /** 내 코인 잔액 (접속/적립/슬롯 정산 시) */
   coins: (coins: number) => void;
-  /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감 + 월척 기록 + 낚싯대 강화) */
+  /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감 + 월척 기록 + 낚싯대 강화 + 주식) */
   wallet: (data: {
     coins: number;
     items: string[];
@@ -249,6 +278,7 @@ export interface ServerToClientEvents {
     trophies?: string[];
     rodStars?: number;
     rodFails?: number;
+    stocks?: Record<string, { qty: number; avg: number }>;
   }) => void;
   /** 강화 대박/하락 전체 알림 (20성 이상) */
   'enhance-news': (data: {
@@ -264,6 +294,10 @@ export interface ServerToClientEvents {
   notes: (notes: NotePayload[]) => void;
   /** 실시간 쪽지 수신 */
   note: (note: NotePayload) => void;
+  /** 주식 시세 전체 (접속 시 + 매 틱) — nextTickTs = 다음 변동 시각 */
+  stocks: (data: { stocks: StockState[]; nextTickTs: number }) => void;
+  /** 전광판 항목 (주가 요약/뉴스/상폐/재상장/광고) */
+  ticker: (item: TickerItem) => void;
   /** 누군가의 낚시 상태 (애니메이션 동기화, trophy = 월척 3배, rod = 강화 성) */
   'player-fishing': (data: {
     id: string;
@@ -294,6 +328,72 @@ export const NOTE_PENDING_MAX = 10; // 수신자별 미확인 쪽지 보관 한�
 export const NOTE_RETENTION_DAYS = 7;
 /** 그림판 논리 해상도 (표시는 4배 = 256px) */
 export const NOTE_SIZE = 64;
+
+// ---- 가상 주식 (5분 틱, 서버 권위) ----
+
+export interface StockDef {
+  id: string;
+  name: string;
+  /** 시작가(상장가) — 상폐 기준(5%)과 재상장 가격의 앵커 */
+  initial: number;
+  /** 변동성 배율 (비쌀수록 안정, 쌀수록 도박) */
+  vol: number;
+}
+
+export const STOCKS: StockDef[] = [
+  { id: 'airpass', name: '(주)에어패스', initial: 1000, vol: 0.6 },
+  { id: 'wolchuk', name: '월척수산', initial: 500, vol: 0.6 },
+  { id: 'forge', name: '대장간중공업', initial: 350, vol: 1.0 },
+  { id: 'spark', name: '골드스파크전자', initial: 200, vol: 1.0 },
+  { id: 'chest', name: '보물상자해운', initial: 120, vol: 1.0 },
+  { id: 'note', name: '딱지우편', initial: 80, vol: 1.0 },
+  { id: 'slot', name: '세븐슬롯게임즈', initial: 50, vol: 1.5 },
+  { id: 'runner', name: '러너스포츠', initial: 20, vol: 1.5 },
+  { id: 'minnow', name: '피라미식품', initial: 10, vol: 1.6 },
+  { id: 'botsoon', name: '봇순이엔터', initial: 5, vol: 2.2 },
+];
+
+export const STOCK_TICK_SEC = 300; // 5분 (서버 env DOTCHAT_STOCK_SEC로 단축 가능)
+export const STOCK_DELIST_RATIO = 0.05; // 시작가 5% 이하 → 상장폐지 (보유주 즉시 증발)
+export const STOCK_MAX_RATIO = 10; // 시작가 10배부터 평균회귀 압력
+export const STOCK_QTY_MAX = 9999; // 종목당 보유 한도
+export const STOCK_HISTORY_SEND = 48; // 클라 차트 (4시간)
+
+/** 상폐 기준가 — 정수 가격이라 최소 1 (싼 종목도 상폐 가능하게) */
+export function stockDelistAt(initial: number): number {
+  return Math.max(1, Math.floor(initial * STOCK_DELIST_RATIO));
+}
+
+/** 클라이언트에 보내는 종목 상태 */
+export interface StockState {
+  id: string;
+  price: number;
+  /** 직전 틱 가격 (등락 표시용) */
+  prev: number;
+  /** 상폐 중이면 재상장 예정 시각 (ms) */
+  delistedUntil?: number;
+  /** 최근 가격 히스토리 (오래된 것 → 최신) */
+  history: number[];
+}
+
+// ---- 전광판 (모니터 상단 흐르는 뉴스바) ----
+
+export type TickerKind = 'stocks' | 'news' | 'delist' | 'relist' | 'ad';
+
+export interface TickerItem {
+  id: string;
+  ts: number;
+  kind: TickerKind;
+  text: string;
+  /** 광고(ad)의 보낸 사람 닉네임#태그 */
+  from?: string;
+}
+
+export const TICKER_AD_COST = 50;
+export const TICKER_AD_MAX_LEN = 60;
+export const TICKER_AD_COOLDOWN_MS = 60_000;
+export const TICKER_LOG_MAX = 200;
+export const TICKER_RETENTION_DAYS = 3;
 
 /** 고정메시지 정제 — 줄바꿈 제거 + 길이 제한 (빈 문자열 = 해제) */
 export function sanitizePinned(raw: unknown): string {

@@ -43,6 +43,20 @@ import {
   ROD_DOUBLE_STARS,
   ROD_REPEAT_BONUS_STARS,
   SHOP_ITEMS,
+  STOCK_HISTORY_SEND,
+  STOCK_MAX_RATIO,
+  STOCK_QTY_MAX,
+  STOCK_TICK_SEC,
+  STOCKS,
+  StockState,
+  stockDelistAt,
+  TICKER_AD_COOLDOWN_MS,
+  TICKER_AD_COST,
+  TICKER_AD_MAX_LEN,
+  TICKER_LOG_MAX,
+  TICKER_RETENTION_DAYS,
+  TickerItem,
+  TickerKind,
   SLOT_COST,
   SlotKind,
   ClientToServerEvents,
@@ -133,6 +147,8 @@ interface Wallet {
   rodStars?: number;
   /** 현재 성에서의 연속 실패 (천장 카운터) */
   rodFails?: number;
+  /** 주식 보유 { 종목id: { 수량, 평단가 } } */
+  stocks?: Record<string, { qty: number; avg: number }>;
 }
 
 let wallets: Record<string, Wallet> = {};
@@ -154,6 +170,8 @@ function loadWallets(): void {
             trophies: Array.isArray(w.trophies) ? w.trophies.filter((i) => typeof i === 'string') : [],
             rodStars: Math.max(0, Math.min(ENHANCE_MAX, Math.floor(Number((w as any).rodStars) || 0))),
             rodFails: Math.max(0, Math.floor(Number((w as any).rodFails) || 0)),
+            stocks:
+              (w as any).stocks && typeof (w as any).stocks === 'object' ? (w as any).stocks : undefined,
           };
         }
       }
@@ -198,6 +216,212 @@ function saveNotes(): void {
 }
 
 loadNotes();
+
+// ---- 가상 주식 엔진 (5분 틱, 트렌드 상태 머신 + 뉴스 이벤트) ----
+
+const STOCK_TICK_MS = Math.max(2, Number(process.env.DOTCHAT_STOCK_SEC ?? STOCK_TICK_SEC)) * 1000;
+const STOCKS_PATH = path.join(UPLOAD_DIR, 'stocks.json');
+const TICKER_PATH = path.join(UPLOAD_DIR, 'ticker.json');
+
+type StockTrend = 'surge' | 'up' | 'flat' | 'down' | 'crash';
+
+interface StockInternal {
+  price: number;
+  prev: number;
+  trend: StockTrend;
+  trendLeft: number;
+  delistedUntil?: number;
+  history: number[];
+}
+
+let stocksState: Record<string, StockInternal> = {};
+let nextTickTs = Date.now() + STOCK_TICK_MS;
+let tickerLog: TickerItem[] = [];
+
+function pickTrend(): StockTrend {
+  const r = Math.random() * 100;
+  return r < 8 ? 'surge' : r < 34 ? 'up' : r < 66 ? 'flat' : r < 92 ? 'down' : 'crash';
+}
+
+function loadStocks(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STOCKS_PATH, 'utf8'));
+    if (raw && typeof raw === 'object') stocksState = raw;
+  } catch {
+    stocksState = {};
+  }
+  // 신규 종목 초기화 (기존 상태는 유지)
+  for (const def of STOCKS) {
+    const s = stocksState[def.id];
+    if (!s || !Number.isFinite(Number(s.price))) {
+      stocksState[def.id] = {
+        price: def.initial,
+        prev: def.initial,
+        trend: 'flat',
+        trendLeft: 3,
+        history: [def.initial],
+      };
+    }
+  }
+}
+
+function saveStocks(): void {
+  try {
+    fs.writeFileSync(STOCKS_PATH, JSON.stringify(stocksState), 'utf8');
+  } catch (err) {
+    console.log('[stock] 저장 실패:', String(err));
+  }
+}
+
+function loadTicker(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(TICKER_PATH, 'utf8'));
+    const cutoff = Date.now() - TICKER_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    if (Array.isArray(raw)) tickerLog = raw.filter((t) => t && typeof t.text === 'string' && t.ts >= cutoff);
+  } catch {
+    tickerLog = [];
+  }
+}
+
+function saveTicker(): void {
+  try {
+    fs.writeFileSync(TICKER_PATH, JSON.stringify(tickerLog.slice(-TICKER_LOG_MAX)), 'utf8');
+  } catch (err) {
+    console.log('[ticker] 저장 실패:', String(err));
+  }
+}
+
+// 전광판 항목 발행: 로그 보관 + 전체 브로드캐스트
+function publishTicker(kind: TickerKind, text: string, from?: string): void {
+  const item: TickerItem = { id: randomBytes(6).toString('hex'), ts: Date.now(), kind, text, ...(from ? { from } : {}) };
+  tickerLog.push(item);
+  if (tickerLog.length > TICKER_LOG_MAX) tickerLog = tickerLog.slice(-TICKER_LOG_MAX);
+  saveTicker();
+  io.emit('ticker', item);
+}
+
+function stocksSnapshot(): { stocks: StockState[]; nextTickTs: number } {
+  return {
+    stocks: STOCKS.map((def) => {
+      const s = stocksState[def.id];
+      return {
+        id: def.id,
+        price: s.price,
+        prev: s.prev,
+        ...(s.delistedUntil ? { delistedUntil: s.delistedUntil } : {}),
+        history: s.history.slice(-STOCK_HISTORY_SEND),
+      };
+    }),
+    nextTickTs,
+  };
+}
+
+// 뉴스 템플릿 (호재/악재) — {name} 치환
+const STOCK_NEWS_UP = [
+  '{name}, 어닝 서프라이즈 발표!',
+  '{name}, 대박 신제품 공개!',
+  '{name}, 해외 진출 확정!',
+  '{name}에 큰손 투자자 매수세 포착!',
+];
+const STOCK_NEWS_DOWN = [
+  '{name}, 실적 부진 쇼크...',
+  '{name} 대표, 구설수 논란...',
+  '{name} 공장에 문어 출몰, 가동 중단...',
+  '{name}, 대규모 리콜 사태...',
+];
+
+function runStockTick(): void {
+  const now = Date.now();
+  nextTickTs = now + STOCK_TICK_MS;
+  const newsItems: string[] = [];
+
+  for (const def of STOCKS) {
+    const s = stocksState[def.id];
+    // 상폐 중 → 시간이 되면 시작가로 재상장
+    if (s.delistedUntil) {
+      if (now >= s.delistedUntil) {
+        delete s.delistedUntil;
+        s.price = def.initial;
+        s.prev = def.initial;
+        s.trend = 'flat';
+        s.trendLeft = 3;
+        s.history.push(def.initial);
+        publishTicker('relist', `🔔 ${def.name} 재상장! 시작가 ${def.initial}코인`);
+      }
+      continue;
+    }
+    // 트렌드 상태 머신
+    s.trendLeft--;
+    if (s.trendLeft <= 0) {
+      s.trend = pickTrend();
+      s.trendLeft = 3 + Math.floor(Math.random() * 6);
+    }
+    const ranges: Record<StockTrend, [number, number]> = {
+      surge: [5, 15],
+      up: [1, 6],
+      flat: [-3, 3],
+      down: [-6, -1],
+      crash: [-15, -5],
+    };
+    const [lo, hi] = ranges[s.trend];
+    let pct = (lo + Math.random() * (hi - lo)) * def.vol;
+    // 뉴스 이벤트 (4%) — 급변 + 전광판
+    if (Math.random() < 0.04) {
+      const good = Math.random() < 0.5;
+      const mag = 10 + Math.random() * 20;
+      pct += good ? mag : -mag;
+      const pool = good ? STOCK_NEWS_UP : STOCK_NEWS_DOWN;
+      newsItems.push(
+        `📰 ${pool[Math.floor(Math.random() * pool.length)].replace('{name}', def.name)} (${good ? '+' : '-'}${Math.round(mag)}%)`,
+      );
+    }
+    // 시작가 10배 초과 시 평균회귀 압력
+    if (s.price > def.initial * STOCK_MAX_RATIO) pct -= 8;
+    s.prev = s.price;
+    s.price = Math.max(1, Math.round(s.price * (1 + pct / 100)));
+    s.history.push(s.price);
+    if (s.history.length > 288) s.history = s.history.slice(-288);
+
+    // 상장폐지: 시작가 5% 이하 → 전 주주 보유분 즉시 증발, 다음 틱에 재상장
+    if (s.price <= stockDelistAt(def.initial)) {
+      s.delistedUntil = now + STOCK_TICK_MS;
+      let victims = 0;
+      let sharesLost = 0;
+      for (const w of Object.values(wallets)) {
+        const h = w.stocks?.[def.id];
+        if (h && h.qty > 0) {
+          victims++;
+          sharesLost += h.qty;
+          delete w.stocks![def.id];
+        }
+      }
+      if (victims > 0) saveWallets();
+      publishTicker(
+        'delist',
+        `💥 ${def.name} 상장폐지!! ${victims > 0 ? `주주 ${victims}명의 ${sharesLost}주가 휴지조각이 되었습니다...` : '가까스로 피해자는 없었습니다.'} (5분 뒤 재상장)`,
+      );
+      console.log(`[stock] ${def.name} 상폐 (피해 ${victims}명/${sharesLost}주)`);
+    }
+  }
+
+  // 전광판: 5분 시세 요약 + 뉴스
+  const summary = STOCKS.map((def) => {
+    const s = stocksState[def.id];
+    if (s.delistedUntil) return `${def.name} 💀상폐중`;
+    const diff = s.prev > 0 ? ((s.price - s.prev) / s.prev) * 100 : 0;
+    const arrow = diff > 0.05 ? `▲${diff.toFixed(1)}%` : diff < -0.05 ? `▼${Math.abs(diff).toFixed(1)}%` : '—';
+    return `${def.name} ${s.price.toLocaleString()} ${arrow}`;
+  }).join('  |  ');
+  publishTicker('stocks', `📈 시세  |  ${summary}`);
+  for (const n of newsItems) publishTicker('news', n);
+
+  saveStocks();
+  io.emit('stocks', stocksSnapshot());
+}
+
+loadStocks();
+loadTicker();
+setInterval(runStockTick, STOCK_TICK_MS);
 
 // 미구매 상점 치장은 외형에서 제거 (조작 방지)
 function stripUnownedCosmetics(appearance: Appearance, key: string): Appearance {
@@ -335,6 +559,7 @@ const lastRandomBuyAt = new Map<string, number>();
 const lastEnhanceAt = new Map<string, number>();
 const lastNoteAt = new Map<string, number>(); // 지갑 키 기준
 const lastBragAt = new Map<string, number>(); // 지갑 키 기준
+const lastTickerAdAt = new Map<string, number>(); // 지갑 키 기준
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
@@ -379,7 +604,9 @@ io.on('connection', (socket) => {
       trophies: [...(wallets[key].trophies ?? [])],
       rodStars: wallets[key].rodStars ?? 0,
       rodFails: wallets[key].rodFails ?? 0,
+      stocks: { ...(wallets[key].stocks ?? {}) },
     });
+    socket.emit('stocks', stocksSnapshot());
     socket.emit('chat-history', chatHistory.slice(-100));
     // 미확인 그림 쪽지 배달
     if (notesStore[key]?.length) socket.emit('notes', [...notesStore[key]]);
@@ -756,6 +983,122 @@ io.on('connection', (socket) => {
     queue.splice(idx, 1);
     if (queue.length === 0) delete notesStore[key];
     saveNotes();
+  });
+
+  // ---- 가상 주식 매매 (현재가 기준, 무수수료) ----
+
+  function tradeGuard(
+    stockId: unknown,
+    qty: unknown,
+    reply: (res: { ok: boolean; error?: string }) => void,
+  ): { def: (typeof STOCKS)[number]; state: StockInternal; wallet: Wallet; key: string; n: number } | null {
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return null;
+    }
+    const def = STOCKS.find((d) => d.id === String(stockId));
+    if (!def) {
+      reply({ ok: false, error: '없는 종목이에요.' });
+      return null;
+    }
+    const state = stocksState[def.id];
+    if (state.delistedUntil) {
+      reply({ ok: false, error: '상장폐지 중인 종목이에요. 재상장을 기다려주세요.' });
+      return null;
+    }
+    const n = Math.floor(Number(qty));
+    if (!Number.isFinite(n) || n < 1 || n > STOCK_QTY_MAX) {
+      reply({ ok: false, error: '수량이 올바르지 않아요.' });
+      return null;
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    return { def, state, wallet, key, n };
+  }
+
+  socket.on('stock-buy', (stockId, qty, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const t = tradeGuard(stockId, qty, reply);
+    if (!t) return;
+    const cost = t.state.price * t.n;
+    if (t.wallet.coins < cost) {
+      reply({ ok: false, error: `코인이 부족해요. (${t.wallet.coins}/${cost})`, coins: t.wallet.coins });
+      return;
+    }
+    t.wallet.stocks = t.wallet.stocks ?? {};
+    const h = t.wallet.stocks[t.def.id] ?? { qty: 0, avg: 0 };
+    if (h.qty + t.n > STOCK_QTY_MAX) {
+      reply({ ok: false, error: `종목당 최대 ${STOCK_QTY_MAX}주까지 보유할 수 있어요.` });
+      return;
+    }
+    t.wallet.coins -= cost;
+    h.avg = Math.round(((h.avg * h.qty + cost) / (h.qty + t.n)) * 100) / 100;
+    h.qty += t.n;
+    t.wallet.stocks[t.def.id] = h;
+    saveWallets();
+    reply({ ok: true, coins: t.wallet.coins, holding: { ...h } });
+    console.log(`[stock] ${t.key}: ${t.def.name} ${t.n}주 매수 @${t.state.price} (-${cost})`);
+  });
+
+  socket.on('stock-sell', (stockId, qty, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const t = tradeGuard(stockId, qty, reply);
+    if (!t) return;
+    const h = t.wallet.stocks?.[t.def.id];
+    if (!h || h.qty < t.n) {
+      reply({ ok: false, error: `보유 수량이 부족해요. (${h?.qty ?? 0}주)` });
+      return;
+    }
+    const gain = t.state.price * t.n;
+    t.wallet.coins += gain;
+    h.qty -= t.n;
+    if (h.qty <= 0) delete t.wallet.stocks![t.def.id];
+    saveWallets();
+    reply({ ok: true, coins: t.wallet.coins, holding: { qty: h.qty, avg: h.avg } });
+    console.log(`[stock] ${t.key}: ${t.def.name} ${t.n}주 매도 @${t.state.price} (+${gain})`);
+  });
+
+  // ---- 전광판 유료 광고 ----
+
+  socket.on('ticker-send', (text, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const clean = String(text ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, TICKER_AD_MAX_LEN);
+    if (!clean) {
+      reply({ ok: false, error: '내용을 입력해주세요.' });
+      return;
+    }
+    const now = Date.now();
+    const last = lastTickerAdAt.get(key) ?? 0;
+    if (now - last < TICKER_AD_COOLDOWN_MS) {
+      reply({ ok: false, error: `광고는 ${Math.ceil((TICKER_AD_COOLDOWN_MS - (now - last)) / 1000)}초 후에 보낼 수 있어요.` });
+      return;
+    }
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    if (wallet.coins < TICKER_AD_COST) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${TICKER_AD_COST})`, coins: wallet.coins });
+      return;
+    }
+    wallet.coins -= TICKER_AD_COST;
+    saveWallets();
+    lastTickerAdAt.set(key, now);
+    publishTicker('ad', `📢 ${clean}`, key);
+    reply({ ok: true, coins: wallet.coins });
+    console.log(`[ticker] ${key} 광고 (-${TICKER_AD_COST}): ${clean}`);
+  });
+
+  socket.on('ticker-log', (ack) => {
+    if (typeof ack !== 'function') return;
+    ack([...tickerLog].reverse().slice(0, 100)); // 최신순
   });
 
   // ---- 미보유 랜덤 파츠 뽑기 (결제만 서버, 지급은 클라이언트 로컬 풀) ----

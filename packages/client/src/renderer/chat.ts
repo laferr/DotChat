@@ -929,6 +929,299 @@
     if (notePanel.classList.contains('open')) void populateNoteRecipients();
   });
 
+  // ---- 가상 주식 (5분 틱, 서버 권위 — 시세는 net:stocks) ----
+
+  const stockPanel = document.getElementById('stock-panel')!;
+  const stockClose = document.getElementById('stock-close') as HTMLButtonElement;
+  const stockBalance = document.getElementById('stock-balance')!;
+  const stockEval = document.getElementById('stock-eval')!;
+  const stockPl = document.getElementById('stock-pl')!;
+  const stockTimer = document.getElementById('stock-timer')!;
+  const stockList = document.getElementById('stock-list')!;
+  const stockDetail = document.getElementById('stock-detail')!;
+  const stockChart = document.getElementById('stock-chart') as HTMLCanvasElement;
+  const stockDetailLeft = document.getElementById('stock-detail-left')!;
+  const stockDetailRight = document.getElementById('stock-detail-right')!;
+  const stockQty = document.getElementById('stock-qty') as HTMLInputElement;
+  const stockMaxBtn = document.getElementById('stock-max') as HTMLButtonElement;
+  const stockBuyBtn = document.getElementById('stock-buy') as HTMLButtonElement;
+  const stockSellBtn = document.getElementById('stock-sell') as HTMLButtonElement;
+
+  interface StockStateLike {
+    id: string;
+    price: number;
+    prev: number;
+    delistedUntil?: number;
+    history: number[];
+  }
+  let stockMarket: { stocks: StockStateLike[]; nextTickTs: number } | null = null;
+  let myHoldings: Record<string, { qty: number; avg: number }> = {};
+  let selectedStock: string | null = null;
+  let stockTrading = false;
+
+  const stockDef = (id: string) => STOCK_DEFS.find((d) => d.id === id);
+  const marketOf = (id: string) => stockMarket?.stocks.find((s) => s.id === id);
+
+  function diffText(s: StockStateLike): { text: string; cls: string } {
+    if (s.delistedUntil) return { text: '💀상폐', cls: 'delisted' };
+    const d = s.prev > 0 ? ((s.price - s.prev) / s.prev) * 100 : 0;
+    if (d > 0.05) return { text: `▲${d.toFixed(1)}%`, cls: 'diff-up' };
+    if (d < -0.05) return { text: `▼${Math.abs(d).toFixed(1)}%`, cls: 'diff-down' };
+    return { text: '—', cls: '' };
+  }
+
+  function renderStockList(): void {
+    if (!stockMarket) return;
+    // 요약: 총 평가액 / 손익
+    let evalSum = 0;
+    let costSum = 0;
+    for (const [id, h] of Object.entries(myHoldings)) {
+      const m = marketOf(id);
+      if (!m || h.qty <= 0) continue;
+      evalSum += m.price * h.qty;
+      costSum += h.avg * h.qty;
+    }
+    stockEval.textContent = `${evalSum.toLocaleString()}🪙`;
+    const pl = Math.round(evalSum - costSum);
+    stockPl.textContent = `${pl >= 0 ? '+' : ''}${pl.toLocaleString()}🪙`;
+    (stockPl as HTMLElement).style.color = pl > 0 ? '#ff6b6b' : pl < 0 ? '#6ec3ff' : '';
+
+    stockList.innerHTML = '';
+    for (const s of stockMarket.stocks) {
+      const def = stockDef(s.id);
+      if (!def) continue;
+      const row = document.createElement('div');
+      const d = diffText(s);
+      row.className =
+        'stock-row' + (s.id === selectedStock ? ' selected' : '') + (s.delistedUntil ? ' delisted' : '');
+      const h = myHoldings[s.id];
+      row.innerHTML =
+        `<span class="stock-name">${def.name}</span>` +
+        `<span class="stock-price">${s.delistedUntil ? '-' : s.price.toLocaleString()}</span>` +
+        `<span class="stock-diff ${d.cls}">${d.text}</span>` +
+        `<span class="stock-hold">${h && h.qty > 0 ? `${h.qty}주` : ''}</span>`;
+      row.addEventListener('click', () => {
+        selectedStock = s.id;
+        renderStockList();
+        renderStockDetail();
+      });
+      stockList.appendChild(row);
+    }
+  }
+
+  function renderStockDetail(): void {
+    const id = selectedStock;
+    const m = id ? marketOf(id) : null;
+    const def = id ? stockDef(id) : null;
+    if (!m || !def) {
+      stockDetail.classList.remove('open');
+      return;
+    }
+    stockDetail.classList.add('open');
+    const delisted = !!m.delistedUntil;
+    stockBuyBtn.disabled = delisted || stockTrading;
+    stockSellBtn.disabled = delisted || stockTrading;
+    const h = myHoldings[id!];
+    const warn = !delisted && m.price <= Math.max(1, Math.floor(def.initial * 0.05)) * 2;
+    stockDetailLeft.innerHTML = delisted
+      ? `<span class="delist-warn">💀 상장폐지 — 재상장 대기 중</span>`
+      : `시작가 ${def.initial.toLocaleString()} · 현재 ${((m.price / def.initial) * 100).toFixed(0)}%` +
+        (warn ? ' <span class="delist-warn">⚠️상폐위험</span>' : '');
+    stockDetailRight.textContent =
+      h && h.qty > 0 ? `보유 ${h.qty}주 · 평단 ${Math.round(h.avg).toLocaleString()}` : '보유 없음';
+
+    // 미니 차트 (최근 48틱)
+    const ctx = stockChart.getContext('2d')!;
+    const W = stockChart.width;
+    const H = stockChart.height;
+    ctx.clearRect(0, 0, W, H);
+    const hist = m.history.slice(-48);
+    if (hist.length >= 2) {
+      const lo = Math.min(...hist, def.initial);
+      const hi = Math.max(...hist, def.initial);
+      const span = Math.max(1, hi - lo);
+      const px = (i: number) => 4 + (i / (hist.length - 1)) * (W - 8);
+      const py = (v: number) => H - 6 - ((v - lo) / span) * (H - 12);
+      // 시작가 점선
+      ctx.strokeStyle = 'rgba(255,214,110,0.4)';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(4, py(def.initial));
+      ctx.lineTo(W - 4, py(def.initial));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 가격선
+      ctx.strokeStyle = hist[hist.length - 1] >= hist[0] ? '#ff6b6b' : '#6ec3ff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      hist.forEach((v, i) => (i === 0 ? ctx.moveTo(px(0), py(v)) : ctx.lineTo(px(i), py(v))));
+      ctx.stroke();
+      // 고가/저가 라벨
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.font = '9px "Segoe UI", sans-serif';
+      ctx.fillText(String(hi.toLocaleString()), 6, 10);
+      ctx.fillText(String(lo.toLocaleString()), 6, H - 8);
+    }
+  }
+
+  let stockTimerHandle = 0;
+
+  function updateStockTimer(): void {
+    if (!stockMarket) return;
+    const remain = Math.max(0, Math.floor((stockMarket.nextTickTs - Date.now()) / 1000));
+    stockTimer.textContent = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
+  }
+
+  async function openStockPanel(): Promise<void> {
+    const w = (await window.overlay.getWallet()) as {
+      coins: number;
+      stocks?: Record<string, { qty: number; avg: number }>;
+    };
+    updateCoins(w.coins);
+    stockBalance.textContent = `🪙 ${w.coins.toLocaleString()}`;
+    myHoldings = w.stocks ?? {};
+    const market = await window.overlay.getStocks();
+    if (market) stockMarket = market;
+    renderStockList();
+    renderStockDetail();
+    updateStockTimer();
+    window.clearInterval(stockTimerHandle);
+    stockTimerHandle = window.setInterval(updateStockTimer, 1000);
+  }
+
+  async function doTrade(kind: 'buy' | 'sell'): Promise<void> {
+    if (!selectedStock || stockTrading) return;
+    const qty = Math.floor(Number(stockQty.value));
+    if (!Number.isFinite(qty) || qty < 1) {
+      addSystemMessage('수량을 확인해주세요.');
+      return;
+    }
+    stockTrading = true;
+    renderStockDetail();
+    const def = stockDef(selectedStock)!;
+    const res =
+      kind === 'buy'
+        ? await window.overlay.stockBuy(selectedStock, qty)
+        : await window.overlay.stockSell(selectedStock, qty);
+    stockTrading = false;
+    if (!res.ok) {
+      addSystemMessage(res.error ?? '거래에 실패했어요.');
+    } else {
+      const m = marketOf(selectedStock);
+      const amount = (m?.price ?? 0) * qty;
+      addSystemMessage(
+        kind === 'buy'
+          ? `📈 ${def.name} ${qty}주 매수 (-${amount.toLocaleString()}🪙)`
+          : `📉 ${def.name} ${qty}주 매도 (+${amount.toLocaleString()}🪙)`,
+      );
+      if (res.holding) {
+        if (res.holding.qty > 0) myHoldings[selectedStock] = res.holding;
+        else delete myHoldings[selectedStock];
+      }
+      if (typeof res.coins === 'number') stockBalance.textContent = `🪙 ${res.coins.toLocaleString()}`;
+    }
+    renderStockList();
+    renderStockDetail();
+  }
+
+  stockMaxBtn.addEventListener('click', async () => {
+    if (!selectedStock) return;
+    const m = marketOf(selectedStock);
+    const w = (await window.overlay.getWallet()) as { coins: number };
+    if (m && m.price > 0) stockQty.value = String(Math.max(1, Math.min(9999, Math.floor(w.coins / m.price))));
+  });
+  stockBuyBtn.addEventListener('click', () => void doTrade('buy'));
+  stockSellBtn.addEventListener('click', () => void doTrade('sell'));
+  stockClose.addEventListener('click', () => {
+    stockPanel.classList.remove('open');
+    window.clearInterval(stockTimerHandle);
+  });
+
+  window.overlay.on('net:stocks', (data) => {
+    stockMarket = data as { stocks: StockStateLike[]; nextTickTs: number };
+    if (stockPanel.classList.contains('open')) {
+      renderStockList();
+      renderStockDetail();
+      updateStockTimer();
+    }
+  });
+
+  // ---- 전광판 (유료 광고 + 기록) ----
+
+  const tickerlogPanel = document.getElementById('tickerlog-panel')!;
+  const tickerlogClose = document.getElementById('tickerlog-close') as HTMLButtonElement;
+  const tickerlogList = document.getElementById('tickerlog-list')!;
+  const tickeradInput = document.getElementById('tickerad-input') as HTMLInputElement;
+  const tickeradSend = document.getElementById('tickerad-send') as HTMLButtonElement;
+
+  interface TickerItemLike {
+    id: string;
+    ts: number;
+    kind: string;
+    text: string;
+    from?: string;
+  }
+
+  function tickerItemEl(item: TickerItemLike): HTMLElement {
+    const el = document.createElement('div');
+    el.className = `tk-item tk-${item.kind}`;
+    const d = new Date(item.ts);
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    el.innerHTML = `<span class="tk-time">${time}</span>`;
+    el.appendChild(
+      document.createTextNode(item.kind === 'ad' && item.from ? `${item.text} — ${item.from}` : item.text),
+    );
+    return el;
+  }
+
+  async function openTickerlogPanel(): Promise<void> {
+    tickerlogList.innerHTML = '';
+    const items = (await window.overlay.getTickerLog()) as TickerItemLike[];
+    for (const item of items) tickerlogList.appendChild(tickerItemEl(item)); // 이미 최신순
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'tk-item';
+      empty.textContent = '아직 전광판 기록이 없어요.';
+      tickerlogList.appendChild(empty);
+    }
+  }
+
+  let tickeradCooldown = 0;
+
+  tickeradSend.addEventListener('click', async () => {
+    const text = tickeradInput.value.trim();
+    if (!text) return;
+    tickeradSend.disabled = true;
+    const res = await window.overlay.sendTickerAd(text);
+    if (res.ok) {
+      addSystemMessage('🗞️ 전광판에 메시지를 띄웠어요! (-50🪙)');
+      tickeradInput.value = '';
+      let remain = 60;
+      window.clearInterval(tickeradCooldown);
+      const tickCd = () => {
+        if (remain <= 0) {
+          window.clearInterval(tickeradCooldown);
+          tickeradSend.disabled = false;
+          tickeradSend.textContent = '보내기 (50 🪙)';
+          return;
+        }
+        tickeradSend.textContent = `${remain}s`;
+        remain--;
+      };
+      tickCd();
+      tickeradCooldown = window.setInterval(tickCd, 1000);
+    } else {
+      addSystemMessage(res.error ?? '전광판 전송에 실패했어요.');
+      tickeradSend.disabled = false;
+    }
+  });
+
+  tickerlogClose.addEventListener('click', () => tickerlogPanel.classList.remove('open'));
+  window.overlay.on('net:ticker', (data) => {
+    if (!tickerlogPanel.classList.contains('open')) return;
+    tickerlogList.prepend(tickerItemEl(data as TickerItemLike));
+  });
+
   // ---- 옵션 패널 (투명도 / 표시 배율) ----
 
   const optionsPanel = document.getElementById('options-panel')!;
@@ -1030,11 +1323,15 @@
     }
   }
 
+  const tickerOnEl = document.getElementById('ticker-on') as HTMLInputElement;
+  tickerOnEl.addEventListener('change', () => window.overlay.setTicker(tickerOnEl.checked));
+
   async function loadOptions(): Promise<void> {
     const s = await window.overlay.getSettings();
     showOpacity(s.opacity);
     showScale(s.scale);
     applyChatTheme(s.chatColor ?? currentChatColor);
+    tickerOnEl.checked = s.tickerOn !== false;
     void renderDisplays();
   }
   optionsClose.addEventListener('click', () => optionsPanel.classList.remove('open'));
@@ -1377,6 +1674,9 @@
     minigamePanel.classList.remove('open');
     forgePanel.classList.remove('open');
     notePanel.classList.remove('open');
+    stockPanel.classList.remove('open');
+    tickerlogPanel.classList.remove('open');
+    window.clearInterval(stockTimerHandle);
   }
 
   menuBtn.addEventListener('click', (e) => {
@@ -1409,6 +1709,14 @@
       case 'note':
         notePanel.classList.add('open');
         void populateNoteRecipients();
+        break;
+      case 'stock':
+        stockPanel.classList.add('open');
+        void openStockPanel();
+        break;
+      case 'tickerlog':
+        tickerlogPanel.classList.add('open');
+        void openTickerlogPanel();
         break;
       case 'shop':
         shopPanel.classList.add('open');

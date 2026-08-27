@@ -48,6 +48,7 @@ const RENDERER_DIR = path.join(__dirname, '..', '..', 'src', 'renderer');
 let overlayWindow: BrowserWindow | null = null;
 let chatWindow: BrowserWindow | null = null;
 let setupWindow: BrowserWindow | null = null;
+let tickerWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
 // ---- 에셋 매니페스트 ----
@@ -183,6 +184,8 @@ interface Settings {
   pinnedMsg: string;
   /** 고정메시지 표시 여부 */
   pinnedOn: boolean;
+  /** 상단 전광판 표시 여부 (기본 켜짐) */
+  tickerOn: boolean;
   /** 오버레이를 띄울 디스플레이 (Electron display id, 없거나 분리되면 주 모니터) */
   displayId?: number;
   serverUrl?: string;
@@ -203,11 +206,12 @@ function loadSettings(): Settings {
       chatColor: /^#[0-9a-fA-F]{6}$/.test(String(raw.chatColor)) ? raw.chatColor : DEFAULT_CHAT_COLOR,
       pinnedMsg: sanitizePinned(raw.pinnedMsg),
       pinnedOn: raw.pinnedOn === true,
+      tickerOn: raw.tickerOn !== false, // 기본 켜짐
       displayId: Number.isFinite(Number(raw.displayId)) ? Number(raw.displayId) : undefined,
       serverUrl: typeof raw.serverUrl === 'string' && raw.serverUrl ? raw.serverUrl : undefined,
     };
   } catch {
-    return { opacity: 1, scale: 2, chatColor: DEFAULT_CHAT_COLOR, pinnedMsg: '', pinnedOn: false };
+    return { opacity: 1, scale: 2, chatColor: DEFAULT_CHAT_COLOR, pinnedMsg: '', pinnedOn: false, tickerOn: true };
   }
 }
 
@@ -239,7 +243,7 @@ const players = new Map<string, PlayerState>();
 const chatLog: ChatMessage[] = [];
 
 function broadcast(channel: string, payload?: unknown): void {
-  for (const win of [overlayWindow, chatWindow, fishdexWindow]) {
+  for (const win of [overlayWindow, chatWindow, fishdexWindow, tickerWindow]) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   }
 }
@@ -342,6 +346,7 @@ function connect(): void {
     myTrophies = data.trophies ?? [];
     myRodStars = data.rodStars ?? 0;
     myRodFails = data.rodFails ?? 0;
+    myStocks = data.stocks ?? {};
     broadcast('self:coins', myCoins);
     broadcast('self:wallet', data);
   });
@@ -352,6 +357,16 @@ function connect(): void {
 
   socket.on('brag-news', (data) => {
     broadcast('net:brag-news', data);
+  });
+
+  // 주식 시세 (접속 시 + 매 틱) / 전광판 항목
+  socket.on('stocks', (data) => {
+    myStocksMarket = data;
+    broadcast('net:stocks', data);
+  });
+
+  socket.on('ticker', (item) => {
+    broadcast('net:ticker', item);
   });
 
   // 그림 쪽지 — 접속 시 일괄 / 실시간 수신
@@ -457,7 +472,10 @@ function createOverlay(): void {
     console.log('[main] overlay shown:', JSON.stringify(overlayWindow.getBounds()));
   });
 
-  const reposition = () => overlayWindow?.setBounds(overlayBounds());
+  const reposition = () => {
+    overlayWindow?.setBounds(overlayBounds());
+    tickerWindow?.setBounds(tickerBounds());
+  };
   screen.on('display-metrics-changed', reposition);
   screen.on('display-added', reposition);
   screen.on('display-removed', reposition);
@@ -468,6 +486,52 @@ function createOverlay(): void {
       overlayWindow.setAlwaysOnTop(true, 'screen-saver');
     }
   }, 5000);
+}
+
+// ---- 전광판 창 (모니터 상단 얇은 띠, 클릭 통과) ----
+
+const TICKER_HEIGHT = 36;
+
+function tickerBounds() {
+  const wa = targetDisplay().workArea;
+  return { x: wa.x, y: wa.y, width: wa.width, height: TICKER_HEIGHT };
+}
+
+function createTicker(): void {
+  if (tickerWindow && !tickerWindow.isDestroyed()) return;
+  tickerWindow = new BrowserWindow({
+    ...tickerBounds(),
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    webPreferences: { preload: PRELOAD, backgroundThrottling: false },
+  });
+  tickerWindow.setAlwaysOnTop(true, 'screen-saver');
+  tickerWindow.setIgnoreMouseEvents(true); // 읽기 전용 — 항상 클릭 통과
+  pipeConsole(tickerWindow, 'ticker');
+  tickerWindow.loadFile(path.join(RENDERER_DIR, 'ticker.html'));
+  tickerWindow.once('ready-to-show', () => tickerWindow?.show());
+  tickerWindow.on('closed', () => {
+    tickerWindow = null;
+  });
+}
+
+function applyTickerVisibility(): void {
+  if (settings.tickerOn) {
+    createTicker();
+  } else if (tickerWindow && !tickerWindow.isDestroyed()) {
+    tickerWindow.destroy();
+    tickerWindow = null;
+  }
 }
 
 // ---- 채팅 창 ----
@@ -730,6 +794,7 @@ ipcMain.on('set-display', (_e, id: unknown) => {
   settings.displayId = display.id;
   saveSettings();
   overlayWindow?.setBounds(overlayBounds());
+  tickerWindow?.setBounds(tickerBounds());
   if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setBounds(chatBounds());
   broadcast('self:settings', settings);
   console.log(`[display] 오버레이 → 디스플레이 ${display.id} (${display.size.width}x${display.size.height})`);
@@ -895,20 +960,95 @@ let myFish: string[] = [];
 let myTrophies: string[] = [];
 let myRodStars = 0;
 let myRodFails = 0;
+let myStocks: Record<string, { qty: number; avg: number }> = {};
+let myStocksMarket: unknown = null; // 최신 시세 스냅샷 (stocks 이벤트)
 
 ipcMain.handle('get-coins', () => myCoins);
 
-ipcMain.handle('get-wallet', () => ({
-  coins: myCoins,
-  items: myItems,
-  fish: myFish,
-  trophies: myTrophies,
-  rodStars: myRodStars,
-  rodFails: myRodFails,
-}));
+ipcMain.handle('get-wallet', () => walletSnapshot());
+
+// ---- 가상 주식 / 전광판 ----
+
+ipcMain.handle('get-stocks', () => myStocksMarket);
+
+function tradeIpc(event: 'stock-buy' | 'stock-sell') {
+  return (_e: unknown, stockId: string, qty: number) =>
+    new Promise((resolve) => {
+      if (!socket?.connected) {
+        resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+        return;
+      }
+      (socket as any).timeout(10000).emit(event, String(stockId), Number(qty), (err: unknown, res: any) => {
+        if (err || !res) {
+          resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+          return;
+        }
+        if (typeof res.coins === 'number') {
+          myCoins = res.coins;
+          broadcast('self:coins', myCoins);
+        }
+        if (res.ok && res.holding) {
+          if (res.holding.qty > 0) myStocks[String(stockId)] = { qty: res.holding.qty, avg: res.holding.avg };
+          else delete myStocks[String(stockId)];
+          broadcast('self:wallet', walletSnapshot());
+        }
+        resolve(res);
+      });
+    });
+}
+
+ipcMain.handle('stock-buy', tradeIpc('stock-buy'));
+ipcMain.handle('stock-sell', tradeIpc('stock-sell'));
+
+ipcMain.handle('ticker-ad', (_e, text: string) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('ticker-send', String(text ?? ''), (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      resolve(res);
+    });
+  });
+});
+
+ipcMain.handle('ticker-log', () => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve([]);
+      return;
+    }
+    (socket as any).timeout(10000).emit('ticker-log', (err: unknown, items: unknown) => {
+      resolve(err || !Array.isArray(items) ? [] : items);
+    });
+  });
+});
+
+ipcMain.on('set-ticker', (_e, on: unknown) => {
+  settings.tickerOn = on === true;
+  saveSettings();
+  applyTickerVisibility();
+  broadcast('self:settings', settings);
+});
 
 function walletSnapshot() {
-  return { coins: myCoins, items: myItems, fish: myFish, trophies: myTrophies, rodStars: myRodStars, rodFails: myRodFails };
+  return {
+    coins: myCoins,
+    items: myItems,
+    fish: myFish,
+    trophies: myTrophies,
+    rodStars: myRodStars,
+    rodFails: myRodFails,
+    stocks: myStocks,
+  };
 }
 
 // 낚싯대 강화 (판정 서버)
@@ -1273,6 +1413,7 @@ function startMain(): void {
   if (started) return;
   started = true;
   createOverlay();
+  applyTickerVisibility();
   connect();
   // 개발 편의: 시작 시 채팅창 자동 열기 (UI 테스트용)
   if (process.env.DOTCHAT_OPEN_CHAT) setTimeout(() => toggleChat(), 1500);

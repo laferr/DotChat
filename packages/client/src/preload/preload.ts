@@ -25,6 +25,8 @@ const NET_CHANNELS = new Set([
   'net:player-fishing',
   'net:enhance-news',
   'net:brag-news',
+  'net:stocks',
+  'net:ticker',
   'self:notes',
   'self:note',
   'self:minigame',
@@ -92,6 +94,14 @@ contextBridge.exposeInMainWorld('overlay', {
   sendNote: (data: { to: string; image: string }): Promise<unknown> =>
     ipcRenderer.invoke('note-send', data),
   readNote: (noteId: string) => ipcRenderer.send('note-read', noteId),
+  getStocks: (): Promise<unknown> => ipcRenderer.invoke('get-stocks'),
+  stockBuy: (stockId: string, qty: number): Promise<unknown> =>
+    ipcRenderer.invoke('stock-buy', stockId, qty),
+  stockSell: (stockId: string, qty: number): Promise<unknown> =>
+    ipcRenderer.invoke('stock-sell', stockId, qty),
+  sendTickerAd: (text: string): Promise<unknown> => ipcRenderer.invoke('ticker-ad', text),
+  getTickerLog: (): Promise<unknown[]> => ipcRenderer.invoke('ticker-log'),
+  setTicker: (on: boolean) => ipcRenderer.send('set-ticker', on),
   endRunner: (seconds: number): Promise<unknown> => ipcRenderer.invoke('runner-end', seconds),
   sendReaction: (index: number) => ipcRenderer.send('reaction-send', index),
   equip: (payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }) =>

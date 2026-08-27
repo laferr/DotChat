@@ -180,6 +180,20 @@ const ROD_TIER_COLORS: ([string, string] | null)[] = [
   null,
 ];
 
+// 가상 주식 종목 — shared/protocol.ts의 STOCKS와 동기화 유지 필요 (시세·판정은 서버)
+const STOCK_DEFS: { id: string; name: string; initial: number }[] = [
+  { id: 'airpass', name: '(주)에어패스', initial: 1000 },
+  { id: 'wolchuk', name: '월척수산', initial: 500 },
+  { id: 'forge', name: '대장간중공업', initial: 350 },
+  { id: 'spark', name: '골드스파크전자', initial: 200 },
+  { id: 'chest', name: '보물상자해운', initial: 120 },
+  { id: 'note', name: '딱지우편', initial: 80 },
+  { id: 'slot', name: '세븐슬롯게임즈', initial: 50 },
+  { id: 'runner', name: '러너스포츠', initial: 20 },
+  { id: 'minnow', name: '피라미식품', initial: 10 },
+  { id: 'botsoon', name: '봇순이엔터', initial: 5 },
+];
+
 const BUBBLE_STYLES: Record<string, { fill: string; stroke: string; text: string }> = {
   default: { fill: '#fffdf7', stroke: '#4a2837', text: '#3a2430' },
   'bubble-dark': { fill: '#2b2230', stroke: '#8d7d88', text: '#f0e8ec' },

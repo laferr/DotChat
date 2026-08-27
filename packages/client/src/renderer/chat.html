@@ -680,6 +680,166 @@
         text-align: center;
         margin: 0;
       }
+      /* ---- 가상 주식 ---- */
+      #stock-summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 0 12px 6px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+      #stock-summary b { color: var(--text); }
+      #stock-list {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 0 12px 6px;
+        min-height: 90px;
+      }
+      #stock-list::-webkit-scrollbar { width: 8px; }
+      #stock-list::-webkit-scrollbar-thumb { background: var(--header); border-radius: 4px; }
+      .stock-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 7px;
+        padding: 5px 9px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .stock-row:hover { border-color: var(--accent); }
+      .stock-row.selected { border-color: var(--accent); background: var(--self-bubble); }
+      .stock-row.delisted { opacity: 0.55; }
+      .stock-name { flex: 1; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .stock-price { font-weight: 700; white-space: nowrap; }
+      .stock-diff { width: 56px; text-align: right; font-size: 11px; white-space: nowrap; }
+      .stock-hold { width: 46px; text-align: right; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+      .diff-up { color: #ff6b6b; }
+      .diff-down { color: #6ec3ff; }
+      #stock-detail {
+        border-top: 1px solid var(--header);
+        padding: 8px 12px 12px;
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      #stock-detail.open { display: flex; }
+      #stock-chart {
+        width: 100%;
+        height: 84px;
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 7px;
+      }
+      #stock-detail-info {
+        font-size: 11px;
+        color: var(--text-dim);
+        display: flex;
+        justify-content: space-between;
+      }
+      #stock-trade-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      #stock-qty {
+        width: 72px;
+        border: 1px solid var(--header);
+        background: var(--bg-input);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        outline: none;
+      }
+      #stock-max {
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      #stock-max:hover { border-color: var(--accent); }
+      #stock-buy, #stock-sell {
+        flex: 1;
+        border: 0;
+        color: #fffdf7;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 7px 0;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      #stock-buy { background: #c94f5c; }
+      #stock-sell { background: #3f6fb5; }
+      #stock-buy:hover:enabled { background: #e06070; }
+      #stock-sell:hover:enabled { background: #4f83d0; }
+      #stock-buy:disabled, #stock-sell:disabled { opacity: 0.45; cursor: default; }
+      .delist-warn { color: #ff6b6b; font-weight: 700; }
+      /* ---- 전광판 기록/광고 ---- */
+      #tickerad-row {
+        display: flex;
+        gap: 6px;
+        padding: 0 12px 8px;
+      }
+      #tickerad-input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--header);
+        background: var(--bg-input);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        outline: none;
+      }
+      #tickerad-input:focus { border-color: var(--accent); }
+      #tickerad-send {
+        border: 0;
+        background: var(--accent);
+        color: #fffdf7;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 0 12px;
+        cursor: pointer;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      #tickerad-send:hover:enabled { background: var(--accent-hover); }
+      #tickerad-send:disabled { opacity: 0.5; cursor: default; }
+      #tickerlog-list {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 0 12px 12px;
+      }
+      #tickerlog-list::-webkit-scrollbar { width: 8px; }
+      #tickerlog-list::-webkit-scrollbar-thumb { background: var(--header); border-radius: 4px; }
+      .tk-item {
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 7px;
+        padding: 5px 9px;
+        font-size: 11px;
+        line-height: 1.5;
+        word-break: break-word;
+      }
+      .tk-item .tk-time { color: var(--text-dim); font-size: 10px; margin-right: 6px; }
+      .tk-stocks { color: #ffd66e; }
+      .tk-news { color: #9fdcff; }
+      .tk-delist { color: #ff6b6b; }
+      .tk-relist { color: #8be06a; }
+      .tk-ad { color: #ff8dc7; }
       #menu-dropdown {
         position: absolute;
         top: 40px;
@@ -903,6 +1063,8 @@
       #fishdex-panel,
       #forge-panel,
       #note-panel,
+      #stock-panel,
+      #tickerlog-panel,
       #slot-panel {
         position: absolute;
         left: 0;
@@ -923,6 +1085,8 @@
       #fishdex-panel.open,
       #forge-panel.open,
       #note-panel.open,
+      #stock-panel.open,
+      #tickerlog-panel.open,
       #slot-panel.open {
         display: flex;
       }
@@ -1202,6 +1366,8 @@
       <button data-menu="slot">🎰 슬롯머신</button>
       <button data-menu="forge">🔨 대장간</button>
       <button data-menu="note">✉️ 쪽지</button>
+      <button data-menu="stock">📈 주식</button>
+      <button data-menu="tickerlog">🗞️ 전광판</button>
       <button data-menu="shop">🛒 상점</button>
       <button data-menu="fishdex">📖 낚시도감</button>
       <button data-menu="appearance">👕 외모 변경</button>
@@ -1276,6 +1442,41 @@
         </p>
       </div>
     </div>
+    <div id="stock-panel">
+      <div class="panel-head">
+        <span>주식 <span id="stock-balance"></span></span>
+        <button id="stock-close">✕</button>
+      </div>
+      <div id="stock-summary">
+        <span>평가 <b id="stock-eval">-</b> · 손익 <b id="stock-pl">-</b></span>
+        <span>다음 변동 <b id="stock-timer">-:--</b></span>
+      </div>
+      <div id="stock-list"></div>
+      <div id="stock-detail">
+        <canvas id="stock-chart" width="300" height="84"></canvas>
+        <div id="stock-detail-info">
+          <span id="stock-detail-left"></span>
+          <span id="stock-detail-right"></span>
+        </div>
+        <div id="stock-trade-row">
+          <input id="stock-qty" type="number" min="1" max="9999" value="1" />
+          <button id="stock-max">MAX</button>
+          <button id="stock-buy">매수</button>
+          <button id="stock-sell">매도</button>
+        </div>
+      </div>
+    </div>
+    <div id="tickerlog-panel">
+      <div class="panel-head">
+        <span>전광판</span>
+        <button id="tickerlog-close">✕</button>
+      </div>
+      <div id="tickerad-row">
+        <input id="tickerad-input" maxlength="60" placeholder="전광판에 띄울 메시지 (최대 60자)" autocomplete="off" />
+        <button id="tickerad-send">보내기 (50 🪙)</button>
+      </div>
+      <div id="tickerlog-list"></div>
+    </div>
     <div id="note-panel">
       <div class="panel-head">
         <span>그림 쪽지</span>
@@ -1316,6 +1517,8 @@
         <label>표시 디스플레이</label>
         <div id="display-btns"></div>
         <p class="hint">캐릭터가 걸어다닐 모니터입니다. 채팅창도 같은 모니터에 열립니다.</p>
+        <label class="check-row"><input id="ticker-on" type="checkbox" /><span>상단 전광판 표시</span></label>
+        <p class="hint">주가 변동·뉴스·광고가 모니터 위쪽에 흘러갑니다. 꺼도 ☰ → 🗞️ 전광판에서 내용을 볼 수 있어요.</p>
         <label>채팅창 테마 색상</label>
         <div id="color-row">
           <div id="color-swatches"></div>

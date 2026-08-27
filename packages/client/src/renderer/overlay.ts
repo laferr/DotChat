@@ -79,6 +79,7 @@ interface OverlayApi {
     chatColor: string;
     pinnedMsg: string;
     pinnedOn: boolean;
+    tickerOn: boolean;
     serverUrl?: string;
   }>;
   setOpacity(value: number): void;
@@ -134,6 +135,21 @@ interface OverlayApi {
   getNotes(): Promise<{ id: string; from: string; ts: number; image: string }[]>;
   sendNote(data: { to: string; image: string }): Promise<{ ok: boolean; error?: string; coins?: number }>;
   readNote(noteId: string): void;
+  getStocks(): Promise<{
+    stocks: { id: string; price: number; prev: number; delistedUntil?: number; history: number[] }[];
+    nextTickTs: number;
+  } | null>;
+  stockBuy(
+    stockId: string,
+    qty: number,
+  ): Promise<{ ok: boolean; error?: string; coins?: number; holding?: { qty: number; avg: number } }>;
+  stockSell(
+    stockId: string,
+    qty: number,
+  ): Promise<{ ok: boolean; error?: string; coins?: number; holding?: { qty: number; avg: number } }>;
+  sendTickerAd(text: string): Promise<{ ok: boolean; error?: string; coins?: number }>;
+  getTickerLog(): Promise<{ id: string; ts: number; kind: string; text: string; from?: string }[]>;
+  setTicker(on: boolean): void;
   enhance(): Promise<{
     ok: boolean;
     error?: string;
