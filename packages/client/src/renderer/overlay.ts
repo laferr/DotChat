@@ -113,7 +113,7 @@ interface OverlayApi {
   claimGift(): Promise<GiftClaimResult>;
   getCoins(): Promise<number>;
   playSlot(): Promise<unknown>;
-  getWallet(): Promise<{ coins: number; items: string[] }>;
+  getWallet(): Promise<{ coins: number; items: string[]; rodStars?: number; rodFails?: number }>;
   buyItem(itemId: string): Promise<unknown>;
   getRanking(): Promise<unknown[]>;
   getExtras(): Promise<ExtrasManifest | null>;
@@ -130,6 +130,15 @@ interface OverlayApi {
     item?: { id: string; name: string };
   }>;
   buyRandom(itemId: string): Promise<{ ok: boolean; error?: string; label?: string; coins?: number }>;
+  enhance(): Promise<{
+    ok: boolean;
+    error?: string;
+    result?: 'success' | 'keep' | 'drop';
+    stars?: number;
+    fails?: number;
+    guaranteed?: boolean;
+    coins?: number;
+  }>;
   endRunner(seconds: number): Promise<{ ok: boolean; error?: string; delta?: number }>;
   sendReaction(index: number): void;
   equip(payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }): void;
@@ -250,6 +259,8 @@ interface Actor {
     reelDur?: number;
     /** 월척 — 낚아올리는 스프라이트 3배 */
     trophy?: boolean;
+    /** 낚싯대 강화 성 (글로우 이펙트, 원격은 서버가 첨부) */
+    rod?: number;
   } | null;
   /** 리액션 이모지 표시 */
   reaction: { index: number; until: number } | null;
@@ -1027,12 +1038,13 @@ function loadFishImage(id: string): void {
   void loadExtraImage(rel).then((img) => fishReady.set(id, img));
 }
 
-// 어획물 롤 — 상자 0.5% / 보물상자 0.2% 고정, 나머지는 전체 물고기 균등
+// 어획물 롤 — 상자 0.5% / 보물상자 0.2% 고정 (25성+ 낚싯대는 2배), 나머지는 전체 물고기 균등
 function rollFishCatch(): string {
   const fish2 = extras?.fish2 ?? [];
+  const luck = myRodStars >= 25 ? 2 : 1;
   const roll = Math.random() * 100;
-  if (roll < 0.2 && fish2.includes('treasure_chest')) return 'treasure_chest';
-  if (roll < 0.7 && fish2.includes('box')) return 'box';
+  if (roll < 0.2 * luck && fish2.includes('treasure_chest')) return 'treasure_chest';
+  if (roll < (0.2 + 0.5) * luck && fish2.includes('box')) return 'box';
   const pool = [...(extras?.fish ?? []), ...fish2.filter((f) => f !== 'box' && f !== 'treasure_chest')];
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -1061,20 +1073,25 @@ const FISHING_PLAY: Record<string, { fps: number; once: boolean }> = {
 };
 const CAUGHT_DURATION = 1.7;
 
+// 내 낚싯대 강화 성 — 대기시간/월척/상자 확률 보정 + 글로우 (지갑 이벤트로 동기화)
+let myRodStars = 0;
+
 function setSelfFishingPhase(phase: string, fishId?: string, trophy?: boolean): void {
   if (!me.fishing) return;
   me.fishing.phase = phase;
   me.fishing.phaseStart = performance.now();
   me.fishing.fishId = fishId ?? null;
   me.fishing.trophy = trophy === true;
-  if (phase === 'waiting') me.fishing.waitDur = 10 + Math.random() * 5;
+  me.fishing.rod = myRodStars;
+  // 강화 보너스: 입질 대기 -0.15초/성 (최소 3초)
+  if (phase === 'waiting') me.fishing.waitDur = Math.max(3, 10 + Math.random() * 5 - myRodStars * 0.15);
   if (phase === 'reeling') me.fishing.reelDur = 1 + Math.random();
   window.overlay.sendFishing({ phase, fishId, trophy });
 }
 
 function startFishing(): void {
   if (runnerState.active || !extras) return;
-  me.fishing = { phase: 'casting', phaseStart: performance.now(), fishId: null, dir: me.dir };
+  me.fishing = { phase: 'casting', phaseStart: performance.now(), fishId: null, dir: me.dir, rod: myRodStars };
   window.overlay.sendFishing({ phase: 'casting' });
 }
 
@@ -1098,21 +1115,24 @@ function updateSelfFishing(now: number): void {
     case 'reeling':
       if (t >= (f.reelDur ?? 1.5)) {
         const fishId = rollFishCatch();
-        // 월척 0.2% — 일반 물고기만 (상자/보물상자 제외), 3배 스프라이트 + 보너스 코인
+        // 월척 — 일반 물고기만 (상자/보물상자 제외), 기본 0.2% + 강화 0.02%p/성
         const trophy =
-          fishId !== 'box' && fishId !== 'treasure_chest' && Math.random() * 100 < 0.2;
+          fishId !== 'box' &&
+          fishId !== 'treasure_chest' &&
+          Math.random() * 100 < 0.2 + myRodStars * 0.02;
         loadFishImage(fishId);
         setSelfFishingPhase('caught', fishId, trophy);
         void window.overlay.reportFish(fishId, trophy).then((res) => {
           if (!res.ok) return;
+          const dbl = (res as { doubled?: boolean }).doubled ? ' 🎯더블!' : '';
           if (fishId === 'box') {
             showBubble(me, `📦 상자 발견! +${res.delta}🪙`);
           } else if (fishId === 'treasure_chest') {
             showBubble(me, res.item ? `💰 보물상자!! '${res.item.name}' 획득!` : `💰 보물상자!! +${res.delta}🪙`);
           } else if (res.trophy) {
-            showBubble(me, `🌟 월척이다!! ${fishId.replace(/_/g, ' ')}! +${res.delta}🪙`);
+            showBubble(me, `🌟 월척이다!! ${fishId.replace(/_/g, ' ')}! +${res.delta}🪙${dbl}`);
           } else {
-            showBubble(me, `🎣 ${fishId.replace(/_/g, ' ')}! ${res.isNew ? 'NEW! ' : ''}+${res.delta}🪙`);
+            showBubble(me, `🎣 ${fishId.replace(/_/g, ' ')}! ${res.isNew ? 'NEW! ' : ''}+${res.delta}🪙${dbl}`);
           }
         });
       }
@@ -1156,6 +1176,7 @@ function drawFishing(actor: Actor, time: number): void {
     fw * vs,
     fh * vs,
   );
+  drawRodGlow(f.rod ?? 0, actor.x, time);
   if (f.phase === 'caught' && f.fishId) {
     const fishImg = fishReady.get(f.fishId);
     if (fishImg) {
@@ -1175,6 +1196,40 @@ function drawFishing(actor: Actor, time: number): void {
         stageCtx.drawImage(fishImg, 0, 0, 16, 16, Math.round(fx - fs / 2), Math.round(fy - fs / 2), fs, fs);
       }
     }
+  }
+  stageCtx.restore();
+}
+
+// 강화 낚싯대 글로우 (5성+) — 낚싯대 앞쪽에 은은한 빛 + 떠오르는 반짝이
+// drawFishing의 미러 컨텍스트 안에서 호출되므로 dir 무관하게 앞쪽에 그려짐
+function drawRodGlow(stars: number, actorX: number, time: number): void {
+  const tier = rodTier(stars);
+  if (tier === 0) return;
+  const vs = viewScale;
+  const cx = actorX + 26 * vs;
+  const cy = viewH - 26 * vs;
+  const rainbow = tier === 6;
+  const colors = ROD_TIER_COLORS[tier];
+  const main = rainbow ? `hsl(${(time / 8) % 360} 90% 65%)` : colors![0];
+  const bright = rainbow ? `hsl(${(time / 8 + 60) % 360} 90% 80%)` : colors![1];
+  stageCtx.save();
+  // 은은한 원형 글로우
+  stageCtx.globalAlpha = 0.1 + 0.05 * Math.sin(time / 300);
+  const grad = stageCtx.createRadialGradient(cx, cy, 0, cx, cy, 20 * vs);
+  grad.addColorStop(0, main);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  stageCtx.fillStyle = grad;
+  stageCtx.fillRect(cx - 20 * vs, cy - 20 * vs, 40 * vs, 40 * vs);
+  // 떠오르는 반짝이 (티어가 높을수록 많이)
+  const count = 2 + tier;
+  const size = Math.max(2, Math.round(vs * 1.2));
+  for (let i = 0; i < count; i++) {
+    const rise = ((time / 14 + i * 53) % 90) / 90;
+    const px = cx + Math.cos(time / 500 + i * 2.4) * 12 * vs;
+    const py = cy + 10 * vs - rise * 34 * vs;
+    stageCtx.globalAlpha = 0.9 * (1 - rise);
+    stageCtx.fillStyle = i % 2 ? main : bright;
+    stageCtx.fillRect(Math.round(px), Math.round(py), size, size);
   }
   stageCtx.restore();
 }
@@ -1553,7 +1608,7 @@ function wireNet(): void {
   });
 
   window.overlay.on('net:player-fishing', (data) => {
-    const d = data as { id: string; phase: string; fishId?: string; trophy?: boolean };
+    const d = data as { id: string; phase: string; fishId?: string; trophy?: boolean; rod?: number };
     const actor = remotes.get(d.id);
     if (!actor) return;
     if (d.phase === 'stop') {
@@ -1567,8 +1622,15 @@ function wireNet(): void {
       fishId: d.fishId ?? null,
       dir: actor.fishing?.dir ?? actor.dir,
       trophy: d.trophy === true,
+      rod: Number(d.rod) || 0,
     };
     actor.walking = false;
+  });
+
+  window.overlay.on('self:wallet', (data) => {
+    const d = data as { rodStars?: number };
+    myRodStars = Number(d.rodStars) || 0;
+    if (me.fishing) me.fishing.rod = myRodStars; // 낚시 중 강화해도 즉시 반영
   });
 
   window.overlay.on('self:minigame', (data) => {
@@ -1685,6 +1747,9 @@ async function init(): Promise<void> {
   const state = await window.overlay.getNetState();
   selfId = state.selfId;
   state.players.forEach(addRemote);
+  void window.overlay.getWallet().then((w) => {
+    myRodStars = Number(w.rodStars) || 0;
+  });
 
   heartCanvas = buildHeartCanvas();
   giftCanvas = buildGiftCanvas();

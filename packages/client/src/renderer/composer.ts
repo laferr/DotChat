@@ -123,6 +123,63 @@ const RANDOM_ITEMS: { id: string; name: string; price: number; emoji: string }[]
   { id: 'rand-horns', name: '뿔 랜덤', price: 500, emoji: '🦌' },
 ];
 
+// 낚싯대 강화 — shared/protocol.ts의 ENHANCE_TABLE과 동기화 유지 필요 (판정은 서버)
+const FORGE_TABLE: { succ: number; drop: number; cost: number }[] = [
+  { succ: 95, drop: 0, cost: 5 },
+  { succ: 90, drop: 0, cost: 5 },
+  { succ: 85, drop: 0, cost: 8 },
+  { succ: 85, drop: 0, cost: 8 },
+  { succ: 80, drop: 0, cost: 10 },
+  { succ: 75, drop: 0, cost: 12 },
+  { succ: 70, drop: 0, cost: 15 },
+  { succ: 65, drop: 0, cost: 18 },
+  { succ: 60, drop: 0, cost: 22 },
+  { succ: 55, drop: 0, cost: 26 },
+  { succ: 50, drop: 0, cost: 30 },
+  { succ: 45, drop: 0, cost: 36 },
+  { succ: 40, drop: 0, cost: 42 },
+  { succ: 35, drop: 0, cost: 50 },
+  { succ: 30, drop: 0, cost: 60 },
+  { succ: 30, drop: 0, cost: 80 }, // 15성 ✦
+  { succ: 30, drop: 2, cost: 100 },
+  { succ: 15, drop: 7, cost: 130 },
+  { succ: 15, drop: 7, cost: 160 },
+  { succ: 15, drop: 8, cost: 200 },
+  { succ: 30, drop: 0, cost: 250 }, // 20성 ✦
+  { succ: 15, drop: 13, cost: 300 },
+  { succ: 15, drop: 17, cost: 380 },
+  { succ: 10, drop: 18, cost: 460 },
+  { succ: 10, drop: 18, cost: 550 },
+  { succ: 10, drop: 0, cost: 700 }, // 25성 ✦
+  { succ: 7, drop: 15, cost: 850 },
+  { succ: 5, drop: 15, cost: 1000 },
+  { succ: 3, drop: 15, cost: 1200 },
+  { succ: 1, drop: 15, cost: 1500 },
+];
+const FORGE_MAX = 30;
+const FORGE_PITY = 10;
+
+function forgeWeekend(): boolean {
+  const day = new Date(Date.now() + 9 * 3600_000).getUTCDay(); // KST
+  return day === 0 || day === 6;
+}
+
+// 강화 단계 → 이펙트 티어 (0=없음, 1=흰반짝 2=파랑 3=보라 4=불꽃 5=금빛 6=무지개)
+function rodTier(stars: number): number {
+  return stars >= 30 ? 6 : stars >= 25 ? 5 : stars >= 20 ? 4 : stars >= 15 ? 3 : stars >= 10 ? 2 : stars >= 5 ? 1 : 0;
+}
+
+// 티어별 [주색, 밝은색] (6=무지개는 시간 기반이라 null)
+const ROD_TIER_COLORS: ([string, string] | null)[] = [
+  null,
+  ['#ffffff', '#fff8d8'],
+  ['#6ec3ff', '#d8efff'],
+  ['#b48aff', '#e6d8ff'],
+  ['#ff7b3f', '#ffd23f'],
+  ['#ffd66e', '#fff3c4'],
+  null,
+];
+
 const BUBBLE_STYLES: Record<string, { fill: string; stroke: string; text: string }> = {
   default: { fill: '#fffdf7', stroke: '#4a2837', text: '#3a2430' },
   'bubble-dark': { fill: '#2b2230', stroke: '#8d7d88', text: '#f0e8ec' },

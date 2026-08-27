@@ -542,6 +542,176 @@
     addSystemMessage(`🎰 ${d.nickname}#${d.tag}님이 ${label} 터뜨렸어요!`);
   });
 
+  // ---- 대장간 (낚싯대 강화, 스타포스식 연출) ----
+
+  const forgePanel = document.getElementById('forge-panel')!;
+  const forgeClose = document.getElementById('forge-close') as HTMLButtonElement;
+  const forgeBalance = document.getElementById('forge-balance')!;
+  const forgeRod = document.getElementById('forge-rod')!;
+  const forgeSparks = document.getElementById('forge-sparks')!;
+  const forgeFlash = document.getElementById('forge-flash')!;
+  const forgeResult = document.getElementById('forge-result')!;
+  const forgeFallstar = document.getElementById('forge-fallstar')!;
+  const forgeStars = document.getElementById('forge-stars')!;
+  const forgeRates = document.getElementById('forge-rates')!;
+  const forgeBtn = document.getElementById('forge-btn') as HTMLButtonElement;
+
+  let forging = false;
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+
+  function renderForgeStars(stars: number, popIndex = -1): void {
+    forgeStars.innerHTML = '';
+    for (let i = 0; i < FORGE_MAX; i++) {
+      if (i === 15) {
+        const br = document.createElement('span');
+        br.className = 'fbreak';
+        forgeStars.appendChild(br);
+      }
+      const s = document.createElement('span');
+      s.className =
+        'fstar' +
+        (i < stars ? ' on' : '') +
+        ((i + 1) % 5 === 0 && i !== 14 && i !== 29 ? ' gap' : '') +
+        (i === popIndex ? ' pop' : '');
+      s.textContent = '★';
+      forgeStars.appendChild(s);
+    }
+  }
+
+  async function renderForge(popIndex = -1): Promise<void> {
+    const w = (await window.overlay.getWallet()) as {
+      coins: number;
+      rodStars?: number;
+      rodFails?: number;
+    };
+    updateCoins(w.coins);
+    const stars = w.rodStars ?? 0;
+    const fails = w.rodFails ?? 0;
+    forgeBalance.textContent = `🪙 ${w.coins}`;
+    forgeRod.className = `rod-tier-${rodTier(stars)}`;
+    renderForgeStars(stars, popIndex);
+    if (stars >= FORGE_MAX) {
+      forgeRates.innerHTML = '🌈 <b>30성 만렙!</b> 전설의 낚싯대입니다.';
+      forgeBtn.disabled = true;
+      forgeBtn.textContent = 'MAX';
+      return;
+    }
+    const st = FORGE_TABLE[stars];
+    const weekend = forgeWeekend();
+    const drop = round1(st.drop * (weekend ? 0.7 : 1));
+    const keep = round1(Math.max(0, 100 - st.succ - drop));
+    forgeRates.innerHTML =
+      `<b>${stars}성 → ${stars + 1}성</b> · 성공 <b>${st.succ}%</b> · 유지 ${keep}%` +
+      (st.drop > 0 ? ` · 하락 ${drop}%${weekend ? ' <span style="color:#8be06a">주말↓</span>' : ''}` : '') +
+      '<br />' +
+      (fails >= FORGE_PITY
+        ? '<span class="pity-full">✨ 다음 강화 성공 보장! (천장)</span>'
+        : `연속 실패 ${fails}/${FORGE_PITY}`);
+    forgeBtn.disabled = forging || w.coins < st.cost;
+    forgeBtn.textContent = `강화하기 (${st.cost} 🪙)`;
+  }
+
+  // 두구두구: 사방에서 반짝이가 낚싯대로 모여듦
+  function spawnConvergeSparks(): void {
+    forgeSparks.innerHTML = '';
+    for (let i = 0; i < 14; i++) {
+      const sp = document.createElement('span');
+      sp.className = 'forge-spark in';
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 50 + Math.random() * 35;
+      const sx = 80 + Math.cos(angle) * dist;
+      const sy = 48 + Math.sin(angle) * dist * 0.7;
+      sp.style.left = `${sx}px`;
+      sp.style.top = `${sy}px`;
+      sp.style.setProperty('--tx', `${80 - sx}px`);
+      sp.style.setProperty('--ty', `${48 - sy}px`);
+      sp.style.animationDelay = `${(Math.random() * 0.8).toFixed(2)}s`;
+      sp.style.background = i % 3 ? '#ffd66e' : '#fffdf7';
+      forgeSparks.appendChild(sp);
+    }
+  }
+
+  // 결과: 중심에서 사방으로 터짐
+  function spawnBurstSparks(count: number, color: string): void {
+    forgeSparks.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const sp = document.createElement('span');
+      sp.className = 'forge-spark out';
+      sp.style.left = '80px';
+      sp.style.top = '48px';
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+      const dist = 40 + Math.random() * 45;
+      sp.style.setProperty('--bx', `${Math.cos(angle) * dist}px`);
+      sp.style.setProperty('--by', `${Math.sin(angle) * dist * 0.8}px`);
+      sp.style.background = i % 3 ? color : '#fffdf7';
+      forgeSparks.appendChild(sp);
+    }
+  }
+
+  function showForgeResult(cls: string, text: string): void {
+    forgeResult.className = '';
+    void forgeResult.offsetWidth; // 같은 클래스여도 애니메이션 재시작
+    forgeResult.textContent = text;
+    forgeResult.className = cls;
+  }
+
+  async function doForge(): Promise<void> {
+    if (forging) return;
+    forging = true;
+    forgeBtn.disabled = true;
+    forgeResult.className = '';
+    forgeFlash.className = '';
+    forgeFallstar.className = '';
+    forgeRod.classList.add('charging');
+    spawnConvergeSparks();
+
+    const [res] = await Promise.all([
+      window.overlay.enhance(),
+      delay(1700), // 두구두구 최소 연출 시간
+    ]);
+    forgeRod.classList.remove('charging');
+
+    if (!res.ok) {
+      forgeSparks.innerHTML = '';
+      showForgeResult('keep', res.error ?? '오류가 발생했어요.');
+    } else if (res.result === 'success') {
+      void forgeFlash.offsetWidth;
+      forgeFlash.className = 'white';
+      spawnBurstSparks(18, '#ffd66e');
+      showForgeResult('success', res.guaranteed ? `✨ 보장 성공! ${res.stars}성!` : `강화 성공! ${res.stars}성!`);
+    } else if (res.result === 'keep') {
+      forgeSparks.innerHTML = '';
+      showForgeResult('keep', '실패... 단계 유지');
+    } else {
+      void forgeFlash.offsetWidth;
+      forgeFlash.className = 'red';
+      forgePanel.classList.remove('shake');
+      void forgePanel.offsetWidth;
+      forgePanel.classList.add('shake');
+      forgeFallstar.className = 'falling';
+      spawnBurstSparks(10, '#ff6b6b');
+      showForgeResult('down', `하락... ${res.stars}성`);
+    }
+
+    forging = false;
+    await renderForge(res.ok && res.result === 'success' ? (res.stars ?? 1) - 1 : -1);
+  }
+
+  forgeBtn.addEventListener('click', () => void doForge());
+  forgeClose.addEventListener('click', () => forgePanel.classList.remove('open'));
+  window.overlay.on('self:wallet', () => {
+    if (forgePanel.classList.contains('open') && !forging) void renderForge();
+  });
+  window.overlay.on('net:enhance-news', (data) => {
+    const d = data as { id: string; nickname: string; tag: string; stars: number; result: string };
+    if (d.id === chatSelfId) return; // 본인은 대장간 연출로 충분
+    addSystemMessage(
+      d.result === 'success'
+        ? `🔨 ${d.nickname}#${d.tag}님의 낚싯대가 ${d.stars}성 강화에 성공했습니다!!`
+        : `💥 ${d.nickname}#${d.tag}님의 낚싯대가 ${d.stars}성으로 하락했습니다...`,
+    );
+  });
+
   // ---- 옵션 패널 (투명도 / 표시 배율) ----
 
   const optionsPanel = document.getElementById('options-panel')!;
@@ -988,6 +1158,7 @@
     slotPanel.classList.remove('open');
     shopPanel.classList.remove('open');
     minigamePanel.classList.remove('open');
+    forgePanel.classList.remove('open');
   }
 
   menuBtn.addEventListener('click', (e) => {
@@ -1012,6 +1183,10 @@
         break;
       case 'slot':
         slotPanel.classList.add('open');
+        break;
+      case 'forge':
+        forgePanel.classList.add('open');
+        void renderForge();
         break;
       case 'shop':
         shopPanel.classList.add('open');

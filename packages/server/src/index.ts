@@ -12,6 +12,12 @@ import {
   ChatMessage,
   COIN_PER_MINUTE,
   COIN_STARTER,
+  ENHANCE_MAX,
+  ENHANCE_PITY,
+  ENHANCE_TABLE,
+  ENHANCE_WEEKEND_DROP_MULT,
+  enhanceFloor,
+  isEnhanceWeekend,
   FISH_BOX_COIN_MAX,
   FISH_BOX_COIN_MIN,
   FISH_BOX_ID,
@@ -33,6 +39,9 @@ import {
   RUNNER_COIN_PER_SEC,
   RUNNER_COOLDOWN_SEC,
   RANDOM_SHOP,
+  ROD_DOUBLE_RATE,
+  ROD_DOUBLE_STARS,
+  ROD_REPEAT_BONUS_STARS,
   SHOP_ITEMS,
   SLOT_COST,
   SlotKind,
@@ -114,6 +123,10 @@ interface Wallet {
   parts: string[];
   /** 월척으로 잡아본 물고기 (도감 별표) */
   trophies: string[];
+  /** 낚싯대 강화 단계 (0~30성) */
+  rodStars?: number;
+  /** 현재 성에서의 연속 실패 (천장 카운터) */
+  rodFails?: number;
 }
 
 let wallets: Record<string, Wallet> = {};
@@ -133,6 +146,8 @@ function loadWallets(): void {
             fish: Array.isArray(w.fish) ? w.fish.filter((i) => typeof i === 'string') : [],
             parts: Array.isArray(w.parts) ? w.parts.filter((i) => typeof i === 'string') : [],
             trophies: Array.isArray(w.trophies) ? w.trophies.filter((i) => typeof i === 'string') : [],
+            rodStars: Math.max(0, Math.min(ENHANCE_MAX, Math.floor(Number((w as any).rodStars) || 0))),
+            rodFails: Math.max(0, Math.floor(Number((w as any).rodFails) || 0)),
           };
         }
       }
@@ -276,6 +291,7 @@ const lastFishAt = new Map<string, number>();
 const lastRunnerAt = new Map<string, number>(); // 지갑 키 기준 (러너 쿨타임)
 const lastPinnedAt = new Map<string, number>();
 const lastRandomBuyAt = new Map<string, number>();
+const lastEnhanceAt = new Map<string, number>();
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
@@ -318,6 +334,8 @@ io.on('connection', (socket) => {
       items: [...wallets[key].items],
       fish: [...wallets[key].fish],
       trophies: [...(wallets[key].trophies ?? [])],
+      rodStars: wallets[key].rodStars ?? 0,
+      rodFails: wallets[key].rodFails ?? 0,
     });
     socket.emit('chat-history', chatHistory.slice(-100));
     socket.broadcast.emit('player-joined', player);
@@ -441,11 +459,14 @@ io.on('connection', (socket) => {
     const phase = String(data?.phase ?? '');
     if (!player || !(FISHING_PHASES as readonly string[]).includes(phase)) return;
     const fishId = typeof data?.fishId === 'string' ? data.fishId.slice(0, 32) : undefined;
+    // 낚싯대 강화 글로우는 서버 지갑 기준 (클라 신고값 무시 — 과시 연출 조작 방지)
+    const rodStars = wallets[walletKey(player)]?.rodStars ?? 0;
     socket.broadcast.emit('player-fishing', {
       id: socket.id,
       phase: phase as (typeof FISHING_PHASES)[number],
       fishId,
       trophy: data?.trophy === true || undefined,
+      rod: rodStars > 0 ? rodStars : undefined,
     });
   });
 
@@ -478,6 +499,7 @@ io.on('connection', (socket) => {
     // 특수 어획물: 상자(코인), 보물상자(코인 or 미보유 상점 아이템)
     let delta: number;
     let itemGrant: { id: string; name: string } | null = null;
+    let doubled = false;
     const isTrophy = trophyArg && id !== FISH_BOX_ID && id !== FISH_CHEST_ID;
     if (id === FISH_BOX_ID) {
       delta = FISH_BOX_COIN_MIN + Math.floor(Math.random() * (FISH_BOX_COIN_MAX - FISH_BOX_COIN_MIN + 1));
@@ -493,7 +515,14 @@ io.on('connection', (socket) => {
       }
     } else {
       delta = isNew ? FISH_FIRST_COIN : FISH_REPEAT_COIN;
+      // 낚싯대 강화 보너스: 10성+ 반복 어획 +1, 20성+ 더블 캐치(코인 2배)
+      const rod = wallet.rodStars ?? 0;
+      if (!isNew && rod >= ROD_REPEAT_BONUS_STARS) delta += 1;
       if (isTrophy) delta += FISH_TROPHY_COIN; // 월척 보너스
+      if (rod >= ROD_DOUBLE_STARS && Math.random() * 100 < ROD_DOUBLE_RATE) {
+        delta *= 2;
+        doubled = true;
+      }
     }
     wallet.trophies = wallet.trophies ?? [];
     if (isTrophy && !wallet.trophies.includes(id)) wallet.trophies.push(id);
@@ -505,6 +534,7 @@ io.on('connection', (socket) => {
       delta,
       coins: wallet.coins,
       ...(isTrophy ? { trophy: true } : {}),
+      ...(doubled ? { doubled: true } : {}),
       ...(itemGrant ? { item: itemGrant, items: [...wallet.items] } : {}),
     });
     if (id === FISH_BOX_ID || id === FISH_CHEST_ID) {
@@ -514,6 +544,78 @@ io.on('connection', (socket) => {
     } else if (isNew) {
       console.log(`[fish] ${key}: ${id} 최초 획득 (+${delta}) 도감 ${wallet.fish.length}/${ALL_FISH_IDS.size}`);
     }
+  });
+
+  // ---- 낚싯대 강화 (스타포스식 — 판정·저장 서버 권위) ----
+
+  socket.on('enhance', (ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const now = Date.now();
+    if (now - (lastEnhanceAt.get(socket.id) ?? 0) < 500) {
+      reply({ ok: false, error: '너무 빨라요!' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    const stars = wallet.rodStars ?? 0;
+    if (stars >= ENHANCE_MAX) {
+      reply({ ok: false, error: '이미 최대 강화(30성)예요!' });
+      return;
+    }
+    const stage = ENHANCE_TABLE[stars];
+    if (wallet.coins < stage.cost) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${stage.cost})`, coins: wallet.coins });
+      return;
+    }
+    lastEnhanceAt.set(socket.id, now);
+    wallet.coins -= stage.cost;
+
+    let result: 'success' | 'keep' | 'drop';
+    let guaranteed = false;
+    if ((wallet.rodFails ?? 0) >= ENHANCE_PITY) {
+      result = 'success'; // 천장: 연속 실패 누적 → 보장 성공
+      guaranteed = true;
+    } else {
+      const dropPct = stage.drop * (isEnhanceWeekend(now) ? ENHANCE_WEEKEND_DROP_MULT : 1);
+      const roll = Math.random() * 100;
+      result = roll < stage.succ ? 'success' : roll < stage.succ + dropPct ? 'drop' : 'keep';
+    }
+    if (result === 'success') {
+      wallet.rodStars = stars + 1;
+      wallet.rodFails = 0;
+    } else if (result === 'drop') {
+      wallet.rodStars = Math.max(enhanceFloor(stars), stars - 1);
+      wallet.rodFails = 0; // 성이 바뀌었으니 천장 카운터 리셋
+    } else {
+      wallet.rodFails = (wallet.rodFails ?? 0) + 1;
+    }
+    saveWallets();
+    reply({
+      ok: true,
+      result,
+      stars: wallet.rodStars,
+      fails: wallet.rodFails,
+      guaranteed,
+      coins: wallet.coins,
+    });
+    // 20성 이상 도달 성공 / 20성 이상에서 하락 → 전체 알림
+    if ((result === 'success' && (wallet.rodStars ?? 0) >= 20) || (result === 'drop' && stars >= 20)) {
+      io.emit('enhance-news', {
+        id: socket.id,
+        nickname: player.nickname,
+        tag: player.tag,
+        stars: wallet.rodStars ?? 0,
+        result: result === 'success' ? 'success' : 'drop',
+      });
+    }
+    console.log(
+      `[enhance] ${key}: ${stars}성 → ${result}${guaranteed ? '(천장)' : ''} (현재 ${wallet.rodStars}성, -${stage.cost}) 잔액 ${wallet.coins}`,
+    );
   });
 
   // ---- 미보유 랜덤 파츠 뽑기 (결제만 서버, 지급은 클라이언트 로컬 풀) ----
@@ -751,6 +853,7 @@ io.on('connection', (socket) => {
       lastFishAt.delete(socket.id);
       lastPinnedAt.delete(socket.id);
       lastRandomBuyAt.delete(socket.id);
+      lastEnhanceAt.delete(socket.id);
       socket.broadcast.emit('player-fishing', { id: socket.id, phase: 'stop' });
       io.emit('player-left', socket.id);
       console.log(`- ${player.nickname} — ${players.size}명 접속중`);

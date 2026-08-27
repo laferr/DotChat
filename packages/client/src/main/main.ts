@@ -340,8 +340,14 @@ function connect(): void {
     myItems = data.items;
     myFish = data.fish ?? [];
     myTrophies = data.trophies ?? [];
+    myRodStars = data.rodStars ?? 0;
+    myRodFails = data.rodFails ?? 0;
     broadcast('self:coins', myCoins);
     broadcast('self:wallet', data);
+  });
+
+  socket.on('enhance-news', (data) => {
+    broadcast('net:enhance-news', data);
   });
 
   socket.on('player-fishing', (data) => {
@@ -871,10 +877,49 @@ let myCoins = 0;
 let myItems: string[] = [];
 let myFish: string[] = [];
 let myTrophies: string[] = [];
+let myRodStars = 0;
+let myRodFails = 0;
 
 ipcMain.handle('get-coins', () => myCoins);
 
-ipcMain.handle('get-wallet', () => ({ coins: myCoins, items: myItems, fish: myFish, trophies: myTrophies }));
+ipcMain.handle('get-wallet', () => ({
+  coins: myCoins,
+  items: myItems,
+  fish: myFish,
+  trophies: myTrophies,
+  rodStars: myRodStars,
+  rodFails: myRodFails,
+}));
+
+function walletSnapshot() {
+  return { coins: myCoins, items: myItems, fish: myFish, trophies: myTrophies, rodStars: myRodStars, rodFails: myRodFails };
+}
+
+// 낚싯대 강화 (판정 서버)
+ipcMain.handle('enhance', () => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('enhance', (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      if (res.ok) {
+        myRodStars = Number(res.stars) || 0;
+        myRodFails = Number(res.fails) || 0;
+        broadcast('self:wallet', walletSnapshot());
+      }
+      resolve(res);
+    });
+  });
+});
 
 ipcMain.handle('shop-buy', (_e, itemId: string) => {
   return new Promise((resolve) => {
@@ -1075,7 +1120,7 @@ ipcMain.handle('fish-caught', (_e, fishId: string, trophy?: boolean) => {
       if (res.ok && res.isNew) myFish.push(String(fishId));
       if (res.ok && res.trophy && !myTrophies.includes(String(fishId))) myTrophies.push(String(fishId));
       if (res.ok && (res.isNew || res.item || res.trophy)) {
-        broadcast('self:wallet', { coins: myCoins, items: myItems, fish: myFish, trophies: myTrophies });
+        broadcast('self:wallet', walletSnapshot());
       }
       resolve(res);
     });
@@ -1168,6 +1213,8 @@ function startMain(): void {
   started = true;
   createOverlay();
   connect();
+  // 개발 편의: 시작 시 채팅창 자동 열기 (UI 테스트용)
+  if (process.env.DOTCHAT_OPEN_CHAT) setTimeout(() => toggleChat(), 1500);
 }
 
 function openSetup(): void {

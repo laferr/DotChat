@@ -152,6 +152,8 @@ export type FishAck = (res: {
   coins?: number;
   /** 월척 인정 여부 */
   trophy?: boolean;
+  /** 더블 캐치 (20성 낚싯대, 코인 2배 적용됨) */
+  doubled?: boolean;
   item?: { id: string; name: string };
   items?: string[];
 }) => void;
@@ -174,8 +176,8 @@ export interface ClientToServerEvents {
   buy: (itemId: string, ack: (res: { ok: boolean; error?: string; coins?: number; items?: string[] }) => void) => void;
   /** 코인 랭킹 톱5 */
   ranking: (ack: (rows: { name: string; coins: number }[]) => void) => void;
-  /** 낚시 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화, trophy = 월척 3배 연출) */
-  'fishing-state': (data: { phase: FishingPhase; fishId?: string; trophy?: boolean }) => void;
+  /** 낚시 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화, trophy = 월척 3배, rod = 강화 성 — 글로우 연출) */
+  'fishing-state': (data: { phase: FishingPhase; fishId?: string; trophy?: boolean; rod?: number }) => void;
   /**
    * 물고기 획득 정산 (도감 기록 + 코인, box/보물상자는 특수 보상 — item은 상점 아이템 당첨)
    * 월척이면 (fishId, true, ack) 3인자로 호출 — 구버전 (fishId, ack) 2인자와 서버가 모두 수용
@@ -185,6 +187,19 @@ export interface ClientToServerEvents {
   'buy-random': (
     itemId: string,
     ack: (res: { ok: boolean; error?: string; coins?: number }) => void,
+  ) => void;
+  /** 낚싯대 강화 1회 (비용·판정 서버, ENHANCE_TABLE) */
+  enhance: (
+    ack: (res: {
+      ok: boolean;
+      error?: string;
+      result?: 'success' | 'keep' | 'drop';
+      stars?: number;
+      fails?: number;
+      /** 천장 보장 성공이었는지 */
+      guaranteed?: boolean;
+      coins?: number;
+    }) => void,
   ) => void;
   /** 보유 파츠 목록 동기화 — 클라 목록을 서버 지갑에 합집합 등록, ack로 병합 결과 반환 */
   'parts-sync': (parts: string[], ack: (res: { ok: boolean; parts?: string[] }) => void) => void;
@@ -217,10 +232,31 @@ export interface ServerToClientEvents {
   'player-read': (data: { id: string; ts: number }) => void;
   /** 내 코인 잔액 (접속/적립/슬롯 정산 시) */
   coins: (coins: number) => void;
-  /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감 + 월척 기록) */
-  wallet: (data: { coins: number; items: string[]; fish: string[]; trophies?: string[] }) => void;
-  /** 누군가의 낚시 상태 (애니메이션 동기화, trophy = 월척 3배 연출) */
-  'player-fishing': (data: { id: string; phase: FishingPhase; fishId?: string; trophy?: boolean }) => void;
+  /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감 + 월척 기록 + 낚싯대 강화) */
+  wallet: (data: {
+    coins: number;
+    items: string[];
+    fish: string[];
+    trophies?: string[];
+    rodStars?: number;
+    rodFails?: number;
+  }) => void;
+  /** 강화 대박/하락 전체 알림 (20성 이상) */
+  'enhance-news': (data: {
+    id: string;
+    nickname: string;
+    tag: string;
+    stars: number;
+    result: 'success' | 'drop';
+  }) => void;
+  /** 누군가의 낚시 상태 (애니메이션 동기화, trophy = 월척 3배, rod = 강화 성) */
+  'player-fishing': (data: {
+    id: string;
+    phase: FishingPhase;
+    fishId?: string;
+    trophy?: boolean;
+    rod?: number;
+  }) => void;
   /** 슬롯 대박 전체 알림 */
   'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
 }
@@ -319,6 +355,76 @@ export const FISH_CHEST_COIN_MAX = 50;
 
 // 월척 — 일반 물고기 낚을 때 0.2% (클라 롤), 스프라이트 3배 + 보너스 코인, 도감에 별표
 export const FISH_TROPHY_COIN = 5;
+
+// ---- 낚싯대 강화 (0성→30성, 스타포스식 — 판정·저장은 서버) ----
+// composer.ts에 UI용 복사본(FORGE_TABLE) 있음 — 수치 변경 시 동기화 유지
+
+export interface EnhanceStage {
+  /** 성공 확률 % */
+  succ: number;
+  /** 실패 중 하락 확률 % (전체 시도 대비) */
+  drop: number;
+  /** 시도 비용 (코인) */
+  cost: number;
+}
+
+/** index = 현재 성 (0성에서 시도 = [0]) — 15/20/25성은 체크포인트(하락 없음) */
+export const ENHANCE_TABLE: EnhanceStage[] = [
+  { succ: 95, drop: 0, cost: 5 },
+  { succ: 90, drop: 0, cost: 5 },
+  { succ: 85, drop: 0, cost: 8 },
+  { succ: 85, drop: 0, cost: 8 },
+  { succ: 80, drop: 0, cost: 10 },
+  { succ: 75, drop: 0, cost: 12 },
+  { succ: 70, drop: 0, cost: 15 },
+  { succ: 65, drop: 0, cost: 18 },
+  { succ: 60, drop: 0, cost: 22 },
+  { succ: 55, drop: 0, cost: 26 },
+  { succ: 50, drop: 0, cost: 30 },
+  { succ: 45, drop: 0, cost: 36 },
+  { succ: 40, drop: 0, cost: 42 },
+  { succ: 35, drop: 0, cost: 50 },
+  { succ: 30, drop: 0, cost: 60 },
+  { succ: 30, drop: 0, cost: 80 }, // 15성 ✦
+  { succ: 30, drop: 2, cost: 100 },
+  { succ: 15, drop: 7, cost: 130 },
+  { succ: 15, drop: 7, cost: 160 },
+  { succ: 15, drop: 8, cost: 200 },
+  { succ: 30, drop: 0, cost: 250 }, // 20성 ✦
+  { succ: 15, drop: 13, cost: 300 },
+  { succ: 15, drop: 17, cost: 380 },
+  { succ: 10, drop: 18, cost: 460 },
+  { succ: 10, drop: 18, cost: 550 },
+  { succ: 10, drop: 0, cost: 700 }, // 25성 ✦
+  { succ: 7, drop: 15, cost: 850 },
+  { succ: 5, drop: 15, cost: 1000 },
+  { succ: 3, drop: 15, cost: 1200 },
+  { succ: 1, drop: 15, cost: 1500 },
+];
+
+export const ENHANCE_MAX = 30;
+/** 같은 성에서 연속 실패 누적 시 다음 시도 성공 보장 (천장) */
+export const ENHANCE_PITY = 10;
+/** 주말(KST 토·일) 하락 확률 감소 배율 */
+export const ENHANCE_WEEKEND_DROP_MULT = 0.7;
+
+/** 하락 시 바닥 (체크포인트 15/20/25성 밑으로는 안 떨어짐) */
+export function enhanceFloor(stage: number): number {
+  return stage >= 26 ? 25 : stage >= 21 ? 20 : 15;
+}
+
+export function isEnhanceWeekend(ts = Date.now()): boolean {
+  const day = new Date(ts + 9 * 3600_000).getUTCDay(); // KST
+  return day === 0 || day === 6;
+}
+
+// 강화 단계별 낚시 보너스
+export const ROD_WAIT_REDUCE = 0.15; // 입질 대기 -초/성
+export const ROD_TROPHY_BONUS = 0.02; // 월척 +%p/성
+export const ROD_REPEAT_BONUS_STARS = 10; // 이상: 반복 어획 +1코인
+export const ROD_DOUBLE_STARS = 20; // 이상: 더블 캐치(코인 2배)
+export const ROD_DOUBLE_RATE = 5; // %
+export const ROD_LUCK_STARS = 25; // 이상: 상자/보물상자 확률 2배
 
 /** 보유 파츠 서버 동기화 한도 */
 export const PARTS_SYNC_MAX = 3000;
