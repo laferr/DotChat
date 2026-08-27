@@ -351,9 +351,37 @@ function connect(): void {
     myStocks = data.stocks ?? {};
     myGems = data.gems ?? 0;
     myActions = data.actions ?? [];
+    myMinerals = data.minerals ?? [];
+    myTitle = data.title ?? '';
     broadcast('self:coins', myCoins);
     broadcast('self:gems', myGems);
-    broadcast('self:wallet', data);
+    broadcast('self:wallet', walletSnapshot());
+  });
+
+  socket.on('achievement', (list) => {
+    broadcast('self:achievement', list);
+  });
+
+  socket.on('ach-news', (data) => {
+    broadcast('net:ach-news', data);
+  });
+
+  socket.on('dig-news', (data) => {
+    broadcast('net:dig-news', data);
+  });
+
+  socket.on('player-digging', (data) => {
+    broadcast('net:player-digging', data);
+  });
+
+  socket.on('player-title', (data) => {
+    const p = players.get(data.id);
+    if (p) p.title = data.title || undefined;
+    if (data.id === selfId) {
+      myTitle = data.title;
+      broadcast('self:wallet', walletSnapshot());
+    }
+    broadcast('net:player-title', data);
   });
 
   socket.on('enhance-news', (data) => {
@@ -762,6 +790,10 @@ interface ExtrasManifest {
   /** 새 물고기 (단일 이미지, fish2/ 디렉토리) */
   fish2?: string[];
   tools: { frameW: number; frameH: number; strips: Record<string, number>; files: Record<string, string> };
+  /** 땅파기 삽질 스트립 */
+  dig?: { file: string; frames: number };
+  /** 광물/보석 아이콘 id 목록 (minerals/ 디렉토리) */
+  minerals?: string[];
   reaction: { cell: number; cols: number; rows: number };
 }
 
@@ -792,6 +824,8 @@ ipcMain.handle('load-extra', (_e, relPath: string) => {
     /^tools\/tools_\w+_strip\d+\.png$/.test(rel) ||
     /^rungame\/(Arrow|Trap3)\.png$/.test(rel) ||
     /^effects\/[\w\-]+\.png$/.test(rel) ||
+    (/^minerals\/[a-z]\d+\.png$/.test(rel) &&
+      extrasManifest?.minerals?.includes(rel.slice(9, -4)) === true) ||
     (/^fish\/[\w\- ]+\.png$/.test(rel) &&
       extrasManifest?.fish.includes(rel.slice(5, -4)) === true) ||
     (/^fish2\/[\w\- ]+\.png$/.test(rel) &&
@@ -1041,6 +1075,8 @@ let myRodFails = 0;
 let myStocks: Record<string, { qty: number; avg: number }> = {};
 let myGems = 0;
 let myActions: string[] = [];
+let myMinerals: string[] = [];
+let myTitle = '';
 let myStocksMarket: unknown = null; // 최신 시세 스냅샷 (stocks 이벤트)
 
 ipcMain.handle('get-coins', () => myCoins);
@@ -1149,6 +1185,8 @@ function walletSnapshot() {
     stocks: myStocks,
     gems: myGems,
     actions: myActions,
+    minerals: myMinerals,
+    title: myTitle,
   };
 }
 
@@ -1327,12 +1365,14 @@ function unregisterRunnerKeys(): void {
   globalShortcut.unregister('Down');
 }
 
-/** overlay가 fishing-send로 보고하는 현재 낚시 진행 여부 */
+/** overlay가 fishing-send/digging-send로 보고하는 현재 진행 여부 */
 let fishingActive = false;
+let diggingActive = false;
 
 ipcMain.handle('minigame-state', () => ({
   runnerRemainSec: Math.max(0, Math.ceil((lastRunnerStart + RUNNER_COOLDOWN_MS - Date.now()) / 1000)),
   fishingActive,
+  diggingActive,
 }));
 
 ipcMain.handle('minigame-start', (_e, game: string) => {
@@ -1341,6 +1381,13 @@ ipcMain.handle('minigame-start', (_e, game: string) => {
   }
   if (game === 'fishing') {
     broadcast('self:minigame', { game: 'fishing' });
+    return { ok: true };
+  }
+  if (game === 'dig') {
+    if (!extrasManifest.dig || !extrasManifest.minerals?.length) {
+      return { ok: false, error: '땅파기 에셋이 없어요. tools/import-extras.mjs를 다시 실행해 주세요.' };
+    }
+    broadcast('self:minigame', { game: 'dig' });
     return { ok: true };
   }
   if (game === 'runner') {
@@ -1391,6 +1438,80 @@ ipcMain.handle('fish-caught', (_e, fishId: string, trophy?: boolean) => {
         broadcast('self:wallet', walletSnapshot());
       }
       resolve(res);
+    });
+  });
+});
+
+// ---- 땅파기 ----
+
+// 땅파기 상태 변화를 서버에 중계 (다른 접속자 화면 동기화)
+ipcMain.on('digging-send', (_e, data: { phase?: unknown; itemId?: unknown }) => {
+  diggingActive = String(data?.phase ?? 'stop') !== 'stop';
+  if (!socket?.connected) return;
+  socket.emit('digging-state', {
+    phase: String(data?.phase ?? 'stop') as any,
+    itemId: typeof data?.itemId === 'string' ? data.itemId : undefined,
+  });
+});
+
+// 발굴 정산 (서버가 도감 기록 + 코인/젬)
+ipcMain.handle('dig-report', (_e, result: { kind?: unknown; itemId?: unknown }) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    const payload = {
+      kind: String(result?.kind ?? '') as any,
+      itemId: typeof result?.itemId === 'string' ? result.itemId : undefined,
+    };
+    (socket as any).timeout(10000).emit('dig', payload, (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      if (typeof res.gems === 'number') {
+        myGems = res.gems;
+        broadcast('self:gems', myGems);
+      }
+      if (res.ok && Array.isArray(res.items)) myItems = res.items;
+      if (res.ok && Array.isArray(res.minerals)) myMinerals = res.minerals;
+      if (res.ok && (res.isNew || res.item)) broadcast('self:wallet', walletSnapshot());
+      resolve(res);
+    });
+  });
+});
+
+// ---- 도전과제 / 칭호 ----
+
+ipcMain.handle('ach-state', () => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve(null);
+      return;
+    }
+    (socket as any).timeout(10000).emit('ach-state', (err: unknown, res: unknown) => {
+      resolve(err ? null : res);
+    });
+  });
+});
+
+ipcMain.handle('set-title', (_e, title: string) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('set-title', String(title ?? ''), (err: unknown, res: any) => {
+      if (!err && res?.ok) {
+        myTitle = String(res.title ?? '');
+        broadcast('self:wallet', walletSnapshot());
+      }
+      resolve(err ? { ok: false, error: '응답이 없어요.' } : res);
     });
   });
 });

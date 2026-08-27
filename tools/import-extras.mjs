@@ -71,6 +71,43 @@ for (const file of Object.values(TOOL_STRIPS)) {
   fs.copyFileSync(path.join(SRC, 'tools', file), path.join(DEST, 'tools', file));
 }
 
+// 땅파기 삽질 스트립 (96x64, 13프레임: 0~6 파는 루프 / 7~12 획득 연출)
+const DIG_STRIP = 'tools_dig_strip13.png';
+fs.copyFileSync(path.join(SRC, 'tools', DIG_STRIP), path.join(DEST, 'tools', DIG_STRIP));
+
+// 광물/보석 아이콘 (추가에셋/gems 전체를 훑어 basename → id 매핑, 64x64만 채택)
+// id 규칙: Materials<N>=m<N>, Crystal Cluster_<N>=c<N>, Gemstones_<N>=g<N>, Diamonds_<N>=d<N>,
+//          Gold Piles & Tresure<N>=t<N> (t*는 도감 밖 — 코인주머니/상자 연출용)
+fs.mkdirSync(path.join(DEST, 'minerals'), { recursive: true });
+const MINERAL_PATTERNS = [
+  [/^Materials(\d+)$/, 'm'],
+  [/^Crystal Cluster_(\d+)$/, 'c'],
+  [/^Gemstones_(\d+)$/, 'g'],
+  [/^Diamonds_(\d+)$/, 'd'],
+  [/^Gold Piles & Tresure(\d+)$/, 't'],
+];
+const minerals = [];
+const gemsDir = path.join(SRC, 'gems');
+if (fs.existsSync(gemsDir)) {
+  for (const file of walk(gemsDir)) {
+    if (!file.endsWith('.png')) continue;
+    const base = path.basename(file, '.png').trim();
+    for (const [re, prefix] of MINERAL_PATTERNS) {
+      const m = re.exec(base);
+      if (!m) continue;
+      const { w, h } = pngSize(file);
+      if (w !== 64 || h !== 64) continue;
+      const id = `${prefix}${m[1]}`;
+      if (!minerals.includes(id)) {
+        fs.copyFileSync(file, path.join(DEST, 'minerals', `${id}.png`));
+        minerals.push(id);
+      }
+      break;
+    }
+  }
+  minerals.sort();
+}
+
 // 러너 장애물
 fs.copyFileSync(path.join(SRC, 'rungame', 'Arrow.png'), path.join(DEST, 'rungame', 'Arrow.png'));
 fs.copyFileSync(path.join(SRC, 'rungame', 'Trap3.png'), path.join(DEST, 'rungame', 'Trap3.png'));
@@ -111,9 +148,14 @@ const manifest = {
     strips: { casting: 15, waiting: 9, reeling: 13, caught: 10 },
     files: TOOL_STRIPS,
   },
+  dig: { file: `tools/${DIG_STRIP}`, frames: 13 },
+  minerals,
   reaction: { cell: 16, cols: 9, rows: 7 },
   effects,
 };
 fs.writeFileSync(path.join(DEST, 'manifest-extras.json'), JSON.stringify(manifest, null, 2), 'utf8');
-console.log(`물고기 ${fish.length}종 + 새 물고기 ${fish2.length}종 + 도구/러너/리액션 임포트 완료 → ${DEST}`);
+console.log(
+  `물고기 ${fish.length}종 + 새 물고기 ${fish2.length}종 + 광물 ${minerals.length}종 + 도구/러너/리액션 임포트 완료 → ${DEST}`,
+);
 console.log('fish2 =', JSON.stringify(fish2));
+console.log('minerals =', JSON.stringify(minerals));

@@ -155,6 +155,11 @@
       .msg.self .nick {
         color: var(--nick-self);
       }
+      .msg .nick-title {
+        font-size: 10px;
+        font-weight: 700;
+        color: #d9a94f;
+      }
       .msg .time {
         font-size: 10px;
         color: var(--text-dim);
@@ -845,17 +850,17 @@
         top: 40px;
         right: 36px;
         display: none;
-        flex-direction: column;
+        grid-template-columns: repeat(2, 1fr);
         background: var(--bg-input);
         border: 1px solid var(--header);
         border-radius: 8px;
         overflow: hidden;
         z-index: 30;
-        min-width: 140px;
+        min-width: 250px;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
       }
       #menu-dropdown.open {
-        display: flex;
+        display: grid;
       }
       #menu-dropdown button {
         border: 0;
@@ -1071,6 +1076,8 @@
       #stock-panel,
       #tickerlog-panel,
       #daily-panel,
+      #ach-panel,
+      #mineraldex-panel,
       #slot-panel {
         position: absolute;
         left: 0;
@@ -1094,6 +1101,8 @@
       #stock-panel.open,
       #tickerlog-panel.open,
       #daily-panel.open,
+      #ach-panel.open,
+      #mineraldex-panel.open,
       #slot-panel.open {
         display: flex;
       }
@@ -1485,6 +1494,139 @@
         text-align: center;
         padding: 4px 0 6px;
       }
+      /* ---- 도전과제 패널 ---- */
+      #ach-title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px 8px;
+        font-size: 12px;
+        color: var(--nick);
+        font-weight: 700;
+      }
+      #ach-title-select {
+        flex: 1;
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+      #ach-list {
+        flex: 1;
+        padding: 0 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        overflow-y: auto;
+      }
+      .ach-cat {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--nick);
+        padding: 8px 2px 0;
+      }
+      .ach-row {
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 8px;
+        padding: 7px 10px;
+      }
+      .ach-row.done {
+        border-color: var(--accent);
+      }
+      .ach-row.locked {
+        opacity: 0.65;
+      }
+      .ach-name {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .ach-name .ach-title-chip {
+        color: #d9a94f;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .ach-desc {
+        font-size: 11px;
+        color: var(--text-dim);
+        margin-top: 2px;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .ach-desc .dq-reward {
+        font-size: 11px;
+      }
+      .ach-row .dq-bar {
+        margin-top: 5px;
+      }
+      /* ---- 광물도감 패널 ---- */
+      #mdex-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 0 12px 8px;
+      }
+      .mdex-tab {
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 3px 8px;
+        cursor: pointer;
+        font-size: 11px;
+        font-family: inherit;
+      }
+      .mdex-tab.active {
+        background: var(--self-bubble);
+        border-color: var(--accent);
+      }
+      #mdex-grid {
+        flex: 1;
+        padding: 0 12px 10px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+        gap: 6px;
+        overflow-y: auto;
+        align-content: start;
+      }
+      .mdex-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 8px;
+        padding: 6px 2px 4px;
+      }
+      .mdex-cell.owned {
+        border-color: var(--accent);
+      }
+      .mdex-cell canvas {
+        width: 36px;
+        height: 36px;
+        image-rendering: pixelated;
+      }
+      .mdex-cell.locked canvas {
+        filter: brightness(0) opacity(0.45);
+      }
+      .mdex-cell .mdex-name {
+        font-size: 9px;
+        color: var(--text-dim);
+        text-align: center;
+        line-height: 1.15;
+        word-break: keep-all;
+      }
+      .mdex-cell.owned .mdex-name {
+        color: var(--text);
+      }
       /* ---- 액션 버튼 팔레트 ---- */
       #action-popup {
         position: absolute;
@@ -1565,6 +1707,7 @@
     <div id="menu-dropdown">
       <button data-menu="minigame">🕹️ 미니게임</button>
       <button data-menu="daily">📋 일일퀘스트</button>
+      <button data-menu="ach">🎖️ 도전과제</button>
       <button data-menu="slot">🎰 슬롯머신</button>
       <button data-menu="forge">🔨 대장간</button>
       <button data-menu="note">✉️ 쪽지</button>
@@ -1572,6 +1715,7 @@
       <button data-menu="tickerlog">🗞️ 전광판</button>
       <button data-menu="shop">🛒 상점</button>
       <button data-menu="fishdex">📖 낚시도감</button>
+      <button data-menu="mineraldex">⛏️ 광물도감</button>
       <button data-menu="appearance">👕 외모 변경</button>
       <button data-menu="pinned">📌 고정메시지</button>
       <button data-menu="ranking">🏆 코인 랭킹</button>
@@ -1588,6 +1732,11 @@
           <span class="mg-name">낚시</span>
           <span class="mg-desc" id="fishing-desc">⚪ 쉬는 중 — 누르면 시작<br />쿨타임 없음 · 물고기 도감 수집</span>
         </button>
+        <button class="mg-card" data-game="dig">
+          <span class="mg-icon">⛏️</span>
+          <span class="mg-name">땅파기</span>
+          <span class="mg-desc" id="dig-desc">⚪ 쉬는 중 — 누르면 시작<br />쿨타임 없음 · 광물 도감 수집</span>
+        </button>
         <button class="mg-card" data-game="runner">
           <span class="mg-icon">🏃</span>
           <span class="mg-name">달리기</span>
@@ -1601,6 +1750,25 @@
         <button id="daily-close">✕</button>
       </div>
       <div id="daily-list"></div>
+    </div>
+    <div id="ach-panel">
+      <div class="panel-head">
+        <span>도전과제 <span id="ach-count"></span></span>
+        <button id="ach-close">✕</button>
+      </div>
+      <div id="ach-title-row">
+        <span>칭호</span>
+        <select id="ach-title-select"></select>
+      </div>
+      <div id="ach-list"></div>
+    </div>
+    <div id="mineraldex-panel">
+      <div class="panel-head">
+        <span>광물도감 <span id="mdex-count"></span></span>
+        <button id="mineraldex-close">✕</button>
+      </div>
+      <div id="mdex-tabs"></div>
+      <div id="mdex-grid"></div>
     </div>
     <div id="shop-panel">
       <div class="panel-head">

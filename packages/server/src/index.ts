@@ -85,6 +85,30 @@ import {
   dailyQuestIdsFor,
   DailyState,
   ACTION_SHOP,
+  ACHIEVEMENTS,
+  AchievementDef,
+  achForTitle,
+  MINERALS,
+  MineralDef,
+  DIG_FIRST_COIN,
+  DIG_REPEAT_COIN,
+  DIG_GEM_FIRST,
+  DIG_GOLDBAR_ID,
+  DIG_GOLDBAR_COIN,
+  DIG_COIN_MIN,
+  DIG_COIN_MAX,
+  DIG_CHEST_WOOD_MIN,
+  DIG_CHEST_WOOD_MAX,
+  DIG_CHEST_RED_MIN,
+  DIG_CHEST_RED_MAX,
+  DIG_CHEST_GOLD_COIN,
+  DIG_CHEST_GOLD_GEM,
+  DIG_GEMSHARD_GEM,
+  DIG_MIN_INTERVAL_MS,
+  DIG_KINDS,
+  DigKind,
+  DIG_PHASES,
+  DigPhase,
 } from '@dotchat/shared';
 
 const port = Number(process.env.PORT ?? DEFAULT_PORT);
@@ -164,6 +188,14 @@ interface Wallet {
   gems?: number;
   /** 구매한 액션 id 목록 */
   actions?: string[];
+  /** 광물도감 (발굴한 광물 id) */
+  minerals?: string[];
+  /** 달성한 도전과제 id */
+  ach?: string[];
+  /** 도전과제 누적 카운터 (chats/fishTotal/slotSpins 등) */
+  stats?: Record<string, number>;
+  /** 착용 중인 칭호 (달성 업적의 title만 허용) */
+  title?: string;
 }
 
 let wallets: Record<string, Wallet> = {};
@@ -193,6 +225,21 @@ function loadWallets(): void {
             actions: Array.isArray((w as any).actions)
               ? ((w as any).actions as unknown[]).filter((i): i is string => typeof i === 'string')
               : [],
+            minerals: Array.isArray((w as any).minerals)
+              ? ((w as any).minerals as unknown[]).filter((i): i is string => typeof i === 'string')
+              : [],
+            ach: Array.isArray((w as any).ach)
+              ? ((w as any).ach as unknown[]).filter((i): i is string => typeof i === 'string')
+              : [],
+            stats:
+              (w as any).stats && typeof (w as any).stats === 'object'
+                ? Object.fromEntries(
+                    Object.entries((w as any).stats as Record<string, unknown>)
+                      .map(([sk, sv]) => [sk, Math.max(0, Math.floor(Number(sv) || 0))])
+                      .filter(([, sv]) => Number(sv) > 0),
+                  )
+                : undefined,
+            title: typeof (w as any).title === 'string' && (w as any).title ? (w as any).title : undefined,
           };
         }
       }
@@ -408,15 +455,18 @@ function runStockTick(): void {
       s.delistedUntil = now + STOCK_TICK_MS;
       let victims = 0;
       let sharesLost = 0;
-      for (const w of Object.values(wallets)) {
+      const victimKeys: string[] = [];
+      for (const [wk, w] of Object.entries(wallets)) {
         const h = w.stocks?.[def.id];
         if (h && h.qty > 0) {
           victims++;
           sharesLost += h.qty;
           delete w.stocks![def.id];
+          victimKeys.push(wk);
         }
       }
       if (victims > 0) saveWallets();
+      for (const wk of victimKeys) grantAch(wk, 's-delist');
       publishTicker(
         'delist',
         `💥 ${def.name} 상장폐지!! ${victims > 0 ? `주주 ${victims}명의 ${sharesLost}주가 휴지조각이 되었습니다...` : '가까스로 피해자는 없었습니다.'} (5분 뒤 재상장)`,
@@ -489,6 +539,115 @@ function rankingPayloadFor(key: string, sorted = rankingSorted()) {
   };
 }
 
+// ---- 도전과제 / 칭호 (판정 서버 권위 — metric 파생 + 누적 카운터 + 이벤트성 직접 지급) ----
+
+const MINERAL_BY_ID = new Map<string, MineralDef>(MINERALS.map((m) => [m.id, m]));
+
+/** 지갑 → 업적 metric 값 (누적 카운터 stats와 지갑 파생값 병합) */
+function achMetrics(w: Wallet): Record<string, number> {
+  const s = w.stats ?? {};
+  const stocks = Object.values(w.stocks ?? {});
+  const minerals = (w.minerals ?? [])
+    .map((id) => MINERAL_BY_ID.get(id))
+    .filter((m): m is MineralDef => m !== undefined);
+  return {
+    ...s,
+    fishDex: w.fish.filter((f) => ALL_FISH_IDS.has(f)).length,
+    trophyDex: (w.trophies ?? []).length,
+    rodStars: w.rodStars ?? 0,
+    coinsNow: w.coins,
+    cosmetics: w.items.filter((i) => SHOP_ITEMS.some((si) => si.id === i)).length,
+    actionsOwned: (w.actions ?? []).length,
+    stockQtyMax: stocks.reduce((m, h) => Math.max(m, h.qty), 0),
+    stockKinds: stocks.filter((h) => h.qty > 0).length,
+    attendStreak: w.daily?.streak ?? 0,
+    partsOwned: (w.parts ?? []).length,
+    racesOwned: (w.parts ?? []).filter((p) => p.startsWith('race:')).length,
+    digDex: minerals.length,
+    gemstoneDex: minerals.filter((m) => m.cat === 'gemstone').length,
+    relicDex: minerals.filter((m) => m.cat === 'relic').length,
+    diamondDex: minerals.filter((m) => m.cat === 'diamond').length,
+    goldbar: (w.minerals ?? []).includes(DIG_GOLDBAR_ID) ? 1 : 0,
+  };
+}
+
+function socketIdFor(key: string): string | null {
+  for (const [sid, p] of players) if (walletKey(p) === key) return sid;
+  return null;
+}
+
+/** 지급 마무리 — 저장 + 본인 알림 + (칭호 업적) 전체 알림. quiet = 전체 알림 억제 */
+function finishAchGrant(key: string, defs: AchievementDef[], quiet: boolean): void {
+  if (defs.length === 0) return;
+  saveWallets();
+  const sid = socketIdFor(key);
+  const sock = sid ? io.sockets.sockets.get(sid) : undefined;
+  if (sock) {
+    sock.emit('gems', wallets[key]?.gems ?? 0);
+    sock.emit(
+      'achievement',
+      defs.map((d) => ({ id: d.id, name: d.name, gems: d.gems, ...(d.title ? { title: d.title } : {}) })),
+    );
+  }
+  if (!quiet) {
+    const p = sid ? players.get(sid) : undefined;
+    for (const d of defs) {
+      if (!d.title || !p || !sid) continue;
+      io.emit('ach-news', { id: sid, nickname: p.nickname, tag: p.tag, name: d.name, title: d.title });
+      publishTicker('news', `🏆 ${p.nickname}#${p.tag}님이 도전과제 '${d.name}' 달성! 칭호 「${d.title}」 획득`);
+    }
+  }
+  console.log(
+    `[ach] ${key}: ${defs.map((d) => d.id).join(', ')} 달성 (+${defs.reduce((a, d) => a + d.gems, 0)}💎)`,
+  );
+}
+
+/** 업적 1개 지급 (이미 달성이면 무시). batch를 주면 마무리는 호출부의 finishAchGrant에서 */
+function grantAch(key: string, achId: string, batch?: AchievementDef[]): void {
+  const wallet = wallets[key];
+  const def = ACHIEVEMENTS.find((a) => a.id === achId);
+  if (!wallet || !def) return;
+  wallet.ach = wallet.ach ?? [];
+  if (wallet.ach.includes(def.id)) return;
+  wallet.ach.push(def.id);
+  wallet.gems = (wallet.gems ?? 0) + def.gems;
+  if (batch) batch.push(def);
+  else finishAchGrant(key, [def], false);
+}
+
+/** metric 기반 업적 일괄 판정 — 접속 시 소급 정산(quiet)은 전체 알림을 억제해 스팸 방지 */
+function checkAch(key: string, quiet = false): void {
+  const wallet = wallets[key];
+  if (!wallet) return;
+  const m = achMetrics(wallet);
+  wallet.ach = wallet.ach ?? [];
+  const batch: AchievementDef[] = [];
+  for (const def of ACHIEVEMENTS) {
+    if (!def.stat || def.goal == null || wallet.ach.includes(def.id)) continue;
+    if ((m[def.stat] ?? 0) >= def.goal) grantAch(key, def.id, batch);
+  }
+  finishAchGrant(key, batch, quiet || batch.length > 3);
+}
+
+function bumpStat(key: string, stat: string, n = 1): void {
+  const wallet = wallets[key];
+  if (!wallet) return;
+  wallet.stats = wallet.stats ?? {};
+  wallet.stats[stat] = (wallet.stats[stat] ?? 0) + n;
+}
+
+function setStat(key: string, stat: string, n: number): void {
+  const wallet = wallets[key];
+  if (!wallet) return;
+  wallet.stats = wallet.stats ?? {};
+  wallet.stats[stat] = n;
+}
+
+/** 코인 수입 기록 (누적 획득 업적용) — 잔액 반영은 호출부 몫 */
+function earnCoins(key: string, n: number): void {
+  if (n > 0) bumpStat(key, 'coinsEarned', n);
+}
+
 // ---- 일일퀘스트 / 출석보상 ----
 
 /** 날짜가 바뀌었으면 출석 보상 지급 + 퀘스트 리셋. 지급 시 안내 문구 반환 */
@@ -507,6 +666,8 @@ function ensureDaily(key: string): string | null {
     news = `📅 출석 ${streak}일차! +${coin} 🪙 · 7일 연속 보너스 +${ATTEND_WEEKLY_BONUS} 💎`;
   }
   wallet.coins += coin;
+  bumpStat(key, 'attendTotal');
+  earnCoins(key, coin);
   saveWallets();
   console.log(`[daily] ${key} 출석 ${streak}일차 (+${coin})`);
   return news;
@@ -556,6 +717,7 @@ function questProgress(socketId: string, questId: string, amount = 1, absolute =
     if (!d.allBonus && active.every((id) => d.claimed.includes(id))) {
       d.allBonus = true;
       wallet.gems += DAILY_ALL_BONUS;
+      bumpStat(key, 'allClear');
       news += ` · 🎉 오늘 퀘스트 전부 완료! (+${DAILY_ALL_BONUS} 💎)`;
     }
     saveWallets();
@@ -575,6 +737,7 @@ setInterval(() => {
       credited.add(key);
       wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] };
       wallets[key].coins += COIN_PER_MINUTE;
+      earnCoins(key, COIN_PER_MINUTE);
     }
     io.sockets.sockets.get(socketId)?.emit('coins', wallets[key].coins);
   }
@@ -678,6 +841,7 @@ const lastEnhanceAt = new Map<string, number>();
 const lastNoteAt = new Map<string, number>(); // 지갑 키 기준
 const lastBragAt = new Map<string, number>(); // 지갑 키 기준
 const lastTickerAdAt = new Map<string, number>(); // 지갑 키 기준
+const lastDigAt = new Map<string, number>();
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
@@ -709,12 +873,15 @@ io.on('connection', (socket) => {
       console.log(`[coins] ${key} 신규 지갑 +${COIN_STARTER}`);
     }
     stripUnownedCosmetics(player.appearance, key);
+    if (wallets[key].title) player.title = wallets[key].title;
     players.set(socket.id, player);
     socket.emit('welcome', {
       selfId: socket.id,
       players: [...players.values()],
       serverVersion: APP_VERSION,
     });
+    // 출석 정산을 먼저 — 지갑 스냅샷이 출석 보상(코인/젬)까지 반영한 값이 되도록
+    const attendNews = ensureDaily(key);
     socket.emit('wallet', {
       coins: wallets[key].coins,
       items: [...wallets[key].items],
@@ -725,14 +892,20 @@ io.on('connection', (socket) => {
       stocks: { ...(wallets[key].stocks ?? {}) },
       gems: wallets[key].gems ?? 0,
       actions: [...(wallets[key].actions ?? [])],
+      minerals: [...(wallets[key].minerals ?? [])],
+      title: wallets[key].title ?? '',
     });
     socket.emit('stocks', stocksSnapshot());
-    const attendNews = ensureDaily(key);
-    if (attendNews) {
-      socket.emit('coins', wallets[key].coins);
-      socket.emit('gems', wallets[key].gems ?? 0);
-    }
     socket.emit('daily', dailyStateFor(key, attendNews));
+    // 접속 시각 히든 업적 (KST) + 기존 스탯 소급 정산 (전체 알림은 억제)
+    {
+      const kst = new Date(Date.now() + 9 * 3600_000);
+      const batch: AchievementDef[] = [];
+      if (kst.getUTCHours() === 0 && kst.getUTCMinutes() <= 15) grantAch(key, 'h-midnight', batch);
+      if (kst.getUTCDay() === 1 && kst.getUTCHours() === 9) grantAch(key, 'h-monday', batch);
+      finishAchGrant(key, batch, false);
+      checkAch(key, true);
+    }
     socket.emit('ranking-update', rankingPayloadFor(key));
     socket.emit('chat-history', chatHistory.slice(-100));
     // 미확인 그림 쪽지 배달
@@ -760,7 +933,8 @@ io.on('connection', (socket) => {
     if (!player) return;
     const action = String(data?.action ?? '');
     if (!(ACTION_IDS as readonly string[]).includes(action)) return;
-    if (!wallets[walletKey(player)]?.actions?.includes(action)) return; // 미구매 액션 차단
+    // 미구매 액션 차단 (봇순이 tag 9999는 시연용 예외)
+    if (player.tag !== '9999' && !wallets[walletKey(player)]?.actions?.includes(action)) return;
     const now = Date.now();
     if (now - (lastChatAt.get(socket.id) ?? 0) < 300) return; // 도배 방지 공유
     lastChatAt.set(socket.id, now);
@@ -775,6 +949,7 @@ io.on('connection', (socket) => {
       ts: now,
       action: action as (typeof ACTION_IDS)[number],
       senderAppearance: player.appearance,
+      ...(player.title ? { senderTitle: player.title } : {}),
     };
     io.emit('chat', msg);
     recordChat(msg);
@@ -796,6 +971,7 @@ io.on('connection', (socket) => {
     const key = walletKey(player);
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     if (wallet.coins < SLOT_COST) {
+      if (wallet.coins === 0) grantAch(key, 'h-broke'); // 히든: 빈털터리
       reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${SLOT_COST})` });
       return;
     }
@@ -803,7 +979,14 @@ io.on('connection', (socket) => {
     const roll = Math.random() * 100;
     const row = SLOT_TABLE.find((r) => roll < r.upto)!;
     wallet.coins = wallet.coins - SLOT_COST + row.delta;
+    bumpStat(key, 'slotSpins');
+    if (row.kind === 'miss') bumpStat(key, 'slotMissRun');
+    else setStat(key, 'slotMissRun', 0);
+    earnCoins(key, row.delta);
+    if (row.kind === 'jackpot') grantAch(key, 'c-jackpot');
+    if (row.kind === 'mega') grantAch(key, 'c-mega');
     questProgress(socket.id, 'slot');
+    checkAch(key);
     saveWallets();
     reply({
       ok: true,
@@ -849,6 +1032,7 @@ io.on('connection', (socket) => {
     wallet.coins -= item.price;
     wallet.items.push(item.id);
     saveWallets();
+    checkAch(key);
     reply({ ok: true, coins: wallet.coins, items: [...wallet.items] });
     console.log(`[shop] ${key}: ${item.id} 구매 (-${item.price}) 잔액 ${wallet.coins}`);
   });
@@ -896,6 +1080,9 @@ io.on('connection', (socket) => {
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     const isNew = !wallet.fish.includes(id);
     questProgress(socket.id, 'fish');
+    bumpStat(key, 'fishTotal');
+    if (id === FISH_BOX_ID) bumpStat(key, 'boxes');
+    if (id === FISH_CHEST_ID) bumpStat(key, 'chests');
     if (isNew) wallet.fish.push(id);
 
     // 특수 어획물: 상자(코인), 보물상자(코인 or 미보유 상점 아이템)
@@ -929,6 +1116,8 @@ io.on('connection', (socket) => {
     wallet.trophies = wallet.trophies ?? [];
     if (isTrophy && !wallet.trophies.includes(id)) wallet.trophies.push(id);
     wallet.coins += delta;
+    earnCoins(key, delta);
+    checkAch(key);
     saveWallets();
     reply({
       ok: true,
@@ -996,6 +1185,13 @@ io.on('connection', (socket) => {
     } else {
       wallet.rodFails = (wallet.rodFails ?? 0) + 1;
     }
+    bumpStat(key, 'enhanceTries');
+    if (result === 'drop') {
+      bumpStat(key, 'enhanceDrops');
+      if (stars >= 20) grantAch(key, 'e-bigdrop'); // 히든: 그날의 기억
+    }
+    if (guaranteed) grantAch(key, 'e-pity');
+    checkAch(key);
     saveWallets();
     reply({
       ok: true,
@@ -1039,6 +1235,8 @@ io.on('connection', (socket) => {
     lastBragAt.set(key, now);
     const stars = wallets[key]?.rodStars ?? 0;
     io.emit('brag-news', { id: socket.id, nickname: player.nickname, tag: player.tag, stars });
+    bumpStat(key, 'brags');
+    checkAch(key);
     reply({ ok: true });
     console.log(`[brag] ${key}: ${stars}성 자랑`);
   });
@@ -1089,11 +1287,15 @@ io.on('connection', (socket) => {
       return;
     }
     wallet.coins -= NOTE_COST;
+    bumpStat(key, 'notesSent');
+    if (wallets[to]) bumpStat(to, 'notesGot');
     saveWallets();
     lastNoteAt.set(key, now);
     const note: NotePayload = { id: randomBytes(8).toString('hex'), from: key, ts: now, image };
     queue.push(note);
     saveNotes();
+    checkAch(key);
+    if (wallets[to]) checkAch(to);
     // 접속 중인 수신자에게 즉시 배달
     for (const [sid, p] of players) {
       if (walletKey(p) === to) io.sockets.sockets.get(sid)?.emit('note', note);
@@ -1166,7 +1368,9 @@ io.on('connection', (socket) => {
     h.avg = Math.round(((h.avg * h.qty + cost) / (h.qty + t.n)) * 100) / 100;
     h.qty += t.n;
     t.wallet.stocks[t.def.id] = h;
+    bumpStat(t.key, 'stockBuys');
     saveWallets();
+    checkAch(t.key);
     reply({ ok: true, coins: t.wallet.coins, holding: { ...h } });
     console.log(`[stock] ${t.key}: ${t.def.name} ${t.n}주 매수 @${t.state.price} (-${cost})`);
   });
@@ -1182,9 +1386,18 @@ io.on('connection', (socket) => {
     }
     const gain = t.state.price * t.n;
     t.wallet.coins += gain;
+    // 실현 손익 (평단가 대비) — 수익/손실 누적 업적용
+    const pl = Math.round((t.state.price - h.avg) * t.n);
+    if (pl > 0) {
+      bumpStat(t.key, 'stockProfit', pl);
+      earnCoins(t.key, pl);
+    } else if (pl < 0) {
+      bumpStat(t.key, 'stockLoss', -pl);
+    }
     h.qty -= t.n;
     if (h.qty <= 0) delete t.wallet.stocks![t.def.id];
     saveWallets();
+    checkAch(t.key);
     reply({ ok: true, coins: t.wallet.coins, holding: { qty: h.qty, avg: h.avg } });
     console.log(`[stock] ${t.key}: ${t.def.name} ${t.n}주 매도 @${t.state.price} (+${gain})`);
   });
@@ -1219,9 +1432,11 @@ io.on('connection', (socket) => {
       return;
     }
     wallet.coins -= TICKER_AD_COST;
+    bumpStat(key, 'ads');
     saveWallets();
     lastTickerAdAt.set(key, now);
     publishTicker('ad', `📢 ${clean}`, key);
+    checkAch(key);
     reply({ ok: true, coins: wallet.coins });
     console.log(`[ticker] ${key} 광고 (-${TICKER_AD_COST}): ${clean}`);
   });
@@ -1258,7 +1473,9 @@ io.on('connection', (socket) => {
     }
     lastRandomBuyAt.set(socket.id, now);
     wallet.coins -= def.price;
+    bumpStat(key, 'randomPulls');
     saveWallets();
+    checkAch(key);
     reply({ ok: true, coins: wallet.coins });
     console.log(`[shop] ${key}: ${def.id} 뽑기 (-${def.price}) 잔액 ${wallet.coins}`);
   });
@@ -1287,6 +1504,7 @@ io.on('connection', (socket) => {
       }
       if (added > 0) {
         saveWallets();
+        checkAch(key);
         console.log(`[parts] ${key}: ${added}개 등록 (총 ${wallet.parts.length})`);
       }
     }
@@ -1313,10 +1531,158 @@ io.on('connection', (socket) => {
     const delta = Math.min(RUNNER_COIN_MAX, Math.floor(secs * RUNNER_COIN_PER_SEC));
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     wallet.coins += delta;
+    bumpStat(key, 'runnerCoins', delta);
+    earnCoins(key, delta);
+    if (secs < 1) grantAch(key, 'h-shoelace'); // 히든: 신발끈부터
+    if (delta >= RUNNER_COIN_MAX) grantAch(key, 'g-perfect');
     questProgress(socket.id, 'runner', Math.floor(secs), true);
+    checkAch(key);
     saveWallets();
     reply({ ok: true, delta, coins: wallet.coins });
     console.log(`[runner] ${key}: ${secs.toFixed(1)}초 (+${delta})`);
+  });
+
+  // ---- 땅파기 (롤은 클라이언트 overlay.ts, 정산·도감·업적은 서버) ----
+
+  socket.on('digging-state', (data) => {
+    const player = players.get(socket.id);
+    const phase = String(data?.phase ?? '');
+    if (!player || !(DIG_PHASES as readonly string[]).includes(phase)) return;
+    const itemId = typeof data?.itemId === 'string' ? data.itemId.slice(0, 16) : undefined;
+    socket.broadcast.emit('player-digging', { id: socket.id, phase: phase as DigPhase, itemId });
+  });
+
+  socket.on('dig', (result, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const kind = String(result?.kind ?? '') as DigKind;
+    if (!(DIG_KINDS as readonly string[]).includes(kind)) {
+      reply({ ok: false, error: '알 수 없는 발굴 결과예요.' });
+      return;
+    }
+    const mineral = kind === 'mineral' ? MINERAL_BY_ID.get(String(result?.itemId ?? '')) : undefined;
+    if (kind === 'mineral' && !mineral) {
+      reply({ ok: false, error: '알 수 없는 광물이에요.' });
+      return;
+    }
+    const now = Date.now();
+    if (now - (lastDigAt.get(socket.id) ?? 0) < DIG_MIN_INTERVAL_MS) {
+      reply({ ok: false, error: '땅파기가 너무 빨라요.' });
+      return;
+    }
+    lastDigAt.set(socket.id, now);
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    wallet.minerals = wallet.minerals ?? [];
+    bumpStat(key, 'digTotal');
+    questProgress(socket.id, 'dig');
+
+    let delta = 0;
+    let gemsDelta = 0;
+    let isNew = false;
+    let itemGrant: { id: string; name: string } | null = null;
+    if (kind === 'miss') {
+      bumpStat(key, 'digMiss');
+    } else if (mineral) {
+      isNew = !wallet.minerals.includes(mineral.id);
+      if (isNew) wallet.minerals.push(mineral.id);
+      if (mineral.id === DIG_GOLDBAR_ID) {
+        delta = DIG_GOLDBAR_COIN;
+      } else {
+        delta = isNew ? DIG_FIRST_COIN[mineral.cat] : DIG_REPEAT_COIN[mineral.cat];
+        if (isNew) gemsDelta = DIG_GEM_FIRST[mineral.cat] ?? 0;
+      }
+      if (isNew && mineral.cat === 'diamond') {
+        io.emit('dig-news', { id: socket.id, nickname: player.nickname, tag: player.tag, name: mineral.name });
+        publishTicker('news', `💎 ${player.nickname}#${player.tag}님이 땅에서 ${mineral.name}을(를) 발굴했습니다!`);
+      }
+    } else if (kind === 'coin') {
+      delta = DIG_COIN_MIN + Math.floor(Math.random() * (DIG_COIN_MAX - DIG_COIN_MIN + 1));
+    } else if (kind === 'gem') {
+      gemsDelta = DIG_GEMSHARD_GEM;
+    } else if (kind === 'chest-wood') {
+      delta = DIG_CHEST_WOOD_MIN + Math.floor(Math.random() * (DIG_CHEST_WOOD_MAX - DIG_CHEST_WOOD_MIN + 1));
+    } else if (kind === 'chest-red') {
+      // 붉은 보물상자: 미보유 상점 아이템 반반 (낚시 보물상자와 동일 규칙)
+      const unowned = SHOP_ITEMS.filter((i) => !wallet.items.includes(i.id));
+      if (unowned.length > 0 && Math.random() < 0.5) {
+        const won = unowned[Math.floor(Math.random() * unowned.length)];
+        wallet.items.push(won.id);
+        itemGrant = { id: won.id, name: won.name };
+      } else {
+        delta = DIG_CHEST_RED_MIN + Math.floor(Math.random() * (DIG_CHEST_RED_MAX - DIG_CHEST_RED_MIN + 1));
+      }
+    } else if (kind === 'chest-gold') {
+      delta = DIG_CHEST_GOLD_COIN;
+      gemsDelta = DIG_CHEST_GOLD_GEM;
+    }
+    wallet.coins += delta;
+    wallet.gems = (wallet.gems ?? 0) + gemsDelta;
+    earnCoins(key, delta);
+    saveWallets();
+    if (gemsDelta > 0) socket.emit('gems', wallet.gems);
+    reply({
+      ok: true,
+      kind,
+      delta,
+      coins: wallet.coins,
+      gems: wallet.gems ?? 0,
+      ...(kind === 'mineral' ? { isNew, minerals: [...wallet.minerals] } : {}),
+      ...(gemsDelta ? { gemsDelta } : {}),
+      ...(itemGrant ? { item: itemGrant, items: [...wallet.items] } : {}),
+    });
+    checkAch(key);
+    if (mineral && isNew) {
+      console.log(`[dig] ${key}: ${mineral.id} 최초 발굴 (+${delta}) 도감 ${wallet.minerals.length}/${MINERALS.length}`);
+    } else if (kind !== 'mineral' && kind !== 'miss') {
+      console.log(
+        `[dig] ${key}: ${kind} → ${itemGrant ? `아이템 '${itemGrant.name}'` : `+${delta}코인${gemsDelta ? ` +${gemsDelta}젬` : ''}`}`,
+      );
+    }
+  });
+
+  // ---- 도전과제 상태 / 칭호 착용 ----
+
+  socket.on('ach-state', (ack) => {
+    if (typeof ack !== 'function') return;
+    const player = players.get(socket.id);
+    const wallet = player ? wallets[walletKey(player)] : undefined;
+    ack({
+      ach: [...(wallet?.ach ?? [])],
+      title: wallet?.title ?? '',
+      metrics: wallet ? achMetrics(wallet) : {},
+    });
+  });
+
+  socket.on('set-title', (title, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = wallets[key];
+    const clean = String(title ?? '').slice(0, 24);
+    if (clean) {
+      const def = achForTitle(clean);
+      if (!def || !wallet?.ach?.includes(def.id)) {
+        reply({ ok: false, error: '아직 달성하지 않은 칭호예요.' });
+        return;
+      }
+      wallet.title = clean;
+    } else if (wallet) {
+      delete wallet.title;
+    }
+    saveWallets();
+    player.title = clean || undefined;
+    io.emit('player-title', { id: socket.id, title: clean });
+    reply({ ok: true, title: clean });
+    console.log(`[ach] ${key} 칭호: ${clean || '(해제)'}`);
   });
 
   // ---- 리액션 이모지 ----
@@ -1336,10 +1702,14 @@ io.on('connection', (socket) => {
       ts: now,
       reaction: idx,
       senderAppearance: player.appearance,
+      ...(player.title ? { senderTitle: player.title } : {}),
     };
     io.emit('chat', msg);
     recordChat(msg);
+    const rKey = walletKey(player);
+    bumpStat(rKey, 'reactions');
     questProgress(socket.id, 'reaction');
+    checkAch(rKey);
   });
 
   socket.on('buy-action', (actionId, ack) => {
@@ -1368,6 +1738,7 @@ io.on('connection', (socket) => {
     wallet.gems = (wallet.gems ?? 0) - item.price;
     wallet.actions.push(item.id);
     saveWallets();
+    checkAch(key);
     reply({ ok: true, gems: wallet.gems, actions: [...wallet.actions] });
     console.log(`[action-shop] ${key}: ${item.id} 구매 (잔여 ${wallet.gems} 💎)`);
   });
@@ -1393,6 +1764,9 @@ io.on('connection', (socket) => {
     stripUnownedCosmetics(appearance, walletKey(player));
     player.appearance = appearance;
     socket.broadcast.emit('player-appearance', { id: socket.id, appearance });
+    const aKey = walletKey(player);
+    bumpStat(aKey, 'looks');
+    checkAch(aKey);
     console.log(`[appearance] ${player.nickname} → ${appearance.race.name}`);
   });
 
@@ -1406,6 +1780,11 @@ io.on('connection', (socket) => {
     lastPinnedAt.set(socket.id, now);
     player.pinned = text;
     socket.broadcast.emit('player-pinned', { id: socket.id, text });
+    if (text) {
+      const pKey = walletKey(player);
+      bumpStat(pKey, 'pinnedSet');
+      checkAch(pKey);
+    }
     console.log(`[pinned] ${player.nickname}#${player.tag}: ${text || '(해제)'}`);
   });
 
@@ -1424,10 +1803,16 @@ io.on('connection', (socket) => {
       text: clean,
       ts: now,
       senderAppearance: player.appearance,
+      ...(player.title ? { senderTitle: player.title } : {}),
     };
     io.emit('chat', msg);
     recordChat(msg);
+    const cKey = walletKey(player);
+    bumpStat(cKey, 'chats');
+    const kstHour = new Date(now + 9 * 3600_000).getUTCHours();
+    if (kstHour >= 3 && kstHour < 5) grantAch(cKey, 'h-owl'); // 히든: 올빼미
     questProgress(socket.id, 'chat');
+    checkAch(cKey);
     console.log(`[chat] ${player.nickname}#${player.tag}: ${clean}`);
   });
 
@@ -1478,9 +1863,13 @@ io.on('connection', (socket) => {
       ts: now,
       image: { url: `/i/${name}`, thumb, w, h },
       senderAppearance: player.appearance,
+      ...(player.title ? { senderTitle: player.title } : {}),
     };
     io.emit('chat', msg);
     recordChat(msg);
+    const iKey = walletKey(player);
+    bumpStat(iKey, 'images');
+    checkAch(iKey);
     console.log(`[image] ${player.nickname}#${player.tag} → ${name} (${Math.round(buf.length / 1024)}KB)`);
     reply({ ok: true });
   });
@@ -1496,7 +1885,9 @@ io.on('connection', (socket) => {
       lastPinnedAt.delete(socket.id);
       lastRandomBuyAt.delete(socket.id);
       lastEnhanceAt.delete(socket.id);
+      lastDigAt.delete(socket.id);
       socket.broadcast.emit('player-fishing', { id: socket.id, phase: 'stop' });
+      socket.broadcast.emit('player-digging', { id: socket.id, phase: 'stop' });
       io.emit('player-left', socket.id);
       console.log(`- ${player.nickname} — ${players.size}명 접속중`);
     }

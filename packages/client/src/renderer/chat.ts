@@ -96,6 +96,12 @@
     const time = document.createElement('span');
     time.className = 'time';
     time.textContent = formatTime(msg.ts);
+    if (msg.senderTitle) {
+      const titleEl = document.createElement('span');
+      titleEl.className = 'nick-title';
+      titleEl.textContent = `「${msg.senderTitle}」`;
+      meta.append(titleEl);
+    }
     meta.append(nick, time);
 
     const body = document.createElement('div');
@@ -1620,6 +1626,8 @@
   const runnerCdEl = document.getElementById('runner-cd')!;
   const fishingDescEl = document.getElementById('fishing-desc')!;
   const fishingCardEl = document.querySelector('.mg-card[data-game="fishing"]')!;
+  const digDescEl = document.getElementById('dig-desc')!;
+  const digCardEl = document.querySelector('.mg-card[data-game="dig"]')!;
 
   async function renderMinigame(): Promise<void> {
     const state = await window.overlay.getMinigameState();
@@ -1631,6 +1639,10 @@
       ? '낚시 중 — 누르면 중지'
       : '쉬는 중 — 누르면 시작<br />쿨타임 없음 · 물고기 도감 수집';
     fishingCardEl.classList.toggle('active', state.fishingActive);
+    digDescEl.innerHTML = state.diggingActive
+      ? '땅파는 중 — 누르면 중지'
+      : '쉬는 중 — 누르면 시작<br />쿨타임 없음 · 광물 도감 수집';
+    digCardEl.classList.toggle('active', state.diggingActive);
   }
 
   minigameClose.addEventListener('click', () => minigamePanel.classList.remove('open'));
@@ -1643,11 +1655,15 @@
         void renderMinigame();
         return;
       }
-      if (game === 'fishing') {
-        // 토글 결과(시작/중지)는 overlay가 fishing-send로 보고한 뒤에야 확정된다
+      if (game === 'fishing' || game === 'dig') {
+        // 토글 결과(시작/중지)는 overlay가 fishing-send/digging-send로 보고한 뒤에야 확정된다
         setTimeout(async () => {
           const st = await window.overlay.getMinigameState();
-          addSystemMessage(st.fishingActive ? '🎣 낚시를 시작했어요.' : '🎣 낚시를 중지했어요.');
+          if (game === 'fishing') {
+            addSystemMessage(st.fishingActive ? '🎣 낚시를 시작했어요.' : '🎣 낚시를 중지했어요.');
+          } else {
+            addSystemMessage(st.diggingActive ? '⛏️ 땅파기를 시작했어요.' : '⛏️ 땅파기를 중지했어요.');
+          }
           void renderMinigame(); // 카드 상태(⚪/🟢)와 하이라이트 갱신 — 패널은 열어둔다
         }, 250);
       } else {
@@ -1923,6 +1939,188 @@
     if (data) dailyState = data as DailyView;
   });
 
+  // ---- 도전과제 패널 ----
+
+  const achPanel = document.getElementById('ach-panel')!;
+  const achClose = document.getElementById('ach-close') as HTMLButtonElement;
+  const achCountEl = document.getElementById('ach-count')!;
+  const achList = document.getElementById('ach-list')!;
+  const achTitleSelect = document.getElementById('ach-title-select') as HTMLSelectElement;
+  achClose.addEventListener('click', () => achPanel.classList.remove('open'));
+
+  async function renderAch(): Promise<void> {
+    const state = await window.overlay.getAchState();
+    if (!state) {
+      achCountEl.textContent = '';
+      achList.innerHTML = '<div style="padding:12px;color:var(--text-dim)">서버 연결 후 표시됩니다.</div>';
+      return;
+    }
+    const unlocked = new Set(state.ach);
+    achCountEl.textContent = `${ACH_DEFS.filter((d) => unlocked.has(d.id)).length} / ${ACH_DEFS.length}`;
+
+    // 칭호 선택 (달성한 업적의 칭호만)
+    achTitleSelect.innerHTML = '';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = '칭호 없음';
+    achTitleSelect.appendChild(none);
+    for (const d of ACH_DEFS) {
+      if (!d.title || !unlocked.has(d.id)) continue;
+      const opt = document.createElement('option');
+      opt.value = d.title;
+      opt.textContent = `「${d.title}」 — ${d.name}`;
+      achTitleSelect.appendChild(opt);
+    }
+    achTitleSelect.value = state.title ?? '';
+
+    achList.innerHTML = '';
+    for (const cat of [...new Set(ACH_DEFS.map((d) => d.cat))]) {
+      const defs = ACH_DEFS.filter((d) => d.cat === cat);
+      const head = document.createElement('div');
+      head.className = 'ach-cat';
+      head.textContent = `${cat} (${defs.filter((d) => unlocked.has(d.id)).length}/${defs.length})`;
+      achList.appendChild(head);
+      for (const d of defs) {
+        const done = unlocked.has(d.id);
+        const hiddenLocked = d.hidden === true && !done;
+        const row = document.createElement('div');
+        row.className = 'ach-row' + (done ? ' done' : hiddenLocked ? ' locked' : '');
+        const nameRow = document.createElement('div');
+        nameRow.className = 'ach-name';
+        const nameEl = document.createElement('span');
+        nameEl.textContent = hiddenLocked ? '???' : `${done ? '✅ ' : ''}${d.name}`;
+        nameRow.appendChild(nameEl);
+        if (d.title && !hiddenLocked) {
+          const chip = document.createElement('span');
+          chip.className = 'ach-title-chip';
+          chip.textContent = `「${d.title}」`;
+          nameRow.appendChild(chip);
+        }
+        const descRow = document.createElement('div');
+        descRow.className = 'ach-desc';
+        const descEl = document.createElement('span');
+        descEl.textContent = hiddenLocked ? '비밀 도전과제 — 달성하면 공개!' : d.desc;
+        const rewardEl = document.createElement('span');
+        rewardEl.className = 'dq-reward';
+        rewardEl.textContent = `+${d.gems} 💎`;
+        descRow.append(descEl, rewardEl);
+        row.append(nameRow, descRow);
+        if (!done && !hiddenLocked && d.stat && d.goal) {
+          const cur = Math.min(state.metrics[d.stat] ?? 0, d.goal);
+          const bar = document.createElement('div');
+          bar.className = 'dq-bar';
+          const fill = document.createElement('div');
+          fill.className = 'dq-fill';
+          fill.style.width = `${Math.min(100, (cur / d.goal) * 100)}%`;
+          bar.appendChild(fill);
+          const count = document.createElement('div');
+          count.className = 'dq-count';
+          count.textContent = `${cur} / ${d.goal}`;
+          row.append(bar, count);
+        }
+        achList.appendChild(row);
+      }
+    }
+  }
+
+  achTitleSelect.addEventListener('change', () => {
+    void (async () => {
+      const value = achTitleSelect.value;
+      const res = (await window.overlay.setTitle(value)) as { ok: boolean; error?: string };
+      if (!res.ok) {
+        addSystemMessage(res.error ?? '칭호 변경에 실패했어요.');
+        void renderAch();
+        return;
+      }
+      addSystemMessage(value ? `🎖️ 칭호 「${value}」 착용!` : '🎖️ 칭호를 해제했어요.');
+    })();
+  });
+
+  window.overlay.on('self:achievement', (data) => {
+    const list = data as { id: string; name: string; gems: number; title?: string }[];
+    if (!Array.isArray(list) || list.length === 0) return;
+    if (!POPOUT) {
+      if (list.length <= 2) {
+        for (const a of list) {
+          addSystemMessage(
+            `🎖️ 도전과제 달성: ${a.name} (+${a.gems} 💎)${a.title ? ` · 칭호 「${a.title}」 획득!` : ''}`,
+          );
+        }
+      } else {
+        const total = list.reduce((s, a) => s + a.gems, 0);
+        addSystemMessage(`🎖️ 도전과제 ${list.length}개 달성! (+${total} 💎) — ☰ → 🎖️ 도전과제에서 확인하세요`);
+      }
+    }
+    if (achPanel.classList.contains('open')) void renderAch();
+  });
+
+  window.overlay.on('net:ach-news', (data) => {
+    const d = data as { id: string; nickname: string; tag: string; name: string; title: string };
+    if (d.id === chatSelfId) return; // 본인은 달성 메시지로 충분
+    addSystemMessage(`🏆 ${d.nickname}#${d.tag}님이 '${d.name}' 달성! 칭호 「${d.title}」 획득!`);
+  });
+
+  window.overlay.on('net:dig-news', (data) => {
+    const d = data as { id: string; nickname: string; tag: string; name: string };
+    if (d.id === chatSelfId) return; // 본인은 발굴 말풍선으로 충분
+    addSystemMessage(`💎 ${d.nickname}#${d.tag}님이 땅에서 ${d.name}을(를) 발굴했어요!`);
+  });
+
+  // ---- 광물도감 패널 ----
+
+  const mdexPanel = document.getElementById('mineraldex-panel')!;
+  const mdexClose = document.getElementById('mineraldex-close') as HTMLButtonElement;
+  const mdexCountEl = document.getElementById('mdex-count')!;
+  const mdexTabs = document.getElementById('mdex-tabs')!;
+  const mdexGrid = document.getElementById('mdex-grid')!;
+  mdexClose.addEventListener('click', () => mdexPanel.classList.remove('open'));
+  let mdexCat = 'all';
+
+  async function renderMineraldex(): Promise<void> {
+    const w = (await window.overlay.getWallet()) as { minerals?: string[] };
+    const owned = new Set(w.minerals ?? []);
+    mdexCountEl.textContent = `${MINERAL_DEFS.filter((m) => owned.has(m.id)).length} / ${MINERAL_DEFS.length}`;
+
+    mdexTabs.innerHTML = '';
+    for (const t of [{ cat: 'all', label: '전체', emoji: '🗂️' }, ...MINERAL_CATS]) {
+      const catDefs = t.cat === 'all' ? MINERAL_DEFS : MINERAL_DEFS.filter((m) => m.cat === t.cat);
+      const btn = document.createElement('button');
+      btn.className = 'mdex-tab' + (mdexCat === t.cat ? ' active' : '');
+      btn.textContent = `${t.emoji} ${t.label} ${catDefs.filter((m) => owned.has(m.id)).length}/${catDefs.length}`;
+      btn.addEventListener('click', () => {
+        mdexCat = t.cat;
+        void renderMineraldex();
+      });
+      mdexTabs.appendChild(btn);
+    }
+
+    mdexGrid.innerHTML = '';
+    for (const m of mdexCat === 'all' ? MINERAL_DEFS : MINERAL_DEFS.filter((x) => x.cat === mdexCat)) {
+      const has = owned.has(m.id);
+      const cell = document.createElement('div');
+      cell.className = 'mdex-cell ' + (has ? 'owned' : 'locked');
+      cell.title = has ? m.name : '???';
+      const icon = document.createElement('canvas');
+      icon.width = 64;
+      icon.height = 64;
+      void loadImageFromExtra(`minerals/${m.id}.png`).then((img) => {
+        if (!img) return;
+        const ictx = icon.getContext('2d')!;
+        ictx.imageSmoothingEnabled = false;
+        ictx.drawImage(img, 0, 0, 64, 64);
+      });
+      const nameEl = document.createElement('span');
+      nameEl.className = 'mdex-name';
+      nameEl.textContent = has ? m.name : '???';
+      cell.append(icon, nameEl);
+      mdexGrid.appendChild(cell);
+    }
+  }
+
+  window.overlay.on('self:wallet', () => {
+    if (mdexPanel.classList.contains('open')) void renderMineraldex();
+  });
+
   // ---- 코인 랭킹 바 (헤더 아래 상시 표시 — ✕로 완전 숨김, /랭킹·메뉴로 재표시) ----
 
   const rankBar = document.getElementById('rank-bar')!;
@@ -2012,6 +2210,8 @@
     stockPanel.classList.remove('open');
     tickerlogPanel.classList.remove('open');
     dailyPanel.classList.remove('open');
+    achPanel.classList.remove('open');
+    mdexPanel.classList.remove('open');
     window.clearInterval(stockTimerHandle);
   }
 
@@ -2035,6 +2235,14 @@
       case 'daily':
         dailyPanel.classList.add('open');
         renderDaily();
+        break;
+      case 'ach':
+        achPanel.classList.add('open');
+        void renderAch();
+        break;
+      case 'mineraldex':
+        mdexPanel.classList.add('open');
+        void renderMineraldex();
         break;
       case 'fishdex':
         window.overlay.toggleFishdex();

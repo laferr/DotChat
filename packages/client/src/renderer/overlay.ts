@@ -10,6 +10,8 @@ interface NetPlayer {
   walking: boolean;
   lastReadTs: number;
   pinned?: string;
+  /** 착용 중인 도전과제 칭호 */
+  title?: string;
 }
 
 interface NetChatMessage {
@@ -23,6 +25,8 @@ interface NetChatMessage {
   reaction?: number;
   /** 메인 프로세스가 붙여주는 보낸 사람 외형 스냅샷 (채팅창 아바타용) */
   senderAppearance?: Appearance;
+  /** 보낸 시점의 착용 칭호 (서버 첨부) */
+  senderTitle?: string;
 }
 
 interface EffectDef {
@@ -42,6 +46,10 @@ interface ExtrasManifest {
   /** 새 물고기 (단일 이미지, fish2/) — box/treasure_chest 특수 어획물 포함 */
   fish2?: string[];
   tools: { frameW: number; frameH: number; strips: Record<string, number>; files: Record<string, string> };
+  /** 땅파기 삽질 스트립 (0~6 파는 루프 / 7~12 획득 연출) */
+  dig?: { file: string; frames: number };
+  /** 광물/보석 아이콘 id 목록 (minerals/) */
+  minerals?: string[];
   reaction: { cell: number; cols: number; rows: number };
   effects?: EffectDef[];
 }
@@ -125,9 +133,21 @@ interface OverlayApi {
   resizePopout(panel: string, height: number): void;
   getExtras(): Promise<ExtrasManifest | null>;
   loadExtra(relPath: string): Promise<string | null>;
-  getMinigameState(): Promise<{ runnerRemainSec: number; fishingActive: boolean }>;
+  getMinigameState(): Promise<{ runnerRemainSec: number; fishingActive: boolean; diggingActive: boolean }>;
   startMinigame(game: string): Promise<{ ok: boolean; error?: string }>;
   sendFishing(data: { phase: string; fishId?: string; trophy?: boolean }): void;
+  sendDigging(data: { phase: string; itemId?: string }): void;
+  reportDig(result: { kind: string; itemId?: string }): Promise<{
+    ok: boolean;
+    error?: string;
+    kind?: string;
+    isNew?: boolean;
+    delta?: number;
+    gemsDelta?: number;
+    item?: { id: string; name: string };
+  }>;
+  getAchState(): Promise<{ ach: string[]; title: string; metrics: Record<string, number> } | null>;
+  setTitle(title: string): Promise<{ ok: boolean; error?: string; title?: string }>;
   reportFish(fishId: string, trophy?: boolean): Promise<{
     ok: boolean;
     error?: string;
@@ -290,6 +310,16 @@ interface Actor {
   } | null;
   /** 리액션 이모지 표시 */
   reaction: { index: number; until: number } | null;
+  /** 땅파기 상태 (본인/원격 공용) — digging 루프 → found 획득 연출 */
+  digging: {
+    phase: string;
+    phaseStart: number;
+    itemId: string | null;
+    dir: -1 | 1;
+    digDur?: number;
+  } | null;
+  /** 착용 중인 도전과제 칭호 (닉네임 위 금색 표시) */
+  title: string;
 }
 
 // 액션 재생 정의: loop = 반복, hold = 마지막 프레임 유지
@@ -362,6 +392,8 @@ function makeActor(nickname: string, appearance: Appearance, x: number): Actor {
     actionUntil: 0,
     fishing: null,
     reaction: null,
+    digging: null,
+    title: '',
   };
   setAppearance(actor, appearance);
   return actor;
@@ -417,8 +449,8 @@ function updateSelf(dt: number): void {
     updateHop(me, dt);
     return;
   }
-  // 낚시/액션 중엔 이동 정지
-  if (me.fishing) {
+  // 낚시/땅파기/액션 중엔 이동 정지
+  if (me.fishing || me.digging) {
     me.walking = false;
   } else if (actionActive(me)) {
     me.walking = false;
@@ -484,6 +516,7 @@ function addRemote(p: NetPlayer): void {
   actor.walking = p.walking;
   actor.targetX = p.x * viewW;
   actor.pinned = p.pinned ?? '';
+  actor.title = p.title ?? '';
   remotes.set(p.id, actor);
 }
 
@@ -614,6 +647,25 @@ function drawName(actor: Actor): void {
   stageCtx.globalAlpha = 1;
 }
 
+// 닉네임 위 칭호 (도전과제 보상, 금색 소형 텍스트)
+const TITLE_FONT = '9px "Segoe UI", "Malgun Gothic", sans-serif';
+
+function drawTitle(actor: Actor): void {
+  if (!actor.title || actor.bubble) return;
+  stageCtx.font = TITLE_FONT;
+  const box = actorBox(actor);
+  const w = stageCtx.measureText(actor.title).width;
+  const x = actor.x - w / 2;
+  const y = box.y - 16;
+  stageCtx.globalAlpha = 0.9;
+  stageCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+  stageCtx.lineWidth = 3;
+  stageCtx.strokeText(actor.title, x, y);
+  stageCtx.fillStyle = '#ffd66e';
+  stageCtx.fillText(actor.title, x, y);
+  stageCtx.globalAlpha = 1;
+}
+
 // 머리 위 고정메시지 — 꼬리 없는 말풍선, 닉네임 위에 상시 표시.
 // 채팅 말풍선/리액션이 떠 있는 동안엔 숨고, 사라지면 다시 나타난다.
 function drawPinned(actor: Actor, now: number): void {
@@ -632,8 +684,12 @@ function drawPinned(actor: Actor, now: number): void {
   const w = Math.ceil(textW) + padX * 2;
   const h = lines.length * lineHeight + padY * 2;
   const box = actorBox(actor);
-  // 닉네임(원격은 그 위의 '낚시중' 표시까지) 위로 띄운다
-  const above = box.y - 15 - (actor.fishing && actor !== me ? 13 : 0);
+  // 닉네임(칭호·원격 '낚시중/땅파는중' 표시까지) 위로 띄운다
+  const above =
+    box.y -
+    15 -
+    (actor.title ? 11 : 0) -
+    ((actor.fishing || actor.digging) && actor !== me ? 13 : 0);
   const bx = Math.max(4, Math.min(viewW - w - 4, actor.x - w / 2));
   const by = above - h - 2;
 
@@ -764,20 +820,23 @@ function drawActor(actor: Actor, now: number): void {
     stageCtx.drawImage(frame, left, Math.round(top), size, size);
   }
   drawFishing(actor, now);
+  drawDigging(actor, now);
   drawName(actor);
+  drawTitle(actor);
   drawPinned(actor, now);
-  // 원격 낚시꾼 머리 위 '낚시중 ...' 표시
-  if (actor.fishing && actor !== me && !actor.bubble) {
+  // 원격 유저 머리 위 '낚시중/땅파는중 ...' 표시
+  if ((actor.fishing || actor.digging) && actor !== me && !actor.bubble) {
     const dots = '.'.repeat(1 + (Math.floor(now / 500) % 3));
     stageCtx.font = NAME_FONT;
-    const label = `낚시중 ${dots}`;
+    const label = `${actor.fishing ? '낚시중' : '땅파는중'} ${dots}`;
     const w = stageCtx.measureText(label).width;
     const box = actorBox(actor);
+    const ly = box.y - 18 - (actor.title ? 11 : 0);
     stageCtx.strokeStyle = 'rgba(0,0,0,0.7)';
     stageCtx.lineWidth = 3;
-    stageCtx.strokeText(label, actor.x - w / 2, box.y - 18);
-    stageCtx.fillStyle = '#9fdcff';
-    stageCtx.fillText(label, actor.x - w / 2, box.y - 18);
+    stageCtx.strokeText(label, actor.x - w / 2, ly);
+    stageCtx.fillStyle = actor.fishing ? '#9fdcff' : '#e8c17a';
+    stageCtx.fillText(label, actor.x - w / 2, ly);
   }
   drawBubble(actor, now);
   drawReaction(actor, now);
@@ -1086,6 +1145,9 @@ async function initExtras(): Promise<void> {
   for (const [phase, file] of Object.entries(extras.tools.files)) {
     jobs.push(loadExtraImage(`tools/${file}`).then((img) => (rodStrips[phase] = img)));
   }
+  if (extras.dig) {
+    jobs.push(loadExtraImage(extras.dig.file).then((img) => (digStrip = img)));
+  }
   await Promise.all(jobs);
 }
 
@@ -1121,6 +1183,7 @@ function setSelfFishingPhase(phase: string, fishId?: string, trophy?: boolean): 
 
 function startFishing(): void {
   if (runnerState.active || !extras) return;
+  stopDigging();
   me.fishing = { phase: 'casting', phaseStart: performance.now(), fishId: null, dir: me.dir, rod: myRodStars };
   window.overlay.sendFishing({ phase: 'casting' });
 }
@@ -1282,12 +1345,220 @@ function drawRodGlow(stars: number, actorX: number, time: number): void {
   stageCtx.restore();
 }
 
-// 낚시 중 머리 위 그만하기 버튼 (본인 전용)
+// ---- 땅파기 ----
+// 롤은 여기(클라)서, 정산·도감은 서버 dig 이벤트 — 확률은 shared/protocol.ts 주석과 동기화 유지
+
+const DIG_FOUND_DURATION = 1.7;
+let digStrip: HTMLImageElement | null = null;
+const mineralReady = new Map<string, HTMLImageElement | null>();
+
+// 특수 결과 표시 아이콘 (t* = 보물 에셋, 젬 조각은 다이아 아이콘 재활용)
+const DIG_SPECIAL_ICON: Record<string, string> = {
+  coin: 't13',
+  'chest-wood': 't31',
+  'chest-red': 't43',
+  'chest-gold': 't58',
+  gem: 'd1',
+};
+
+// 카테고리 내 가중치 (없으면 1 — 균등)
+const DIG_ITEM_WEIGHTS: Record<string, number> = {
+  // 광석
+  m24: 30, m50: 25, m55: 20, m58: 10, m52: 8, m65: 5, m68: 1.5, m48: 0.5,
+  // 유물
+  m9: 20, m11: 20, m15: 20, m13: 15, m18: 10, m19: 10, m121: 3, m127: 2,
+  // 진주
+  m4: 40, m1: 30, m2: 20, m3: 10,
+  // 다이아
+  d1: 40, d36: 25, d27: 20, d196: 10, d193: 5,
+};
+
+function loadMineralImage(id: string): void {
+  if (mineralReady.has(id)) return;
+  mineralReady.set(id, null);
+  void loadExtraImage(`minerals/${id}.png`).then((img) => mineralReady.set(id, img));
+}
+
+function mineralName(id: string): string {
+  return MINERAL_DEFS.find((m) => m.id === id)?.name ?? id;
+}
+
+function rollMineral(cat: string): { kind: string; itemId: string } {
+  const pool = MINERAL_DEFS.filter((m) => m.cat === cat && extras?.minerals?.includes(m.id));
+  let total = 0;
+  for (const m of pool) total += DIG_ITEM_WEIGHTS[m.id] ?? 1;
+  let r = Math.random() * total;
+  for (const m of pool) {
+    r -= DIG_ITEM_WEIGHTS[m.id] ?? 1;
+    if (r <= 0) return { kind: 'mineral', itemId: m.id };
+  }
+  return { kind: 'mineral', itemId: pool[pool.length - 1].id };
+}
+
+// 발굴 롤 — 꽝5 / 돌38 / 광석23 / 화석14 / 크리스털7 / 코인5 / 유물2.5 / 원석2 /
+// 진주1.2 / 상자1.2(나무0.8·붉은0.35·황금0.05) / 보석0.7 / 젬조각0.35 / 다이아0.05 (%)
+function rollDig(): { kind: string; itemId?: string } {
+  const r = Math.random() * 100;
+  if (r < 5) return { kind: 'miss' };
+  if (r < 43) return rollMineral('stone');
+  if (r < 66) return rollMineral('ore');
+  if (r < 80) return rollMineral('fossil');
+  if (r < 87) return rollMineral('crystal');
+  if (r < 92) return { kind: 'coin' };
+  if (r < 94.5) return rollMineral('relic');
+  if (r < 96.5) return rollMineral('cluster');
+  if (r < 97.7) return rollMineral('pearl');
+  if (r < 98.5) return { kind: 'chest-wood' };
+  if (r < 98.85) return { kind: 'chest-red' };
+  if (r < 98.9) return { kind: 'chest-gold' };
+  if (r < 99.6) return rollMineral('gemstone');
+  if (r < 99.95) return { kind: 'gem' };
+  return rollMineral('diamond');
+}
+
+function setSelfDiggingPhase(phase: string, itemId?: string): void {
+  if (!me.digging) return;
+  me.digging.phase = phase;
+  me.digging.phaseStart = performance.now();
+  me.digging.itemId = itemId ?? null;
+  if (phase === 'digging') me.digging.digDur = 5 + Math.random() * 4;
+  window.overlay.sendDigging({ phase, itemId });
+}
+
+function startDigging(): void {
+  if (runnerState.active || !extras?.dig || !extras.minerals?.length) return;
+  stopFishing();
+  me.digging = {
+    phase: 'digging',
+    phaseStart: performance.now(),
+    itemId: null,
+    dir: me.dir,
+    digDur: 5 + Math.random() * 4,
+  };
+  window.overlay.sendDigging({ phase: 'digging' });
+}
+
+function stopDigging(): void {
+  if (!me.digging) return;
+  me.digging = null;
+  window.overlay.sendDigging({ phase: 'stop' });
+}
+
+function digResultBubble(roll: { kind: string; itemId?: string }, res: {
+  ok: boolean;
+  error?: string;
+  isNew?: boolean;
+  delta?: number;
+  gemsDelta?: number;
+  item?: { id: string; name: string };
+}): void {
+  if (!res.ok) {
+    showBubble(me, res.error ?? '발굴 정산에 실패했어요.');
+    return;
+  }
+  const gem = res.gemsDelta ? ` +${res.gemsDelta}💎` : '';
+  switch (roll.kind) {
+    case 'miss':
+      showBubble(me, '🕳️ 꽝... 두더지가 흙만 남기고 도망갔다!');
+      break;
+    case 'coin':
+      showBubble(me, `💰 코인 주머니! +${res.delta}🪙`);
+      break;
+    case 'gem':
+      showBubble(me, `💎 젬 조각 발견!${gem}`);
+      break;
+    case 'chest-wood':
+      showBubble(me, `🎁 나무 상자! +${res.delta}🪙`);
+      break;
+    case 'chest-red':
+      showBubble(me, res.item ? `🧰 붉은 보물상자!! '${res.item.name}' 획득!` : `🧰 붉은 보물상자!! +${res.delta}🪙`);
+      break;
+    case 'chest-gold':
+      showBubble(me, `👑 황금 보물상자!!! +${res.delta}🪙${gem}`);
+      break;
+    default: {
+      const name = mineralName(roll.itemId ?? '');
+      const cat = MINERAL_DEFS.find((m) => m.id === roll.itemId)?.cat;
+      if (cat === 'diamond') showBubble(me, `💎 심봤다!! ${name}! +${res.delta}🪙${gem}`);
+      else showBubble(me, `⛏️ ${name}! ${res.isNew ? 'NEW! ' : ''}+${res.delta}🪙${gem}`);
+    }
+  }
+}
+
+function updateSelfDigging(now: number): void {
+  const d = me.digging;
+  if (!d || !extras?.dig) return;
+  const t = (now - d.phaseStart) / 1000;
+  if (d.phase === 'digging') {
+    if (t >= (d.digDur ?? 7)) {
+      const roll = rollDig();
+      const iconId = roll.kind === 'mineral' ? roll.itemId! : (DIG_SPECIAL_ICON[roll.kind] ?? undefined);
+      if (iconId) loadMineralImage(iconId);
+      setSelfDiggingPhase('found', iconId);
+      void window.overlay.reportDig(roll).then((res) => digResultBubble(roll, res));
+    }
+  } else if (d.phase === 'found') {
+    if (t >= DIG_FOUND_DURATION) setSelfDiggingPhase('digging');
+  }
+}
+
+// 삽질 + 발굴물 그리기 (본인/원격 공용) — 낚시와 같은 96x64 프레임 규격
+// 삽 아트가 프레임 상단(y32~39)에 작게 그려져 있어 지면·캐릭터 앞으로 보정 (픽셀 실측)
+const DIG_OFFSET_X = -24; // 삽을 캐릭터 바로 앞으로
+const DIG_OFFSET_Y = 22; // 삽날이 지면(viewH)에 닿게
+
+function drawDigging(actor: Actor, time: number): void {
+  const d = actor.digging;
+  if (!d || d.phase === 'stop' || !extras?.dig || !digStrip) return;
+  const t = (time - d.phaseStart) / 1000;
+  const idx =
+    d.phase === 'digging' ? Math.floor(t * 8) % 7 : Math.min(7 + Math.floor(t * 10), extras.dig.frames - 1);
+  const vs = viewScale;
+  const fw = extras.tools.frameW;
+  const fh = extras.tools.frameH;
+  const y0 = viewH + (2 + DIG_OFFSET_Y) * vs - fh * vs;
+
+  stageCtx.save();
+  if (d.dir === -1) {
+    stageCtx.translate(2 * actor.x, 0);
+    stageCtx.scale(-1, 1);
+  }
+  stageCtx.drawImage(
+    digStrip,
+    idx * fw,
+    0,
+    fw,
+    fh,
+    Math.round(actor.x + (DIG_OFFSET_X - 16) * vs),
+    Math.round(y0),
+    fw * vs,
+    fh * vs,
+  );
+  if (d.phase === 'found' && d.itemId) {
+    const icon = mineralReady.get(d.itemId);
+    if (icon) {
+      // 판 자리에서 수직으로 낮게 떠오르기 (말풍선을 가리지 않게)
+      const p = Math.min(1, t / 1.4);
+      const fx = actor.x + 16 * vs;
+      const fy = viewH - 4 * vs - 20 * vs * p - Math.sin(p * Math.PI) * 3 * vs;
+      const size = 24 * vs;
+      const nw = icon.naturalWidth || 64;
+      const nh = icon.naturalHeight || 64;
+      const s = size / Math.max(nw, nh);
+      const dw = nw * s;
+      const dh = nh * s;
+      stageCtx.drawImage(icon, 0, 0, nw, nh, Math.round(fx - dw / 2), Math.round(fy - dh / 2), dw, dh);
+    }
+  }
+  stageCtx.restore();
+}
+
+// 낚시/땅파기 중 머리 위 그만하기 버튼 (본인 전용)
 let fishStopRect = { x: 0, y: 0, w: 0, h: 0 };
 let fishStopHover = false;
 
 function drawFishingStop(): void {
-  if (!me.fishing) return;
+  if (!me.fishing && !me.digging) return;
   const box = actorBox(me);
   const w = 56;
   const h = 18;
@@ -1328,6 +1599,7 @@ function runnerDucking(now: number): boolean {
 
 function startRunner(): void {
   stopFishing();
+  stopDigging();
   runnerState.active = true;
   runnerState.t = 0;
   runnerState.spawnIn = 1.8;
@@ -1711,7 +1983,7 @@ function updateInteractive(): void {
   selfHover = pointIn(actorBox(me), HOVER_PAD);
   chatBtnHover = pointIn(chatBtnRect(), 2);
   giftHover = gift.present && pointIn(giftRect(), 4);
-  fishStopHover = !!me.fishing && pointIn(fishStopRect, 4);
+  fishStopHover = (!!me.fishing || !!me.digging) && pointIn(fishStopRect, 4);
   // 그림 쪽지: 펼쳐진 쪽지 or 포스트잇 버튼 호버
   noteOpenHover = !!noteOpen && pointIn(openNoteHitRect, 4);
   noteHoverIdx = -1;
@@ -1743,6 +2015,7 @@ window.addEventListener('mousedown', () => {
   }
   if (fishStopHover) {
     stopFishing();
+    stopDigging();
     return;
   }
   if (chatBtnHover) {
@@ -1845,9 +2118,10 @@ function wireNet(): void {
   });
 
   window.overlay.on('self:wallet', (data) => {
-    const d = data as { rodStars?: number };
+    const d = data as { rodStars?: number; title?: string };
     myRodStars = Number(d.rodStars) || 0;
     if (me.fishing) me.fishing.rod = myRodStars; // 낚시 중 강화해도 즉시 반영
+    if (typeof d.title === 'string') me.title = d.title;
   });
 
   window.overlay.on('self:minigame', (data) => {
@@ -1855,9 +2129,36 @@ function wireNet(): void {
     if (d.game === 'fishing') {
       if (me.fishing) stopFishing();
       else startFishing();
+    } else if (d.game === 'dig') {
+      if (me.digging) stopDigging();
+      else startDigging();
     } else if (d.game === 'runner' && !runnerState.active) {
       startRunner();
     }
+  });
+
+  window.overlay.on('net:player-digging', (data) => {
+    const d = data as { id: string; phase: string; itemId?: string };
+    const actor = remotes.get(d.id);
+    if (!actor) return;
+    if (d.phase === 'stop') {
+      actor.digging = null;
+      return;
+    }
+    if (d.itemId) loadMineralImage(d.itemId);
+    actor.digging = {
+      phase: d.phase,
+      phaseStart: performance.now(),
+      itemId: d.itemId ?? null,
+      dir: actor.digging?.dir ?? actor.dir,
+    };
+    actor.walking = false;
+  });
+
+  window.overlay.on('net:player-title', (data) => {
+    const d = data as { id: string; title: string };
+    const actor = d.id === selfId ? me : remotes.get(d.id);
+    if (actor) actor.title = d.title ?? '';
   });
 
   window.overlay.on('self:runner-key', (data) => {
@@ -1937,6 +2238,7 @@ function tick(time: number): void {
   const nowMs = performance.now();
   updateSelf(dt);
   updateSelfFishing(nowMs);
+  updateSelfDigging(nowMs);
   updateRunner(dt, nowMs);
   updateRemotes(dt);
   updateGift(dt);

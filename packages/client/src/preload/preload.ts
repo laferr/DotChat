@@ -34,6 +34,11 @@ const NET_CHANNELS = new Set([
   'self:gems',
   'self:runner-key',
   'net:ranking',
+  'self:achievement',
+  'net:ach-news',
+  'net:dig-news',
+  'net:player-digging',
+  'net:player-title',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -96,6 +101,11 @@ contextBridge.exposeInMainWorld('overlay', {
     ipcRenderer.send('fishing-send', data),
   reportFish: (fishId: string, trophy?: boolean): Promise<unknown> =>
     ipcRenderer.invoke('fish-caught', fishId, trophy),
+  sendDigging: (data: { phase: string; itemId?: string }) => ipcRenderer.send('digging-send', data),
+  reportDig: (result: { kind: string; itemId?: string }): Promise<unknown> =>
+    ipcRenderer.invoke('dig-report', result),
+  getAchState: (): Promise<unknown> => ipcRenderer.invoke('ach-state'),
+  setTitle: (title: string): Promise<unknown> => ipcRenderer.invoke('set-title', title),
   buyRandom: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy-random', itemId),
   enhance: (): Promise<unknown> => ipcRenderer.invoke('enhance'),
   brag: (): Promise<unknown> => ipcRenderer.invoke('brag'),

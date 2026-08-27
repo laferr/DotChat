@@ -20,11 +20,15 @@ let daily = null;
 let coins = 0;
 let gems = 0;
 let selfId = null;
+let achBonus = 0; // 검증 중 달성된 도전과제 젬 (신규 지갑 소급 정산 포함)
 const newsLog = [];
 const myActionMsgs = [];
 socket.on('daily', (state) => {
   daily = state;
   if (state?.news) newsLog.push(state.news);
+});
+socket.on('achievement', (list) => {
+  for (const a of list ?? []) achBonus += a.gems ?? 0;
 });
 socket.on('coins', (c) => (coins = c));
 socket.on('gems', (g) => (gems = g));
@@ -91,6 +95,15 @@ for (const q of daily.quests) {
         if (!res?.ok) fail(`낚시 실패: ${res?.error}`);
       }
       break;
+    case 'dig':
+      for (let i = 0; i < q.goal; i++) {
+        if (i > 0) await sleep(4200);
+        const res = await new Promise((r) =>
+          socket.timeout(5000).emit('dig', { kind: 'mineral', itemId: 'm14' }, (err, v) => r(err ? null : v)),
+        );
+        if (!res?.ok) fail(`땅파기 실패: ${res?.error}`);
+      }
+      break;
     default:
       fail(`알 수 없는 퀘스트 id: ${q.id}`);
   }
@@ -100,12 +113,12 @@ for (const q of daily.quests) {
   console.log(`  퀘스트 OK: ${q.id} 완료 (+${q.reward} 💎)`);
 }
 
-// 4) 젬 정산: 퀘스트 보상 합 + 전체 보너스 5
+// 4) 젬 정산: 퀘스트 보상 합 + 전체 보너스 5 + 도전과제 보상(첫 출석/첫 어획 등)
 await sleep(300);
 if (!daily.allBonusClaimed) fail('전체 완료 보너스 미지급');
-const expectedGems = daily.quests.reduce((s, q) => s + q.reward, 0) + 5;
-if (gems !== expectedGems) fail(`젬 잔액 ${gems} (기대 ${expectedGems})`);
-console.log(`  젬 정산 OK: ${gems} 💎 (퀘스트 합 + 보너스 5)`);
+const expectedGems = daily.quests.reduce((s, q) => s + q.reward, 0) + 5 + achBonus;
+if (gems !== expectedGems) fail(`젬 잔액 ${gems} (기대 ${expectedGems} = 퀘스트+보너스5+업적${achBonus})`);
+console.log(`  젬 정산 OK: ${gems} 💎 (퀘스트 합 + 보너스 5 + 업적 ${achBonus})`);
 
 // 5) 액션 구매 → 사용 가능
 const buy = await new Promise((r) => socket.timeout(5000).emit('buy-action', 'jump', (err, v) => r(err ? null : v)));

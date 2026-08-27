@@ -74,6 +74,8 @@ export interface PlayerState {
   lastReadTs: number;
   /** 머리 위 고정메시지 (빈 문자열 = 없음) */
   pinned?: string;
+  /** 착용 중인 도전과제 칭호 (서버 권위 — 지갑에서 첨부) */
+  title?: string;
 }
 
 export interface MovePayload {
@@ -119,6 +121,8 @@ export interface ChatMessage {
   reaction?: number;
   /** 보낸 시점의 외형 스냅샷 (채팅창 아바타용, 서버가 첨부) */
   senderAppearance?: Appearance;
+  /** 보낸 시점의 착용 칭호 (서버가 지갑에서 첨부) */
+  senderTitle?: string;
 }
 
 /** 채팅 내역 서버 보관 기간/최대 개수 */
@@ -171,6 +175,7 @@ export const DAILY_QUESTS: DailyQuestDef[] = [
   { id: 'slot', name: '슬롯머신 1회 돌리기', goal: 1, reward: 2 },
   { id: 'runner', name: '달리기 10초 생존', goal: 10, reward: 3 },
   { id: 'reaction', name: '리액션 이모지 3회 보내기', goal: 3, reward: 2 },
+  { id: 'dig', name: '땅파기 3회', goal: 3, reward: 3 },
 ];
 export const DAILY_QUEST_COUNT = 3; // 하루에 활성화되는 퀘스트 수
 export const DAILY_ALL_BONUS = 5; // 활성 퀘스트 전부 완료 보너스
@@ -224,6 +229,283 @@ export const ACTION_SHOP: ActionShopItem[] = [
   { id: 'crawl', name: '엎드려', price: 6 },
   { id: 'ready', name: '전투준비', price: 6 },
 ];
+
+// ---- 도전과제 / 칭호 ----
+// 판정은 서버 (지갑 파생 metric + 누적 카운터 + 이벤트성 직접 지급).
+// metric 키는 서버 achMetrics()가 계산 — stat이 있는 업적은 metric >= goal 도달 시 자동 달성.
+// stat이 없는 업적(이벤트성)은 해당 이벤트 코드에서 grantAch()로 직접 지급.
+// composer.ts에 패널 UI용 복사본(ACH_DEFS) 있음 — 수치 변경 시 동기화 유지 (verify-ach가 검사)
+
+export interface AchievementDef {
+  id: string;
+  /** 표시 카테고리 */
+  cat: string;
+  name: string;
+  /** 달성 조건 설명 */
+  desc: string;
+  /** 보상 젬 */
+  gems: number;
+  /** 착용 가능 칭호 (달성 시 전체 알림) */
+  title?: string;
+  /** 달성 전 목록에서 ??? 표시 */
+  hidden?: boolean;
+  /** 진행도 metric 키 (이벤트성 업적은 없음) */
+  stat?: string;
+  goal?: number;
+}
+
+export const ACHIEVEMENTS: AchievementDef[] = [
+  // 낚시
+  { id: 'f-first', cat: '낚시', name: '첫 입질', desc: '물고기 첫 어획', gems: 2, stat: 'fishDex', goal: 1 },
+  { id: 'f-dex20', cat: '낚시', name: '견습 낚시꾼', desc: '낚시도감 20종', gems: 3, stat: 'fishDex', goal: 20 },
+  { id: 'f-dex50', cat: '낚시', name: '낚시 좀 치는 사람', desc: '낚시도감 50종', gems: 5, stat: 'fishDex', goal: 50 },
+  { id: 'f-dex100', cat: '낚시', name: '프로 낚시꾼', desc: '낚시도감 100종', gems: 10, title: '프로 낚시꾼', stat: 'fishDex', goal: 100 },
+  { id: 'f-dex161', cat: '낚시', name: '어류대백과', desc: '낚시도감 161종 완성', gems: 30, title: '어류학자', stat: 'fishDex', goal: 161 },
+  { id: 'f-total100', cat: '낚시', name: '손맛 중독', desc: '누적 어획 100마리', gems: 3, stat: 'fishTotal', goal: 100 },
+  { id: 'f-total1000', cat: '낚시', name: '물 반 고기 반', desc: '누적 어획 1,000마리', gems: 10, stat: 'fishTotal', goal: 1000 },
+  { id: 'f-trophy1', cat: '낚시', name: '월척이야!', desc: '월척 1종 달성', gems: 3, stat: 'trophyDex', goal: 1 },
+  { id: 'f-trophy10', cat: '낚시', name: '월척 수집가', desc: '월척 10종 달성', gems: 10, title: '월척 헌터', stat: 'trophyDex', goal: 10 },
+  { id: 'f-trophy30', cat: '낚시', name: '전설의 조사', desc: '월척 30종 달성', gems: 20, title: '전설의 낚시꾼', stat: 'trophyDex', goal: 30 },
+  { id: 'f-box', cat: '낚시', name: '웬 상자?', desc: '낚시로 상자 첫 획득', gems: 1, stat: 'boxes', goal: 1 },
+  { id: 'f-chest', cat: '낚시', name: '보물찾기', desc: '낚시로 보물상자 첫 획득', gems: 3, stat: 'chests', goal: 1 },
+  { id: 'f-chest10', cat: '낚시', name: '인양 전문가', desc: '보물상자 누적 10개', gems: 10, title: '트레저 헌터', stat: 'chests', goal: 10 },
+  // 강화
+  { id: 'e-try', cat: '강화', name: '망치를 들다', desc: '첫 강화 시도', gems: 1, stat: 'enhanceTries', goal: 1 },
+  { id: 'e-10', cat: '강화', name: '옛 기본기', desc: '낚싯대 10성 달성', gems: 3, stat: 'rodStars', goal: 10 },
+  { id: 'e-15', cat: '강화', name: '첫 고비 돌파', desc: '낚싯대 15성 달성', gems: 5, stat: 'rodStars', goal: 15 },
+  { id: 'e-20', cat: '강화', name: '불꽃의 경지', desc: '낚싯대 20성 달성', gems: 10, title: '장인', stat: 'rodStars', goal: 20 },
+  { id: 'e-25', cat: '강화', name: '황금의 경지', desc: '낚싯대 25성 달성', gems: 15, title: '명장', stat: 'rodStars', goal: 25 },
+  { id: 'e-30', cat: '강화', name: '무지개 너머', desc: '낚싯대 30성 달성', gems: 30, title: '대장장이의 신', stat: 'rodStars', goal: 30 },
+  { id: 'e-pity', cat: '강화', name: '불사조', desc: '천장 보정(10연속 실패)으로 성공', gems: 5 },
+  { id: 'e-drop', cat: '강화', name: '추락의 맛', desc: '강화 하락 경험', gems: 2, stat: 'enhanceDrops', goal: 1 },
+  { id: 'e-bigdrop', cat: '강화', name: '그날의 기억', desc: '20성 이상에서 하락', gems: 5, hidden: true },
+  { id: 'e-try100', cat: '강화', name: '망치질 백 번', desc: '누적 강화 100회', gems: 5, stat: 'enhanceTries', goal: 100 },
+  // 경제
+  { id: 'c-coin100', cat: '경제', name: '티끌 모아', desc: '보유 코인 100 달성', gems: 2, stat: 'coinsNow', goal: 100 },
+  { id: 'c-coin1000', cat: '경제', name: '자산가', desc: '보유 코인 1,000 달성', gems: 10, title: '부자', stat: 'coinsNow', goal: 1000 },
+  { id: 'c-earn5000', cat: '경제', name: '돈이 도는 삶', desc: '누적 획득 코인 5,000', gems: 10, stat: 'coinsEarned', goal: 5000 },
+  { id: 'c-jackpot', cat: '경제', name: '잭팟!', desc: '슬롯 잭팟 당첨', gems: 5 },
+  { id: 'c-mega', cat: '경제', name: '머신을 이기다', desc: '슬롯 메가 잭팟 당첨', gems: 15, title: '도박왕' },
+  { id: 'c-slot100', cat: '경제', name: '단골손님', desc: '슬롯 누적 100회', gems: 5, stat: 'slotSpins', goal: 100 },
+  { id: 'c-missrun', cat: '경제', name: '오늘은 아닌가 봐', desc: '슬롯 10연속 꽝', gems: 3, hidden: true, stat: 'slotMissRun', goal: 10 },
+  { id: 'c-shopall', cat: '경제', name: '쇼핑 마스터', desc: '상점 코스메틱 전부 구매', gems: 20, title: '컬렉터', stat: 'cosmetics', goal: 23 },
+  { id: 'c-random10', cat: '경제', name: '뽑기의 맛', desc: '랜덤뽑기 10회', gems: 3, stat: 'randomPulls', goal: 10 },
+  { id: 'c-actions', cat: '경제', name: '만능 연기자', desc: '액션 9종 전부 구매', gems: 10, title: '액션 스타', stat: 'actionsOwned', goal: 9 },
+  // 주식
+  { id: 's-first', cat: '주식', name: '주식 입문', desc: '주식 첫 매수', gems: 2, stat: 'stockBuys', goal: 1 },
+  { id: 's-profit', cat: '주식', name: '떡상의 증인', desc: '실현 수익 누적 +100', gems: 10, title: '투자의 귀재', stat: 'stockProfit', goal: 100 },
+  { id: 's-loss', cat: '주식', name: '한강은 차갑다', desc: '실현 손실 누적 -100', gems: 5, hidden: true, stat: 'stockLoss', goal: 100 },
+  { id: 's-delist', cat: '주식', name: '상폐의 추억', desc: '보유 종목 상장폐지 경험', gems: 3 },
+  { id: 's-100shares', cat: '주식', name: '몰빵의 미학', desc: '한 종목 100주 보유', gems: 10, title: '큰손', stat: 'stockQtyMax', goal: 100 },
+  { id: 's-all', cat: '주식', name: '분산투자 교과서', desc: '10종목 동시 보유', gems: 5, stat: 'stockKinds', goal: 10 },
+  // 소셜
+  { id: 'm-chat100', cat: '소셜', name: '말문이 트이다', desc: '누적 채팅 100회', gems: 2, stat: 'chats', goal: 100 },
+  { id: 'm-chat1000', cat: '소셜', name: '수다쟁이', desc: '누적 채팅 1,000회', gems: 5, stat: 'chats', goal: 1000 },
+  { id: 'm-chat10000', cat: '소셜', name: '떠들썩한 인생', desc: '누적 채팅 10,000회', gems: 10, title: '수다왕', stat: 'chats', goal: 10000 },
+  { id: 'm-image', cat: '소셜', name: '짤의 시작', desc: '이미지 첫 전송', gems: 2, stat: 'images', goal: 1 },
+  { id: 'm-react100', cat: '소셜', name: '리액션 부자', desc: '리액션 누적 100회', gems: 3, stat: 'reactions', goal: 100 },
+  { id: 'm-note', cat: '소셜', name: '그림 편지', desc: '그림 쪽지 첫 발송', gems: 2, stat: 'notesSent', goal: 1 },
+  { id: 'm-note30', cat: '소셜', name: '동네 집배원', desc: '쪽지 30장 발송', gems: 10, title: '우체부', stat: 'notesSent', goal: 30 },
+  { id: 'm-notes-got', cat: '소셜', name: '인기쟁이', desc: '쪽지 10장 수신', gems: 3, stat: 'notesGot', goal: 10 },
+  { id: 'm-ad', cat: '소셜', name: '광고주', desc: '전광판 광고 첫 게재', gems: 3, stat: 'ads', goal: 1 },
+  { id: 'm-ad10', cat: '소셜', name: '전광판 큰손', desc: '광고 누적 10회', gems: 10, title: '미디어 재벌', stat: 'ads', goal: 10 },
+  { id: 'm-brag10', cat: '소셜', name: '자랑이 넘쳐', desc: '자랑하기 10회', gems: 3, stat: 'brags', goal: 10 },
+  { id: 'm-pinned', cat: '소셜', name: '내 한마디', desc: '고정메시지 첫 설정', gems: 1, stat: 'pinnedSet', goal: 1 },
+  // 미니게임
+  { id: 'g-perfect', cat: '미니게임', name: '마라토너', desc: '러너 한 판 만점(20코인)', gems: 5 },
+  { id: 'g-run100', cat: '미니게임', name: '달리는 게 좋아', desc: '러너 누적 100코인', gems: 5, stat: 'runnerCoins', goal: 100 },
+  // 출석
+  { id: 'd-first', cat: '출석', name: '첫 발도장', desc: '첫 출석', gems: 1, stat: 'attendTotal', goal: 1 },
+  { id: 'd-week', cat: '출석', name: '일주일 개근', desc: '연속 출석 7일', gems: 5, stat: 'attendStreak', goal: 7 },
+  { id: 'd-month', cat: '출석', name: '한 달 개근', desc: '연속 출석 30일', gems: 20, title: '개근왕', stat: 'attendStreak', goal: 30 },
+  { id: 'd-100', cat: '출석', name: '백일잔치', desc: '누적 출석 100일', gems: 15, stat: 'attendTotal', goal: 100 },
+  { id: 'd-clear', cat: '출석', name: '성실한 하루', desc: '일일퀘스트 올클리어', gems: 2, stat: 'allClear', goal: 1 },
+  { id: 'd-clear30', cat: '출석', name: '갓생 인증', desc: '일일퀘스트 올클리어 30회', gems: 10, title: '갓생러', stat: 'allClear', goal: 30 },
+  // 수집
+  { id: 'p-parts50', cat: '수집', name: '옷장이 가득', desc: '파츠 50종 수집', gems: 3, stat: 'partsOwned', goal: 50 },
+  { id: 'p-parts150', cat: '수집', name: '수집가의 길', desc: '파츠 150종 수집', gems: 10, stat: 'partsOwned', goal: 150 },
+  { id: 'p-parts300', cat: '수집', name: '걸어다니는 옷가게', desc: '파츠 300종 수집', gems: 20, title: '패션왕', stat: 'partsOwned', goal: 300 },
+  { id: 'p-races', cat: '수집', name: '만종족 통일', desc: '종족 19종 전부 수집', gems: 15, title: '변신의 귀재', stat: 'racesOwned', goal: 19 },
+  { id: 'p-look', cat: '수집', name: '새 단장', desc: '외모 첫 변경', gems: 1, stat: 'looks', goal: 1 },
+  // 발굴
+  { id: 'x-first', cat: '발굴', name: '첫 삽', desc: '광물 첫 발굴', gems: 2, stat: 'digDex', goal: 1 },
+  { id: 'x-dex20', cat: '발굴', name: '자갈밭 졸업', desc: '광물도감 20종', gems: 3, stat: 'digDex', goal: 20 },
+  { id: 'x-dex40', cat: '발굴', name: '지질 연구가', desc: '광물도감 40종', gems: 5, stat: 'digDex', goal: 40 },
+  { id: 'x-dex74', cat: '발굴', name: '대지의 모든 것', desc: '광물도감 74종 완성', gems: 30, title: '광물학자', stat: 'digDex', goal: 74 },
+  { id: 'x-dig100', cat: '발굴', name: '삽질 백 번', desc: '누적 발굴 100회', gems: 3, stat: 'digTotal', goal: 100 },
+  { id: 'x-dig1000', cat: '발굴', name: '프로 삽러', desc: '누적 발굴 1,000회', gems: 10, stat: 'digTotal', goal: 1000 },
+  { id: 'x-gems', cat: '발굴', name: '반짝임의 끝', desc: '세공 보석 8종 수집', gems: 15, title: '보석상', stat: 'gemstoneDex', goal: 8 },
+  { id: 'x-relics', cat: '발굴', name: '과거를 캐는 자', desc: '유물 8종 수집', gems: 10, title: '고고학자', stat: 'relicDex', goal: 8 },
+  { id: 'x-diamond', cat: '발굴', name: '심봤다!', desc: '다이아몬드 첫 발굴', gems: 10, stat: 'diamondDex', goal: 1 },
+  { id: 'x-goldbar', cat: '발굴', name: '노다지', desc: '금괴 첫 발굴', gems: 3, stat: 'goldbar', goal: 1 },
+  // 히든
+  { id: 'h-owl', cat: '히든', name: '올빼미', desc: '새벽 3~5시에 채팅', gems: 3, hidden: true },
+  { id: 'h-broke', cat: '히든', name: '빈털터리', desc: '코인 0으로 슬롯 시도', gems: 3, hidden: true },
+  { id: 'h-shoelace', cat: '히든', name: '신발끈부터', desc: '러너 시작 1초 내 탈락', gems: 2, hidden: true },
+  { id: 'h-midnight', cat: '히든', name: '자정의 방문자', desc: '자정 직후(00:00~00:15) 접속', gems: 3, hidden: true },
+  { id: 'h-monday', cat: '히든', name: '월요병', desc: '월요일 오전 9시에 접속', gems: 3, hidden: true },
+  { id: 'h-mole', cat: '히든', name: '두더지의 장난', desc: '땅파기 꽝 누적 10회', gems: 3, hidden: true, stat: 'digMiss', goal: 10 },
+];
+
+/** 칭호 → 업적 매핑 (착용 검증용) */
+export function achForTitle(title: string): AchievementDef | undefined {
+  return ACHIEVEMENTS.find((a) => a.title === title);
+}
+
+// ---- 땅파기 (미니게임 — 롤은 클라이언트 overlay.ts에 중복 하드코딩, 정산·도감은 서버) ----
+// composer.ts에 UI용 복사본(MINERAL_DEFS) 있음 — 변경 시 동기화 유지 (verify-dig가 검사)
+
+export type MineralCat =
+  | 'stone' // 돌멩이 (커먼)
+  | 'ore' // 광석
+  | 'fossil' // 화석·뼈
+  | 'crystal' // 크리스털 조각
+  | 'relic' // 유물
+  | 'cluster' // 원석 클러스터
+  | 'pearl' // 진주
+  | 'gemstone' // 세공 보석
+  | 'diamond'; // 다이아몬드
+
+export interface MineralDef {
+  id: string;
+  name: string;
+  cat: MineralCat;
+}
+
+export const MINERALS: MineralDef[] = [
+  // 돌멩이 10종 (균등)
+  { id: 'm14', name: '매끈한 돌', cat: 'stone' },
+  { id: 'm49', name: '넓적돌', cat: 'stone' },
+  { id: 'm60', name: '잿빛 돌', cat: 'stone' },
+  { id: 'm61', name: '모난 돌', cat: 'stone' },
+  { id: 'm62', name: '부싯돌', cat: 'stone' },
+  { id: 'm63', name: '차돌', cat: 'stone' },
+  { id: 'm64', name: '은빛 차돌', cat: 'stone' },
+  { id: 'm5', name: '조약돌', cat: 'stone' },
+  { id: 'm51', name: '자줏빛 바위', cat: 'stone' },
+  { id: 'm54', name: '얼룩 바위', cat: 'stone' },
+  // 광석 8종 (가중치 — overlay.ts DIG_ORE_POOL)
+  { id: 'm24', name: '석탄 덩어리', cat: 'ore' },
+  { id: 'm50', name: '철광석', cat: 'ore' },
+  { id: 'm55', name: '구리 광석', cat: 'ore' },
+  { id: 'm58', name: '빛나는 구리 광석', cat: 'ore' },
+  { id: 'm52', name: '사금석', cat: 'ore' },
+  { id: 'm65', name: '금광석', cat: 'ore' },
+  { id: 'm68', name: '왕금광석', cat: 'ore' },
+  { id: 'm48', name: '금괴', cat: 'ore' },
+  // 화석·뼈 10종 (균등)
+  { id: 'm85', name: '뿔 달린 해골', cat: 'fossil' },
+  { id: 'm86', name: '염소 해골', cat: 'fossil' },
+  { id: 'm89', name: '들소 해골', cat: 'fossil' },
+  { id: 'm92', name: '교차된 뼈', cat: 'fossil' },
+  { id: 'm95', name: '넙다리뼈', cat: 'fossil' },
+  { id: 'm96', name: '턱뼈 화석', cat: 'fossil' },
+  { id: 'm98', name: '어금니 화석', cat: 'fossil' },
+  { id: 'm99', name: '굽은 뿔', cat: 'fossil' },
+  { id: 'm103', name: '맹수 발톱', cat: 'fossil' },
+  { id: 'm114', name: '낡은 깃털', cat: 'fossil' },
+  // 크리스털 조각 14종 (균등)
+  { id: 'm20', name: '민트 수정 조각', cat: 'crystal' },
+  { id: 'm22', name: '서리 수정', cat: 'crystal' },
+  { id: 'm23', name: '얼음 수정 기둥', cat: 'crystal' },
+  { id: 'm30', name: '호박 수정', cat: 'crystal' },
+  { id: 'm31', name: '황금 수정', cat: 'crystal' },
+  { id: 'm32', name: '창백한 수정', cat: 'crystal' },
+  { id: 'm33', name: '바다 수정', cat: 'crystal' },
+  { id: 'm34', name: '핏빛 수정', cat: 'crystal' },
+  { id: 'm36', name: '초록 수정', cat: 'crystal' },
+  { id: 'm38', name: '보라 수정', cat: 'crystal' },
+  { id: 'm41', name: '불꽃 수정', cat: 'crystal' },
+  { id: 'm43', name: '은빛 수정', cat: 'crystal' },
+  { id: 'm44', name: '흑요 수정', cat: 'crystal' },
+  { id: 'm46', name: '눈꽃 수정', cat: 'crystal' },
+  // 유물 8종 (가중치)
+  { id: 'm9', name: '여명의 룬돌', cat: 'relic' },
+  { id: 'm11', name: '바람의 룬돌', cat: 'relic' },
+  { id: 'm15', name: '대지의 룬돌', cat: 'relic' },
+  { id: 'm13', name: '얼굴 조각석', cat: 'relic' },
+  { id: 'm18', name: '고대 점토판', cat: 'relic' },
+  { id: 'm19', name: '인장 점토판', cat: 'relic' },
+  { id: 'm121', name: '낡은 두루마리', cat: 'relic' },
+  { id: 'm127', name: '녹슨 톱니뭉치', cat: 'relic' },
+  // 원석 클러스터 7종 (균등)
+  { id: 'c104', name: '자수정 원석', cat: 'cluster' },
+  { id: 'c12', name: '홍옥 원석', cat: 'cluster' },
+  { id: 'c125', name: '장미수정 원석', cat: 'cluster' },
+  { id: 'c135', name: '오로라 원석', cat: 'cluster' },
+  { id: 'c24', name: '황옥 원석', cat: 'cluster' },
+  { id: 'c54', name: '비취 원석', cat: 'cluster' },
+  { id: 'c64', name: '청옥 원석', cat: 'cluster' },
+  // 진주 4종 (가중치)
+  { id: 'm4', name: '진주', cat: 'pearl' },
+  { id: 'm1', name: '은빛 진주', cat: 'pearl' },
+  { id: 'm2', name: '황금 진주', cat: 'pearl' },
+  { id: 'm3', name: '흑진주', cat: 'pearl' },
+  // 세공 보석 8종 (균등)
+  { id: 'g12', name: '문스톤', cat: 'gemstone' },
+  { id: 'g116', name: '오팔', cat: 'gemstone' },
+  { id: 'g135', name: '사파이어', cat: 'gemstone' },
+  { id: 'g159', name: '아메지스트', cat: 'gemstone' },
+  { id: 'g218', name: '토파즈', cat: 'gemstone' },
+  { id: 'g58', name: '루비', cat: 'gemstone' },
+  { id: 'g80', name: '시트린', cat: 'gemstone' },
+  { id: 'g83', name: '에메랄드', cat: 'gemstone' },
+  // 다이아몬드 5종 (가중치)
+  { id: 'd1', name: '다이아몬드', cat: 'diamond' },
+  { id: 'd36', name: '실버 다이아몬드', cat: 'diamond' },
+  { id: 'd27', name: '블랙 다이아몬드', cat: 'diamond' },
+  { id: 'd196', name: '레드 다이아몬드', cat: 'diamond' },
+  { id: 'd193', name: '프리즘 다이아몬드', cat: 'diamond' },
+];
+
+/** 발굴 정산 — 카테고리별 첫 발견/중복 코인 */
+export const DIG_FIRST_COIN: Record<MineralCat, number> = {
+  stone: 2, ore: 3, fossil: 3, crystal: 4, relic: 5, cluster: 6, pearl: 6, gemstone: 8, diamond: 15,
+};
+export const DIG_REPEAT_COIN: Record<MineralCat, number> = {
+  stone: 1, ore: 1, fossil: 1, crystal: 1, relic: 2, cluster: 2, pearl: 2, gemstone: 3, diamond: 5,
+};
+/** 첫 발견 시 젬 보너스 (세공 보석 +2, 다이아 +5) */
+export const DIG_GEM_FIRST: Partial<Record<MineralCat, number>> = { gemstone: 2, diamond: 5 };
+/** 금괴 — 도감 등재 + 고정 코인 (첫/중복 무관) */
+export const DIG_GOLDBAR_ID = 'm48';
+export const DIG_GOLDBAR_COIN = 15;
+// 특수 슬롯 보상 (확률은 클라 롤: 꽝5 / 돌38 / 광석23 / 화석14 / 크리스털7 / 코인5 /
+// 유물2.5 / 원석2 / 진주1.2 / 상자1.2(나무0.8·붉은0.35·황금0.05) / 보석0.7 / 젬조각0.35 / 다이아0.05 %)
+export const DIG_COIN_MIN = 2;
+export const DIG_COIN_MAX = 6;
+export const DIG_CHEST_WOOD_MIN = 5;
+export const DIG_CHEST_WOOD_MAX = 10;
+export const DIG_CHEST_RED_MIN = 15;
+export const DIG_CHEST_RED_MAX = 30;
+export const DIG_CHEST_GOLD_COIN = 50;
+export const DIG_CHEST_GOLD_GEM = 1;
+export const DIG_GEMSHARD_GEM = 1;
+/** 서버측 최소 발굴 간격 (사이클 = 파기 5~9초 + 획득 연출) */
+export const DIG_MIN_INTERVAL_MS = 4000;
+
+export const DIG_KINDS = ['miss', 'mineral', 'coin', 'gem', 'chest-wood', 'chest-red', 'chest-gold'] as const;
+export type DigKind = (typeof DIG_KINDS)[number];
+export const DIG_PHASES = ['digging', 'found', 'stop'] as const;
+export type DigPhase = (typeof DIG_PHASES)[number];
+
+/** dig 이벤트 정산 응답 */
+export type DigAck = (res: {
+  ok: boolean;
+  error?: string;
+  kind?: DigKind;
+  isNew?: boolean;
+  /** 코인 증감 */
+  delta?: number;
+  /** 젬 증감 */
+  gemsDelta?: number;
+  coins?: number;
+  gems?: number;
+  /** 붉은 보물상자 상점 아이템 당첨 */
+  item?: { id: string; name: string };
+  items?: string[];
+  minerals?: string[];
+}) => void;
 
 export interface ClientToServerEvents {
   hello: (data: { nickname: string; tag: string; appearance: Appearance; pinned?: string }) => void;
@@ -318,6 +600,16 @@ export interface ClientToServerEvents {
     seconds: number,
     ack: (res: { ok: boolean; error?: string; delta?: number; coins?: number }) => void,
   ) => void;
+  /** 땅파기 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화) */
+  'digging-state': (data: { phase: DigPhase; itemId?: string }) => void;
+  /** 발굴 정산 (롤은 클라, 보상·도감은 서버) — mineral이면 itemId 필수 */
+  dig: (result: { kind: DigKind; itemId?: string }, ack: DigAck) => void;
+  /** 도전과제 상태 조회 (달성 목록 + 착용 칭호 + 진행도 metric) */
+  'ach-state': (
+    ack: (res: { ach: string[]; title: string; metrics: Record<string, number> }) => void,
+  ) => void;
+  /** 칭호 착용 (빈 문자열 = 해제) — 달성한 업적의 칭호만 허용 */
+  'set-title': (title: string, ack: (res: { ok: boolean; error?: string; title?: string }) => void) => void;
   /** 리액션 이모지 전송 */
   reaction: (index: number) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */
@@ -357,6 +649,10 @@ export interface ServerToClientEvents {
     gems?: number;
     /** 구매한 액션 id 목록 */
     actions?: string[];
+    /** 광물도감 (발굴한 광물) */
+    minerals?: string[];
+    /** 착용 중인 칭호 */
+    title?: string;
   }) => void;
   /** 강화 대박/하락 전체 알림 (20성 이상) */
   'enhance-news': (data: {
@@ -393,6 +689,16 @@ export interface ServerToClientEvents {
   }) => void;
   /** 일일퀘스트/출석 상태 (접속 직후 + 진행/완료 시 개인 전송) */
   daily: (state: DailyState) => void;
+  /** 도전과제 달성 (본인 — 여러 개 한꺼번에 소급 정산될 수 있어 배열) */
+  achievement: (list: { id: string; name: string; gems: number; title?: string }[]) => void;
+  /** 칭호 업적 달성 전체 알림 */
+  'ach-news': (data: { id: string; nickname: string; tag: string; name: string; title: string }) => void;
+  /** 다이아몬드 발굴 전체 알림 */
+  'dig-news': (data: { id: string; nickname: string; tag: string; name: string }) => void;
+  /** 누군가의 땅파기 상태 (애니메이션 동기화) */
+  'player-digging': (data: { id: string; phase: DigPhase; itemId?: string }) => void;
+  /** 누군가의 칭호 변경 */
+  'player-title': (data: { id: string; title: string }) => void;
 }
 
 // ---- 그림 쪽지 (64x64 픽셀 그림을 특정 유저에게 전달) ----
