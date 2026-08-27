@@ -418,9 +418,11 @@ export function isEnhanceWeekend(ts = Date.now()): boolean {
   return day === 0 || day === 6;
 }
 
-// 강화 단계별 낚시 보너스
-export const ROD_WAIT_REDUCE = 0.15; // 입질 대기 -초/성
-export const ROD_TROPHY_BONUS = 0.02; // 월척 +%p/성
+// 강화 단계별 낚시 성능 — 10성 = 종전 기본 낚싯대 성능, 그 밑은 페널티 (클라 적용, overlay.ts)
+export const ROD_BASELINE_STARS = 10; // 기준점: 입질 10~15초, 월척 0.2%
+export const ROD_WAIT_PENALTY = 0.5; // 10성 미만: 입질 대기 +초/부족 성 (0성 = +5초)
+export const ROD_WAIT_REDUCE = 0.15; // 10성 초과: 입질 대기 -초/성 (최소 3초)
+export const ROD_TROPHY_PER_STAR = 0.02; // 월척 확률 %p/성 (0성 0% → 10성 0.2% → 30성 0.6%)
 export const ROD_REPEAT_BONUS_STARS = 10; // 이상: 반복 어획 +1코인
 export const ROD_DOUBLE_STARS = 20; // 이상: 더블 캐치(코인 2배)
 export const ROD_DOUBLE_RATE = 5; // %

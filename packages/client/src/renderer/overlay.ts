@@ -1083,8 +1083,12 @@ function setSelfFishingPhase(phase: string, fishId?: string, trophy?: boolean): 
   me.fishing.fishId = fishId ?? null;
   me.fishing.trophy = trophy === true;
   me.fishing.rod = myRodStars;
-  // 강화 보너스: 입질 대기 -0.15초/성 (최소 3초)
-  if (phase === 'waiting') me.fishing.waitDur = Math.max(3, 10 + Math.random() * 5 - myRodStars * 0.15);
+  // 입질 대기: 10성 = 기본 10~15초, 미만은 +0.5초/부족 성(0성 = 15~20초), 초과는 -0.15초/성 (최소 3초)
+  if (phase === 'waiting') {
+    const penalty = Math.max(0, 10 - myRodStars) * 0.5;
+    const bonus = Math.max(0, myRodStars - 10) * 0.15;
+    me.fishing.waitDur = Math.max(3, 10 + Math.random() * 5 + penalty - bonus);
+  }
   if (phase === 'reeling') me.fishing.reelDur = 1 + Math.random();
   window.overlay.sendFishing({ phase, fishId, trophy });
 }
@@ -1115,11 +1119,11 @@ function updateSelfFishing(now: number): void {
     case 'reeling':
       if (t >= (f.reelDur ?? 1.5)) {
         const fishId = rollFishCatch();
-        // 월척 — 일반 물고기만 (상자/보물상자 제외), 기본 0.2% + 강화 0.02%p/성
+        // 월척 — 일반 물고기만 (상자/보물상자 제외), 0.02%/성 (0성 0% → 10성 0.2% → 30성 0.6%)
         const trophy =
           fishId !== 'box' &&
           fishId !== 'treasure_chest' &&
-          Math.random() * 100 < 0.2 + myRodStars * 0.02;
+          Math.random() * 100 < myRodStars * 0.02;
         loadFishImage(fishId);
         setSelfFishingPhase('caught', fishId, trophy);
         void window.overlay.reportFish(fishId, trophy).then((res) => {
@@ -1200,36 +1204,43 @@ function drawFishing(actor: Actor, time: number): void {
   stageCtx.restore();
 }
 
-// 강화 낚싯대 글로우 (5성+) — 낚싯대 앞쪽에 은은한 빛 + 떠오르는 반짝이
+// 강화 낚싯대 글로우 (5성+) — 낚싯대 라인을 따라 얇게 흐르는 불씨 + 촉 끝 작은 불꽃 (4티어+)
+// 뚱뚱한 원형 글로우 대신 막대를 따라가는 슬림한 연출.
 // drawFishing의 미러 컨텍스트 안에서 호출되므로 dir 무관하게 앞쪽에 그려짐
 function drawRodGlow(stars: number, actorX: number, time: number): void {
   const tier = rodTier(stars);
   if (tier === 0) return;
   const vs = viewScale;
-  const cx = actorX + 26 * vs;
-  const cy = viewH - 26 * vs;
   const rainbow = tier === 6;
   const colors = ROD_TIER_COLORS[tier];
   const main = rainbow ? `hsl(${(time / 8) % 360} 90% 65%)` : colors![0];
   const bright = rainbow ? `hsl(${(time / 8 + 60) % 360} 90% 80%)` : colors![1];
+  // 낚싯대 대략선: 손잡이(캐릭터 앞) → 촉(앞쪽 위)
+  const hx = actorX + 8 * vs;
+  const hy = viewH - 16 * vs;
+  const tx = actorX + 36 * vs;
+  const ty = viewH - 33 * vs;
+  const count = 3 + tier;
+  const size = Math.max(1, Math.round(vs));
   stageCtx.save();
-  // 은은한 원형 글로우
-  stageCtx.globalAlpha = 0.1 + 0.05 * Math.sin(time / 300);
-  const grad = stageCtx.createRadialGradient(cx, cy, 0, cx, cy, 20 * vs);
-  grad.addColorStop(0, main);
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  stageCtx.fillStyle = grad;
-  stageCtx.fillRect(cx - 20 * vs, cy - 20 * vs, 40 * vs, 40 * vs);
-  // 떠오르는 반짝이 (티어가 높을수록 많이)
-  const count = 2 + tier;
-  const size = Math.max(2, Math.round(vs * 1.2));
   for (let i = 0; i < count; i++) {
-    const rise = ((time / 14 + i * 53) % 90) / 90;
-    const px = cx + Math.cos(time / 500 + i * 2.4) * 12 * vs;
-    const py = cy + 10 * vs - rise * 34 * vs;
-    stageCtx.globalAlpha = 0.9 * (1 - rise);
+    const cycle = ((time / 12 + i * 37) % 70) / 70; // 0→1 상승 후 리셋
+    const along = (i * 0.618) % 1; // 막대 위 분산 배치 (황금비)
+    const px = hx + (tx - hx) * along + Math.sin(time / 240 + i * 1.7) * 1.5 * vs;
+    const py = hy + (ty - hy) * along - cycle * 11 * vs;
+    stageCtx.globalAlpha = 0.85 * (1 - cycle);
     stageCtx.fillStyle = i % 2 ? main : bright;
     stageCtx.fillRect(Math.round(px), Math.round(py), size, size);
+  }
+  // 촉 끝 작은 불꽃 (불꽃/금빛/무지개 티어): 위로 갈수록 좁아지는 픽셀 불꽃, 일렁임
+  if (tier >= 4) {
+    const flick = 1 + 0.3 * Math.sin(time / 90 + Math.sin(time / 37) * 2);
+    const fh = 4.5 * vs * flick;
+    stageCtx.globalAlpha = 0.9;
+    stageCtx.fillStyle = main;
+    stageCtx.fillRect(Math.round(tx - 1.5 * vs), Math.round(ty - fh * 0.6), Math.round(3 * vs), Math.round(fh * 0.6));
+    stageCtx.fillStyle = bright;
+    stageCtx.fillRect(Math.round(tx - 0.75 * vs), Math.round(ty - fh), Math.round(1.5 * vs), Math.round(fh * 0.55));
   }
   stageCtx.restore();
 }
