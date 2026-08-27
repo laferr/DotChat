@@ -953,6 +953,11 @@
       .mg-card:hover {
         border-color: var(--accent);
       }
+      .mg-card.active {
+        border-color: var(--accent);
+        background: var(--self-bubble);
+        box-shadow: 0 0 8px var(--accent) inset, 0 0 6px hsl(351 64% 56% / 0.45);
+      }
       .mg-icon {
         font-size: 28px;
       }
@@ -1413,6 +1418,18 @@
         margin-top: 2px;
         padding-top: 4px;
       }
+      /* 팝아웃 모드 (?panel=) — 패널 하나만 보이는 독립 창 */
+      body.popout [id$='-panel'] {
+        top: 0 !important;
+        bottom: 0 !important;
+        border-top: none;
+      }
+      body.popout .panel-head {
+        -webkit-app-region: drag;
+      }
+      body.popout .panel-head button {
+        -webkit-app-region: no-drag;
+      }
     </style>
   </head>
   <body>
@@ -1457,7 +1474,7 @@
         <button class="mg-card" data-game="fishing">
           <span class="mg-icon">🎣</span>
           <span class="mg-name">낚시</span>
-          <span class="mg-desc" id="fishing-desc">쿨타임 없음 · 물고기 도감 수집<br />(다시 누르면 시작/중지)</span>
+          <span class="mg-desc" id="fishing-desc">⚪ 쉬는 중 — 누르면 시작<br />쿨타임 없음 · 물고기 도감 수집</span>
         </button>
         <button class="mg-card" data-game="runner">
           <span class="mg-icon">🏃</span>

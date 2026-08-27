@@ -244,7 +244,7 @@ const players = new Map<string, PlayerState>();
 const chatLog: ChatMessage[] = [];
 
 function broadcast(channel: string, payload?: unknown): void {
-  for (const win of [overlayWindow, chatWindow, fishdexWindow, tickerWindow]) {
+  for (const win of [overlayWindow, chatWindow, fishdexWindow, tickerWindow, ...popoutWindows.values()]) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   }
 }
@@ -635,6 +635,60 @@ function toggleFishdex(): void {
 
 ipcMain.on('toggle-fishdex', () => toggleFishdex());
 ipcMain.on('close-fishdex', () => fishdexWindow?.hide());
+
+// ---- 패널 팝아웃 창 (chat.html을 ?panel= 모드로 로드 — 채팅창과 로직 공유) ----
+const POPOUT_PANELS: Record<string, { w: number; h: number }> = {
+  forge: { w: 340, h: 470 },
+  shop: { w: 360, h: 520 },
+  slot: { w: 320, h: 420 },
+  stock: { w: 380, h: 520 },
+  note: { w: 340, h: 480 },
+};
+const popoutWindows = new Map<string, BrowserWindow>();
+
+function togglePopout(panel: string): void {
+  const size = POPOUT_PANELS[panel];
+  if (!size) return;
+  const existing = popoutWindows.get(panel);
+  if (existing && !existing.isDestroyed()) {
+    existing.close();
+    return;
+  }
+  const win = new BrowserWindow({
+    width: size.w,
+    height: size.h,
+    useContentSize: true,
+    show: false,
+    frame: false,
+    resizable: true,
+    minWidth: 260,
+    minHeight: 300,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    webPreferences: { preload: PRELOAD },
+  });
+  popoutWindows.set(panel, win);
+  pipeConsole(win, `popout:${panel}`);
+  win.loadFile(path.join(RENDERER_DIR, 'chat.html'), { query: { panel } });
+  // 렌더러의 첫 resize-popout(내용 실측) 후에 표시 — 크기 조정이 화면에 안 보이게
+  const showFallback = setTimeout(() => {
+    if (!win.isDestroyed() && !win.isVisible()) win.show();
+  }, 800);
+  win.on('closed', () => {
+    clearTimeout(showFallback);
+    if (popoutWindows.get(panel) === win) popoutWindows.delete(panel);
+  });
+}
+
+ipcMain.on('toggle-popout', (_e, panel: string) => togglePopout(String(panel)));
+ipcMain.on('close-popout', (_e, panel: string) => popoutWindows.get(String(panel))?.close());
+ipcMain.on('resize-popout', (_e, panel: string, height: number) => {
+  const win = popoutWindows.get(String(panel));
+  if (!win || win.isDestroyed()) return;
+  const h = Math.max(200, Math.min(700, Math.round(Number(height) || 0)));
+  if (h > 0) win.setContentSize(win.getContentSize()[0], h);
+  if (!win.isVisible()) win.show();
+});
 
 // ---- IPC: 오버레이/공통 ----
 

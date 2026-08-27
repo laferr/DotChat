@@ -25,7 +25,11 @@
     }
   }
 
+  // 팝아웃 모드: ?panel=<id> 로 열리면 해당 패널만 보이는 독립 창으로 동작
+  const POPOUT = new URLSearchParams(location.search).get('panel');
+
   function maybeMarkRead(): void {
+    if (POPOUT) return; // 팝아웃 창은 채팅을 실제로 보는 창이 아니므로 읽음 보고 금지
     if (document.visibilityState === 'visible' && latestTs > 0) {
       window.overlay.markRead(latestTs);
     }
@@ -1549,6 +1553,7 @@
   const minigameClose = document.getElementById('minigame-close') as HTMLButtonElement;
   const runnerCdEl = document.getElementById('runner-cd')!;
   const fishingDescEl = document.getElementById('fishing-desc')!;
+  const fishingCardEl = document.querySelector('.mg-card[data-game="fishing"]')!;
 
   async function renderMinigame(): Promise<void> {
     const state = await window.overlay.getMinigameState();
@@ -1557,8 +1562,9 @@
         ? `쿨타임 ${state.runnerRemainSec}초 남음`
         : '5분마다 1회 · ↑점프 ↓엎드리기';
     fishingDescEl.innerHTML = state.fishingActive
-      ? '🟢 낚시 중 — 누르면 중지'
-      : '쿨타임 없음 · 물고기 도감 수집<br />(다시 누르면 시작/중지)';
+      ? '낚시 중 — 누르면 중지'
+      : '쉬는 중 — 누르면 시작<br />쿨타임 없음 · 물고기 도감 수집';
+    fishingCardEl.classList.toggle('active', state.fishingActive);
   }
 
   minigameClose.addEventListener('click', () => minigamePanel.classList.remove('open'));
@@ -1576,11 +1582,12 @@
         setTimeout(async () => {
           const st = await window.overlay.getMinigameState();
           addSystemMessage(st.fishingActive ? '🎣 낚시를 시작했어요.' : '🎣 낚시를 중지했어요.');
+          void renderMinigame(); // 카드 상태(⚪/🟢)와 하이라이트 갱신 — 패널은 열어둔다
         }, 250);
       } else {
         addSystemMessage('🏃 달리기 시작! (↑점프 ↓엎드리기)');
+        minigamePanel.classList.remove('open');
       }
-      minigamePanel.classList.remove('open');
     });
   }
 
@@ -1777,27 +1784,23 @@
         window.overlay.toggleFishdex();
         break;
       case 'slot':
-        slotPanel.classList.add('open');
+        window.overlay.togglePopout('slot');
         break;
       case 'forge':
-        forgePanel.classList.add('open');
-        void renderForge();
+        window.overlay.togglePopout('forge');
         break;
       case 'note':
-        notePanel.classList.add('open');
-        void populateNoteRecipients();
+        window.overlay.togglePopout('note');
         break;
       case 'stock':
-        stockPanel.classList.add('open');
-        void openStockPanel();
+        window.overlay.togglePopout('stock');
         break;
       case 'tickerlog':
         tickerlogPanel.classList.add('open');
         void openTickerlogPanel();
         break;
       case 'shop':
-        shopPanel.classList.add('open');
-        void renderShop();
+        window.overlay.togglePopout('shop');
         break;
       case 'appearance':
         panel.classList.add('open');
@@ -1920,5 +1923,50 @@
     setStatus(s.connected, s.online);
   });
 
-  inputEl.focus();
+  // ---- 팝아웃 모드 초기화 — 대상 패널만 보이게 하고 렌더 ----
+  if (POPOUT) {
+    document.body.classList.add('popout');
+    const target = document.getElementById(`${POPOUT}-panel`);
+    if (target) {
+      for (const el of Array.from(document.body.children)) {
+        if (el !== target && el.tagName !== 'SCRIPT') (el as HTMLElement).style.display = 'none';
+      }
+      target.classList.add('open');
+      switch (POPOUT) {
+        case 'forge':
+          void renderForge();
+          break;
+        case 'shop':
+          void renderShop();
+          break;
+        case 'stock':
+          void openStockPanel();
+          break;
+        case 'note':
+          void populateNoteRecipients();
+          break;
+      }
+      // 패널 ✕(open 해제) → 창 닫기
+      new MutationObserver(() => {
+        if (!target.classList.contains('open')) window.overlay.closePopout(POPOUT);
+      }).observe(target, { attributes: true, attributeFilter: ['class'] });
+      // 내용 자연 높이 실측 → 창 높이 맞춤 (첫 실측이 와야 창이 표시됨)
+      let lastFit = 0;
+      const fitPopout = () => {
+        target.style.position = 'static';
+        target.style.height = 'auto';
+        const natural = target.offsetHeight;
+        target.style.position = '';
+        target.style.height = '';
+        if (natural > 0 && Math.abs(natural - lastFit) > 24) {
+          lastFit = natural;
+          window.overlay.resizePopout(POPOUT, natural + 2);
+        }
+      };
+      fitPopout();
+      setTimeout(fitPopout, 600); // 비동기 렌더(상점 목록 등) 반영분 1회 보정
+    }
+  } else {
+    inputEl.focus();
+  }
 })();
