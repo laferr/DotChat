@@ -30,6 +30,8 @@ const NET_CHANNELS = new Set([
   'self:notes',
   'self:note',
   'self:minigame',
+  'self:daily',
+  'self:gems',
   'self:runner-key',
   'net:ranking',
 ]);
@@ -81,6 +83,8 @@ contextBridge.exposeInMainWorld('overlay', {
   buyItem: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy', itemId),
   getRanking: (): Promise<unknown[]> => ipcRenderer.invoke('ranking'),
   getRankingCached: (): Promise<unknown> => ipcRenderer.invoke('ranking-cached'),
+  getDailyState: (): Promise<unknown> => ipcRenderer.invoke('daily-state'),
+  buyAction: (actionId: string): Promise<unknown> => ipcRenderer.invoke('buy-action', actionId),
   togglePopout: (panel: string) => ipcRenderer.send('toggle-popout', panel),
   closePopout: (panel: string) => ipcRenderer.send('close-popout', panel),
   resizePopout: (panel: string, height: number) => ipcRenderer.send('resize-popout', panel, height),

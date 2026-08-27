@@ -1070,6 +1070,7 @@
       #note-panel,
       #stock-panel,
       #tickerlog-panel,
+      #daily-panel,
       #slot-panel {
         position: absolute;
         left: 0;
@@ -1092,6 +1093,7 @@
       #note-panel.open,
       #stock-panel.open,
       #tickerlog-panel.open,
+      #daily-panel.open,
       #slot-panel.open {
         display: flex;
       }
@@ -1430,6 +1432,114 @@
       body.popout .panel-head button {
         -webkit-app-region: no-drag;
       }
+      /* ---- 일일퀘스트 ---- */
+      #daily-list {
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        overflow-y: auto;
+      }
+      .dq-row {
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .dq-row.done {
+        opacity: 0.75;
+        border-color: var(--accent);
+      }
+      .dq-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+      .dq-reward {
+        color: var(--accent);
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .dq-bar {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--bg-input);
+        overflow: hidden;
+      }
+      .dq-fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 3px;
+      }
+      .dq-count {
+        font-size: 11px;
+        color: var(--text-dim);
+        margin-top: 4px;
+        text-align: right;
+      }
+      #daily-bonus {
+        font-size: 12px;
+        color: var(--text-dim);
+        text-align: center;
+        padding: 4px 0 6px;
+      }
+      /* ---- 액션 버튼 팔레트 ---- */
+      #action-popup {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: 58px;
+        display: none;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+        background: var(--bg-input);
+        border: 1px solid var(--header);
+        border-radius: 10px;
+        padding: 8px;
+        z-index: 25;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+      }
+      #action-popup.open {
+        display: grid;
+      }
+      #action-popup button {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--header);
+        border-radius: 7px;
+        padding: 6px 8px;
+        cursor: pointer;
+        font-size: 12px;
+        text-align: center;
+      }
+      #action-popup .action-group {
+        grid-column: 1 / -1;
+        font-size: 11px;
+        color: var(--text-dim);
+        padding: 4px 2px 0;
+      }
+      #action-popup button:hover {
+        background: var(--header-hover);
+        border-color: var(--accent);
+      }
+      #action-popup button.locked {
+        opacity: 0.75;
+      }
+      #action-btn {
+        border: 0;
+        background: var(--bubble-other);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 0 10px;
+        cursor: pointer;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+      #action-btn:hover {
+        background: var(--header-hover);
+      }
     </style>
   </head>
   <body>
@@ -1437,6 +1547,7 @@
       <span class="title">DotChat</span>
       <span class="online" id="online">접속 확인 중…</span>
       <span class="coins" id="coin-balance">🪙 -</span>
+      <span class="coins" id="gem-balance">💎 -</span>
       <span class="spacer"></span>
       <button id="update-bell" title="새 업데이트" hidden>🔔</button>
       <button id="menu-btn" title="메뉴">☰</button>
@@ -1453,6 +1564,7 @@
     </div>
     <div id="menu-dropdown">
       <button data-menu="minigame">🕹️ 미니게임</button>
+      <button data-menu="daily">📋 일일퀘스트</button>
       <button data-menu="slot">🎰 슬롯머신</button>
       <button data-menu="forge">🔨 대장간</button>
       <button data-menu="note">✉️ 쪽지</button>
@@ -1482,6 +1594,13 @@
           <span class="mg-desc" id="runner-cd">5분마다 1회 · ↑점프 ↓엎드리기</span>
         </button>
       </div>
+    </div>
+    <div id="daily-panel">
+      <div class="panel-head">
+        <span>일일퀘스트 <span id="daily-streak"></span></span>
+        <button id="daily-close">✕</button>
+      </div>
+      <div id="daily-list"></div>
     </div>
     <div id="shop-panel">
       <div class="panel-head">
@@ -1647,10 +1766,12 @@
     </div>
     <div id="messages"></div>
     <div id="emoji-popup"></div>
+    <div id="action-popup"></div>
     <footer>
       <button id="img-btn" title="이미지 전송 (Ctrl+V로 붙여넣기도 가능)">📎</button>
       <input id="img-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
       <button id="emoji-btn" title="리액션 이모지">😊</button>
+      <button id="action-btn" title="액션 (캐릭터 애니메이션)">⚔️</button>
       <input id="chat-input" maxlength="200" placeholder="메시지 입력 후 Enter" autocomplete="off" />
       <button id="send-btn">전송</button>
     </footer>

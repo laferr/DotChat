@@ -118,6 +118,8 @@ interface OverlayApi {
   buyItem(itemId: string): Promise<unknown>;
   getRanking(): Promise<unknown[]>;
   getRankingCached(): Promise<unknown>;
+  getDailyState(): Promise<unknown>;
+  buyAction(actionId: string): Promise<unknown>;
   togglePopout(panel: string): void;
   closePopout(panel: string): void;
   resizePopout(panel: string, height: number): void;

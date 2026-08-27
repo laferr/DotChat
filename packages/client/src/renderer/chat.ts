@@ -163,6 +163,21 @@
   }
 
   // 채팅 명령어 → 액션 (대사는 메인 프로세스가 랜덤 선택)
+  /** 액션 상점 가격표 (protocol.ts ACTION_SHOP과 동일) */
+  const ACTION_SHOP_UI: { id: string; word: string; price: number }[] = [
+    { id: 'slash', word: '베기', price: 8 },
+    { id: 'jab', word: '찌르기', price: 8 },
+    { id: 'shot', word: '쏘기', price: 8 },
+    { id: 'block', word: '막기', price: 6 },
+    { id: 'roll', word: '구르기', price: 6 },
+    { id: 'jump', word: '점프', price: 6 },
+    { id: 'death', word: '죽은척', price: 10 },
+    { id: 'crawl', word: '엎드려', price: 6 },
+    { id: 'ready', word: '전투준비', price: 6 },
+  ];
+  /** 서버 지갑 기준 보유 액션 (self:wallet으로 갱신) */
+  let ownedActions: string[] = [];
+
   const CHAT_COMMANDS: Record<string, string> = {
     공격: 'attack', // 활 장착 시 자동으로 활쏘기
     베기: 'slash',
@@ -194,6 +209,10 @@
       }
       const command = CHAT_COMMANDS[word];
       if (command) {
+        if (!actionUsable(command)) {
+          addSystemMessage(`🔒 '/${word}' 액션은 상점에서 💎로 구매해야 쓸 수 있어요.`);
+          return;
+        }
         window.overlay.sendAction(command);
         return;
       }
@@ -538,6 +557,12 @@
   slotClose.addEventListener('click', () => slotPanel.classList.remove('open'));
 
   window.overlay.on('self:coins', (data) => updateCoins(Number(data) || 0));
+
+  const gemBalanceEl = document.getElementById('gem-balance')!;
+  function updateGems(value: number): void {
+    gemBalanceEl.textContent = `💎 ${value}`;
+  }
+  window.overlay.on('self:gems', (data) => updateGems(Number(data) || 0));
   window.overlay.on('net:slot-win', (data) => {
     const d = data as { id: string; nickname: string; tag: string; kind: string; delta: number };
     if (d.id === chatSelfId) return; // 본인은 슬롯 결과창으로 충분
@@ -1454,12 +1479,53 @@
   }
 
   async function renderShop(): Promise<void> {
-    const wallet = (await window.overlay.getWallet()) as { coins: number; items: string[] };
+    const wallet = (await window.overlay.getWallet()) as {
+      coins: number;
+      items: string[];
+      gems?: number;
+      actions?: string[];
+    };
     updateCoins(wallet.coins);
-    shopCoinsEl.textContent = `🪙 ${wallet.coins}`;
+    const gems = wallet.gems ?? 0;
+    updateGems(gems);
+    shopCoinsEl.textContent = `🪙 ${wallet.coins} · 💎 ${gems}`;
     const inv = await window.overlay.getInventory();
     const eq = inv.equipped;
     shopList.innerHTML = '';
+
+    // 💎 액션 (젬 전용 — 골드로 구매 불가)
+    const ownedActs = wallet.actions ?? [];
+    const actHead = document.createElement('div');
+    actHead.className = 'shop-group';
+    actHead.textContent = '💎 액션 (구매해야 사용 가능)';
+    shopList.appendChild(actHead);
+    for (const item of ACTION_SHOP_UI) {
+      const row = document.createElement('div');
+      row.className = 'shop-item';
+      const preview = document.createElement('div');
+      preview.className = 'shop-preview';
+      preview.textContent = '🎬';
+      const name = document.createElement('span');
+      name.className = 'shop-name';
+      name.textContent = item.word;
+      const btn = document.createElement('button');
+      btn.className = 'shop-btn';
+      if (ownedActs.includes(item.id)) {
+        btn.textContent = '보유';
+        btn.disabled = true;
+      } else {
+        btn.textContent = `${item.price} 💎`;
+        btn.disabled = gems < item.price;
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          const res = (await window.overlay.buyAction(item.id)) as { ok: boolean; error?: string };
+          addSystemMessage(res.ok ? `💎 '${item.word}' 액션 구매!` : (res.error ?? '구매에 실패했어요.'));
+          void renderShop();
+        });
+      }
+      row.append(preview, name, btn);
+      shopList.appendChild(row);
+    }
 
     // 미보유 랜덤 파츠 뽑기 (결제 서버, 지급 로컬 — 눈/귀는 종족 세트에 포함이라 없음)
     const randHead = document.createElement('div');
@@ -1664,12 +1730,197 @@
 
   emojiBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    actionPopup.classList.remove('open');
     void buildEmojiPopup().then(() => emojiPopup.classList.toggle('open'));
   });
   document.addEventListener('click', (e) => {
     if (!emojiPopup.contains(e.target as Node) && e.target !== emojiBtn) {
       emojiPopup.classList.remove('open');
     }
+  });
+
+  // ---- 액션 버튼 팔레트 (💎 구매한 액션만 사용 가능) ----
+
+  const actionBtn = document.getElementById('action-btn') as HTMLButtonElement;
+  const actionPopup = document.getElementById('action-popup')!;
+  const ACTION_GROUPS: { label: string; words: string[] }[] = [
+    { label: '공격 — 무기에 맞는 공격 (활 장착 시 활쏘기)', words: ['공격'] },
+    { label: '무기 모션', words: ['베기', '찌르기', '쏘기'] },
+    { label: '방어/회피', words: ['막기', '구르기', '점프'] },
+    { label: '기타 모션', words: ['죽은척', '엎드려', '전투준비'] },
+  ];
+
+  function actionUsable(command: string): boolean {
+    if (command === 'attack') return ownedActions.includes('slash') || ownedActions.includes('shot');
+    return ownedActions.includes(command);
+  }
+
+  function rebuildActionPopup(): void {
+    actionPopup.innerHTML = '';
+    for (const group of ACTION_GROUPS) {
+      const head = document.createElement('div');
+      head.className = 'action-group';
+      head.textContent = group.label;
+      actionPopup.appendChild(head);
+      for (const word of group.words) {
+        const command = CHAT_COMMANDS[word];
+        if (!command) continue;
+        const usable = actionUsable(command);
+        const price = ACTION_SHOP_UI.find((a) => a.id === command)?.price ?? 0;
+        const btn = document.createElement('button');
+        if (usable) {
+          btn.textContent = word;
+          btn.title = `/${word}`;
+          btn.addEventListener('click', () => {
+            actionPopup.classList.remove('open');
+            window.overlay.sendAction(command);
+          });
+        } else {
+          const lockedLabel = `🔒 ${word} · ${price} 💎`;
+          btn.classList.add('locked');
+          btn.textContent = lockedLabel;
+          btn.title = '눌러서 구매';
+          let confirming = false;
+          btn.addEventListener('click', async () => {
+            if (!confirming) {
+              confirming = true;
+              btn.textContent = `${price} 💎로 구매?`;
+              setTimeout(() => {
+                if (confirming) {
+                  confirming = false;
+                  btn.textContent = lockedLabel;
+                }
+              }, 3000);
+              return;
+            }
+            confirming = false;
+            btn.disabled = true;
+            const res = (await window.overlay.buyAction(command)) as { ok: boolean; error?: string };
+            addSystemMessage(res.ok ? `💎 '${word}' 액션 구매!` : (res.error ?? '구매에 실패했어요.'));
+            rebuildActionPopup();
+          });
+        }
+        actionPopup.appendChild(btn);
+      }
+    }
+  }
+  rebuildActionPopup();
+
+  window.overlay.on('self:wallet', (data) => {
+    const w = data as { actions?: string[] };
+    ownedActions = w.actions ?? [];
+    rebuildActionPopup();
+  });
+  void window.overlay.getWallet().then((data) => {
+    const w = data as { gems?: number; actions?: string[] };
+    ownedActions = w.actions ?? [];
+    updateGems(w.gems ?? 0);
+    rebuildActionPopup();
+  });
+
+  actionBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    emojiPopup.classList.remove('open');
+    actionPopup.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!actionPopup.contains(e.target as Node) && e.target !== actionBtn) {
+      actionPopup.classList.remove('open');
+    }
+  });
+
+  // ---- 일일퀘스트 패널 ----
+
+  const dailyPanel = document.getElementById('daily-panel')!;
+  const dailyClose = document.getElementById('daily-close') as HTMLButtonElement;
+  const dailyStreakEl = document.getElementById('daily-streak')!;
+  const dailyList = document.getElementById('daily-list')!;
+  dailyClose.addEventListener('click', () => dailyPanel.classList.remove('open'));
+
+  interface DailyView {
+    date: string;
+    streak: number;
+    quests: { id: string; name: string; goal: number; reward: number; count: number; claimed: boolean }[];
+    allBonusClaimed: boolean;
+    news?: string;
+  }
+  let dailyState: DailyView | null = null;
+
+  function renderDaily(): void {
+    if (!dailyState) {
+      dailyList.innerHTML = '<div style="padding:12px;color:var(--text-dim)">서버 연결 후 표시됩니다.</div>';
+      return;
+    }
+    dailyStreakEl.textContent = `· 연속 출석 ${dailyState.streak}일차`;
+    dailyList.innerHTML = '';
+
+    // 출석 보상 (접속 시 자동 지급 — 완료 상태로 표시)
+    {
+      const streak = dailyState.streak;
+      const attendCoin = Math.min(3 + Math.max(0, streak - 1), 10);
+      const weekly = streak > 0 && streak % 7 === 0;
+      const row = document.createElement('div');
+      row.className = 'dq-row done';
+      const title = document.createElement('div');
+      title.className = 'dq-title';
+      const nameEl = document.createElement('span');
+      nameEl.textContent = `📅 출석 ${streak}일차`;
+      const rewardEl = document.createElement('span');
+      rewardEl.className = 'dq-reward';
+      rewardEl.textContent = `+${attendCoin} 🪙${weekly ? ' +5 💎' : ''}`;
+      title.append(nameEl, rewardEl);
+      const bar = document.createElement('div');
+      bar.className = 'dq-bar';
+      const fill = document.createElement('div');
+      fill.className = 'dq-fill';
+      fill.style.width = '100%';
+      bar.appendChild(fill);
+      const count = document.createElement('div');
+      count.className = 'dq-count';
+      count.textContent = '지급 완료 · 내일도 접속하면 연속 출석!';
+      row.append(title, bar, count);
+      dailyList.appendChild(row);
+    }
+
+    for (const q of dailyState.quests) {
+      const row = document.createElement('div');
+      row.className = 'dq-row' + (q.claimed ? ' done' : '');
+      const title = document.createElement('div');
+      title.className = 'dq-title';
+      const nameEl = document.createElement('span');
+      nameEl.textContent = q.name;
+      const rewardEl = document.createElement('span');
+      rewardEl.className = 'dq-reward';
+      rewardEl.textContent = `+${q.reward} 💎`;
+      title.append(nameEl, rewardEl);
+      const bar = document.createElement('div');
+      bar.className = 'dq-bar';
+      const fill = document.createElement('div');
+      fill.className = 'dq-fill';
+      fill.style.width = `${Math.min(100, (q.count / q.goal) * 100)}%`;
+      bar.appendChild(fill);
+      const count = document.createElement('div');
+      count.className = 'dq-count';
+      count.textContent = `${q.count} / ${q.goal}`;
+      row.append(title, bar, count);
+      dailyList.appendChild(row);
+    }
+    const bonus = document.createElement('div');
+    bonus.id = 'daily-bonus';
+    bonus.textContent = dailyState.allBonusClaimed
+      ? '🎉 오늘 퀘스트 전부 완료! 보너스 지급됨'
+      : '오늘 퀘스트 전부 완료 시 보너스 +5 💎';
+    dailyList.appendChild(bonus);
+  }
+
+  window.overlay.on('self:daily', (data) => {
+    const st = data as DailyView;
+    dailyState = st;
+    if (st.news && !POPOUT) addSystemMessage(st.news);
+    if (dailyPanel.classList.contains('open')) renderDaily();
+  });
+  void window.overlay.getDailyState().then((data) => {
+    if (data) dailyState = data as DailyView;
   });
 
   // ---- 코인 랭킹 바 (헤더 아래 상시 표시 — ✕로 완전 숨김, /랭킹·메뉴로 재표시) ----
@@ -1760,6 +2011,7 @@
     notePanel.classList.remove('open');
     stockPanel.classList.remove('open');
     tickerlogPanel.classList.remove('open');
+    dailyPanel.classList.remove('open');
     window.clearInterval(stockTimerHandle);
   }
 
@@ -1779,6 +2031,10 @@
       case 'minigame':
         minigamePanel.classList.add('open');
         void renderMinigame();
+        break;
+      case 'daily':
+        dailyPanel.classList.add('open');
+        renderDaily();
         break;
       case 'fishdex':
         window.overlay.toggleFishdex();

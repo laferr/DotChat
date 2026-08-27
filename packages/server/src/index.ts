@@ -76,6 +76,15 @@ import {
   sanitizeAppearance,
   sanitizePinned,
   ServerToClientEvents,
+  DAILY_QUESTS,
+  DAILY_ALL_BONUS,
+  ATTEND_BASE_COIN,
+  ATTEND_MAX_COIN,
+  ATTEND_WEEKLY_BONUS,
+  dailyDateKey,
+  dailyQuestIdsFor,
+  DailyState,
+  ACTION_SHOP,
 } from '@dotchat/shared';
 
 const port = Number(process.env.PORT ?? DEFAULT_PORT);
@@ -149,6 +158,12 @@ interface Wallet {
   rodFails?: number;
   /** 주식 보유 { 종목id: { 수량, 평단가 } } */
   stocks?: Record<string, { qty: number; avg: number }>;
+  /** 일일퀘스트/출석 상태 */
+  daily?: { date: string; streak: number; counts: Record<string, number>; claimed: string[]; allBonus: boolean };
+  /** 💎 잔액 (일퀘 보상/출석 7일 보너스로 획득) */
+  gems?: number;
+  /** 구매한 액션 id 목록 */
+  actions?: string[];
 }
 
 let wallets: Record<string, Wallet> = {};
@@ -172,6 +187,12 @@ function loadWallets(): void {
             rodFails: Math.max(0, Math.floor(Number((w as any).rodFails) || 0)),
             stocks:
               (w as any).stocks && typeof (w as any).stocks === 'object' ? (w as any).stocks : undefined,
+            daily:
+              (w as any).daily && typeof (w as any).daily === 'object' ? (w as any).daily : undefined,
+            gems: Math.max(0, Math.floor(Number((w as any).gems) || 0)),
+            actions: Array.isArray((w as any).actions)
+              ? ((w as any).actions as unknown[]).filter((i): i is string => typeof i === 'string')
+              : [],
           };
         }
       }
@@ -468,6 +489,82 @@ function rankingPayloadFor(key: string, sorted = rankingSorted()) {
   };
 }
 
+// ---- 일일퀘스트 / 출석보상 ----
+
+/** 날짜가 바뀌었으면 출석 보상 지급 + 퀘스트 리셋. 지급 시 안내 문구 반환 */
+function ensureDaily(key: string): string | null {
+  const wallet = wallets[key];
+  if (!wallet) return null;
+  const today = dailyDateKey();
+  if (wallet.daily?.date === today) return null;
+  const yesterday = dailyDateKey(Date.now() - 24 * 3600 * 1000);
+  const streak = wallet.daily?.date === yesterday ? wallet.daily.streak + 1 : 1;
+  wallet.daily = { date: today, streak, counts: {}, claimed: [], allBonus: false };
+  const coin = Math.min(ATTEND_BASE_COIN + (streak - 1), ATTEND_MAX_COIN);
+  let news = `📅 출석 ${streak}일차! +${coin} 🪙`;
+  if (streak % 7 === 0) {
+    wallet.gems = (wallet.gems ?? 0) + ATTEND_WEEKLY_BONUS;
+    news = `📅 출석 ${streak}일차! +${coin} 🪙 · 7일 연속 보너스 +${ATTEND_WEEKLY_BONUS} 💎`;
+  }
+  wallet.coins += coin;
+  saveWallets();
+  console.log(`[daily] ${key} 출석 ${streak}일차 (+${coin})`);
+  return news;
+}
+
+function dailyStateFor(key: string, news?: string | null): DailyState {
+  const d = wallets[key]?.daily;
+  const date = d?.date ?? dailyDateKey();
+  return {
+    date,
+    streak: d?.streak ?? 0,
+    quests: dailyQuestIdsFor(date).map((id) => {
+      const def = DAILY_QUESTS.find((q) => q.id === id)!;
+      return {
+        ...def,
+        count: Math.min(d?.counts[id] ?? 0, def.goal),
+        claimed: d?.claimed.includes(id) ?? false,
+      };
+    }),
+    allBonusClaimed: d?.allBonus ?? false,
+    news: news ?? undefined,
+  };
+}
+
+/** 퀘스트 진행 보고 — 목표 달성 시 즉시 보상 지급, 해당 소켓에 daily push */
+function questProgress(socketId: string, questId: string, amount = 1, absolute = false): void {
+  const player = players.get(socketId);
+  if (!player) return;
+  const key = walletKey(player);
+  const wallet = wallets[key];
+  if (!wallet) return;
+  const attendNews = ensureDaily(key); // 접속 중 자정을 넘긴 경우 대비
+  const d = wallet.daily!;
+  const active = dailyQuestIdsFor(d.date);
+  const def = DAILY_QUESTS.find((q) => q.id === questId);
+  if (!def || !active.includes(questId) || d.claimed.includes(questId)) {
+    if (attendNews) io.sockets.sockets.get(socketId)?.emit('daily', dailyStateFor(key, attendNews));
+    return;
+  }
+  const prev = d.counts[questId] ?? 0;
+  d.counts[questId] = absolute ? Math.max(prev, amount) : prev + amount;
+  let news: string | null = attendNews;
+  if (d.counts[questId] >= def.goal) {
+    d.claimed.push(questId);
+    wallet.gems = (wallet.gems ?? 0) + def.reward;
+    news = `📋 일일퀘스트 완료: ${def.name} (+${def.reward} 💎)`;
+    if (!d.allBonus && active.every((id) => d.claimed.includes(id))) {
+      d.allBonus = true;
+      wallet.gems += DAILY_ALL_BONUS;
+      news += ` · 🎉 오늘 퀘스트 전부 완료! (+${DAILY_ALL_BONUS} 💎)`;
+    }
+    saveWallets();
+    io.sockets.sockets.get(socketId)?.emit('gems', wallet.gems ?? 0);
+    console.log(`[daily] ${key} 퀘스트 완료: ${questId}`);
+  }
+  io.sockets.sockets.get(socketId)?.emit('daily', dailyStateFor(key, news));
+}
+
 // 접속 1분당 코인 적립 (같은 지갑 다중 접속은 1회만)
 setInterval(() => {
   if (players.size === 0) return;
@@ -626,8 +723,16 @@ io.on('connection', (socket) => {
       rodStars: wallets[key].rodStars ?? 0,
       rodFails: wallets[key].rodFails ?? 0,
       stocks: { ...(wallets[key].stocks ?? {}) },
+      gems: wallets[key].gems ?? 0,
+      actions: [...(wallets[key].actions ?? [])],
     });
     socket.emit('stocks', stocksSnapshot());
+    const attendNews = ensureDaily(key);
+    if (attendNews) {
+      socket.emit('coins', wallets[key].coins);
+      socket.emit('gems', wallets[key].gems ?? 0);
+    }
+    socket.emit('daily', dailyStateFor(key, attendNews));
     socket.emit('ranking-update', rankingPayloadFor(key));
     socket.emit('chat-history', chatHistory.slice(-100));
     // 미확인 그림 쪽지 배달
@@ -655,6 +760,7 @@ io.on('connection', (socket) => {
     if (!player) return;
     const action = String(data?.action ?? '');
     if (!(ACTION_IDS as readonly string[]).includes(action)) return;
+    if (!wallets[walletKey(player)]?.actions?.includes(action)) return; // 미구매 액션 차단
     const now = Date.now();
     if (now - (lastChatAt.get(socket.id) ?? 0) < 300) return; // 도배 방지 공유
     lastChatAt.set(socket.id, now);
@@ -697,6 +803,7 @@ io.on('connection', (socket) => {
     const roll = Math.random() * 100;
     const row = SLOT_TABLE.find((r) => roll < r.upto)!;
     wallet.coins = wallet.coins - SLOT_COST + row.delta;
+    questProgress(socket.id, 'slot');
     saveWallets();
     reply({
       ok: true,
@@ -788,6 +895,7 @@ io.on('connection', (socket) => {
     const key = walletKey(player);
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     const isNew = !wallet.fish.includes(id);
+    questProgress(socket.id, 'fish');
     if (isNew) wallet.fish.push(id);
 
     // 특수 어획물: 상자(코인), 보물상자(코인 or 미보유 상점 아이템)
@@ -1205,6 +1313,7 @@ io.on('connection', (socket) => {
     const delta = Math.min(RUNNER_COIN_MAX, Math.floor(secs * RUNNER_COIN_PER_SEC));
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
     wallet.coins += delta;
+    questProgress(socket.id, 'runner', Math.floor(secs), true);
     saveWallets();
     reply({ ok: true, delta, coins: wallet.coins });
     console.log(`[runner] ${key}: ${secs.toFixed(1)}초 (+${delta})`);
@@ -1230,6 +1339,37 @@ io.on('connection', (socket) => {
     };
     io.emit('chat', msg);
     recordChat(msg);
+    questProgress(socket.id, 'reaction');
+  });
+
+  socket.on('buy-action', (actionId, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const item = ACTION_SHOP.find((a) => a.id === String(actionId));
+    if (!item) {
+      reply({ ok: false, error: '없는 액션이에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    wallet.actions = wallet.actions ?? [];
+    if (wallet.actions.includes(item.id)) {
+      reply({ ok: false, error: '이미 보유한 액션이에요.' });
+      return;
+    }
+    if ((wallet.gems ?? 0) < item.price) {
+      reply({ ok: false, error: `젬이 부족해요. (${wallet.gems ?? 0}/${item.price} 💎)` });
+      return;
+    }
+    wallet.gems = (wallet.gems ?? 0) - item.price;
+    wallet.actions.push(item.id);
+    saveWallets();
+    reply({ ok: true, gems: wallet.gems, actions: [...wallet.actions] });
+    console.log(`[action-shop] ${key}: ${item.id} 구매 (잔여 ${wallet.gems} 💎)`);
   });
 
   socket.on('ranking', (ack) => {
@@ -1287,6 +1427,7 @@ io.on('connection', (socket) => {
     };
     io.emit('chat', msg);
     recordChat(msg);
+    questProgress(socket.id, 'chat');
     console.log(`[chat] ${player.nickname}#${player.tag}: ${clean}`);
   });
 

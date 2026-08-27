@@ -158,6 +158,73 @@ export type FishAck = (res: {
   items?: string[];
 }) => void;
 
+// ---- 일일퀘스트 / 출석보상 ----
+export interface DailyQuestDef {
+  id: string;
+  name: string;
+  goal: number;
+  reward: number;
+}
+export const DAILY_QUESTS: DailyQuestDef[] = [
+  { id: 'chat', name: '채팅 10회 보내기', goal: 10, reward: 3 },
+  { id: 'fish', name: '물고기 3마리 낚기', goal: 3, reward: 5 },
+  { id: 'slot', name: '슬롯머신 1회 돌리기', goal: 1, reward: 2 },
+  { id: 'runner', name: '달리기 10초 생존', goal: 10, reward: 3 },
+  { id: 'reaction', name: '리액션 이모지 3회 보내기', goal: 3, reward: 2 },
+];
+export const DAILY_QUEST_COUNT = 3; // 하루에 활성화되는 퀘스트 수
+export const DAILY_ALL_BONUS = 5; // 활성 퀘스트 전부 완료 보너스
+export const ATTEND_BASE_COIN = 3; // 출석 1일차 보상
+export const ATTEND_MAX_COIN = 10; // 연속 출석 보상 상한 (1일차 3 → +1/일)
+export const ATTEND_WEEKLY_BONUS = 5; // 연속 7일마다 추가 보너스
+
+/** KST 기준 날짜 키 (YYYY-MM-DD) — 자정에 퀘스트/출석 리셋 */
+export function dailyDateKey(now = Date.now()): string {
+  return new Date(now + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/** 날짜 키로 결정되는 오늘의 퀘스트 id — 모든 유저가 같은 세트 */
+export function dailyQuestIdsFor(dateKey: string): string[] {
+  let seed = 0;
+  for (const ch of dateKey) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+  const ids = DAILY_QUESTS.map((q) => q.id);
+  for (let i = ids.length - 1; i > 0; i--) {
+    seed = (seed * 1103515245 + 12345) >>> 0;
+    const j = seed % (i + 1);
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  return ids.slice(0, DAILY_QUEST_COUNT);
+}
+
+export interface DailyState {
+  date: string;
+  /** 연속 출석 일수 */
+  streak: number;
+  quests: { id: string; name: string; goal: number; reward: number; count: number; claimed: boolean }[];
+  allBonusClaimed: boolean;
+  /** 방금 발생한 안내 (출석/퀘스트 완료) — 있을 때만 */
+  news?: string;
+}
+
+// ---- 젬(💎) — 일퀘/출석 보너스로 얻는 프리미엄 재화. 액션 구매 전용 (골드로 구매 불가) ----
+export interface ActionShopItem {
+  id: ActionId;
+  name: string;
+  /** 💎 가격 */
+  price: number;
+}
+export const ACTION_SHOP: ActionShopItem[] = [
+  { id: 'slash', name: '베기', price: 8 },
+  { id: 'jab', name: '찌르기', price: 8 },
+  { id: 'shot', name: '쏘기', price: 8 },
+  { id: 'block', name: '막기', price: 6 },
+  { id: 'roll', name: '구르기', price: 6 },
+  { id: 'jump', name: '점프', price: 6 },
+  { id: 'death', name: '죽은척', price: 10 },
+  { id: 'crawl', name: '엎드려', price: 6 },
+  { id: 'ready', name: '전투준비', price: 6 },
+];
+
 export interface ClientToServerEvents {
   hello: (data: { nickname: string; tag: string; appearance: Appearance; pinned?: string }) => void;
   move: (data: MovePayload) => void;
@@ -174,6 +241,11 @@ export interface ClientToServerEvents {
   slot: (ack: (res: SlotResult) => void) => void;
   /** 상점 구매 */
   buy: (itemId: string, ack: (res: { ok: boolean; error?: string; coins?: number; items?: string[] }) => void) => void;
+  /** 액션 구매 (💎 전용) */
+  'buy-action': (
+    actionId: string,
+    ack: (res: { ok: boolean; error?: string; gems?: number; actions?: string[] }) => void,
+  ) => void;
   /** 코인 랭킹 톱5 */
   ranking: (ack: (rows: { name: string; coins: number }[]) => void) => void;
   /** 낚시 상태 브로드캐스트용 (다른 접속자에게 애니메이션 동기화, trophy = 월척 3배, rod = 강화 성 — 글로우 연출) */
@@ -270,6 +342,8 @@ export interface ServerToClientEvents {
   'player-read': (data: { id: string; ts: number }) => void;
   /** 내 코인 잔액 (접속/적립/슬롯 정산 시) */
   coins: (coins: number) => void;
+  /** 내 젬 잔액 (일퀘 보상/액션 구매 시) */
+  gems: (gems: number) => void;
   /** 내 지갑 전체 (잔액 + 보유 상점 아이템 + 낚시 도감 + 월척 기록 + 낚싯대 강화 + 주식) */
   wallet: (data: {
     coins: number;
@@ -279,6 +353,10 @@ export interface ServerToClientEvents {
     rodStars?: number;
     rodFails?: number;
     stocks?: Record<string, { qty: number; avg: number }>;
+    /** 💎 잔액 */
+    gems?: number;
+    /** 구매한 액션 id 목록 */
+    actions?: string[];
   }) => void;
   /** 강화 대박/하락 전체 알림 (20성 이상) */
   'enhance-news': (data: {
@@ -313,6 +391,8 @@ export interface ServerToClientEvents {
     rows: { name: string; coins: number }[];
     me?: { rank: number; coins: number };
   }) => void;
+  /** 일일퀘스트/출석 상태 (접속 직후 + 진행/완료 시 개인 전송) */
+  daily: (state: DailyState) => void;
 }
 
 // ---- 그림 쪽지 (64x64 픽셀 그림을 특정 유저에게 전달) ----

@@ -240,6 +240,7 @@ let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 let selfId: string | null = null;
 let unreadCount = 0;
 let lastRanking: unknown = null;
+let lastDaily: unknown = null;
 const players = new Map<string, PlayerState>();
 const chatLog: ChatMessage[] = [];
 
@@ -348,7 +349,10 @@ function connect(): void {
     myRodStars = data.rodStars ?? 0;
     myRodFails = data.rodFails ?? 0;
     myStocks = data.stocks ?? {};
+    myGems = data.gems ?? 0;
+    myActions = data.actions ?? [];
     broadcast('self:coins', myCoins);
+    broadcast('self:gems', myGems);
     broadcast('self:wallet', data);
   });
 
@@ -393,6 +397,16 @@ function connect(): void {
   socket.on('ranking-update', (data) => {
     lastRanking = data;
     broadcast('net:ranking', data);
+  });
+
+  socket.on('daily', (state) => {
+    lastDaily = state;
+    broadcast('self:daily', state);
+  });
+
+  socket.on('gems', (g) => {
+    myGems = Number(g) || 0;
+    broadcast('self:gems', myGems);
   });
 
   socket.on('chat', (msg) => {
@@ -1025,11 +1039,32 @@ let myTrophies: string[] = [];
 let myRodStars = 0;
 let myRodFails = 0;
 let myStocks: Record<string, { qty: number; avg: number }> = {};
+let myGems = 0;
+let myActions: string[] = [];
 let myStocksMarket: unknown = null; // 최신 시세 스냅샷 (stocks 이벤트)
 
 ipcMain.handle('get-coins', () => myCoins);
 
 ipcMain.handle('get-wallet', () => walletSnapshot());
+
+ipcMain.handle('buy-action', (_e, actionId: string) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('buy-action', String(actionId), (err: unknown, res: unknown) => {
+      const r = res as { ok?: boolean; gems?: number; actions?: string[] } | undefined;
+      if (!err && r?.ok) {
+        if (typeof r.gems === 'number') myGems = r.gems;
+        if (Array.isArray(r.actions)) myActions = r.actions;
+        broadcast('self:gems', myGems);
+        broadcast('self:wallet', walletSnapshot());
+      }
+      resolve(err ? { ok: false, error: '응답이 없어요.' } : res);
+    });
+  });
+});
 
 // ---- 가상 주식 / 전광판 ----
 
@@ -1112,6 +1147,8 @@ function walletSnapshot() {
     rodStars: myRodStars,
     rodFails: myRodFails,
     stocks: myStocks,
+    gems: myGems,
+    actions: myActions,
   };
 }
 
@@ -1162,6 +1199,7 @@ ipcMain.handle('shop-buy', (_e, itemId: string) => {
 });
 
 ipcMain.handle('ranking-cached', () => lastRanking);
+ipcMain.handle('daily-state', () => lastDaily);
 
 ipcMain.handle('ranking', () => {
   return new Promise((resolve) => {
