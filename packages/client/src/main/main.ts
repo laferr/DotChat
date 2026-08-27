@@ -350,6 +350,22 @@ function connect(): void {
     broadcast('net:enhance-news', data);
   });
 
+  socket.on('brag-news', (data) => {
+    broadcast('net:brag-news', data);
+  });
+
+  // 그림 쪽지 — 접속 시 일괄 / 실시간 수신
+  socket.on('notes', (notes) => {
+    myNotes = Array.isArray(notes) ? notes : [];
+    broadcast('self:notes', myNotes);
+  });
+
+  socket.on('note', (note) => {
+    if (!note || myNotes.some((n) => n.id === note.id)) return;
+    myNotes.push(note);
+    broadcast('self:note', note);
+  });
+
   socket.on('player-fishing', (data) => {
     broadcast('net:player-fishing', data);
   });
@@ -1123,6 +1139,51 @@ ipcMain.handle('fish-caught', (_e, fishId: string, trophy?: boolean) => {
         broadcast('self:wallet', walletSnapshot());
       }
       resolve(res);
+    });
+  });
+});
+
+// ---- 그림 쪽지 / 자랑하기 ----
+
+let myNotes: { id: string; from: string; ts: number; image: string }[] = [];
+
+ipcMain.handle('get-notes', () => myNotes);
+
+ipcMain.handle('note-send', (_e, data: { to?: unknown; image?: unknown }) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    const payload = { to: String(data?.to ?? ''), image: String(data?.image ?? '') };
+    (socket as any).timeout(10000).emit('note-send', payload, (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      resolve(res);
+    });
+  });
+});
+
+ipcMain.on('note-read', (_e, noteId: string) => {
+  const id = String(noteId);
+  myNotes = myNotes.filter((n) => n.id !== id);
+  if (socket?.connected) socket.emit('note-read', id);
+});
+
+ipcMain.handle('brag', () => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit('brag', (err: unknown, res: any) => {
+      resolve(err || !res ? { ok: false, error: '응답 시간이 초과됐어요.' } : res);
     });
   });
 });

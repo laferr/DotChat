@@ -704,6 +704,41 @@
 
   forgeBtn.addEventListener('click', () => void doForge());
   forgeClose.addEventListener('click', () => forgePanel.classList.remove('open'));
+
+  // 자랑하기 — 내 강화도를 전체 채팅에 브로드캐스트 (쿨타임 1분)
+  const forgeBragBtn = document.getElementById('forge-brag') as HTMLButtonElement;
+  let bragCooldownTimer = 0;
+
+  forgeBragBtn.addEventListener('click', async () => {
+    forgeBragBtn.disabled = true;
+    const res = (await window.overlay.brag()) as { ok: boolean; error?: string };
+    if (!res.ok) {
+      addSystemMessage(res.error ?? '자랑에 실패했어요.');
+      forgeBragBtn.disabled = false;
+      return;
+    }
+    let remain = 60;
+    window.clearInterval(bragCooldownTimer);
+    const tickCd = () => {
+      if (remain <= 0) {
+        window.clearInterval(bragCooldownTimer);
+        forgeBragBtn.disabled = false;
+        forgeBragBtn.textContent = '📢 자랑';
+        return;
+      }
+      forgeBragBtn.textContent = `📢 ${remain}s`;
+      remain--;
+    };
+    tickCd();
+    bragCooldownTimer = window.setInterval(tickCd, 1000);
+  });
+
+  window.overlay.on('net:brag-news', (data) => {
+    const d = data as { nickname: string; tag: string; stars: number };
+    const flair =
+      d.stars >= 30 ? ' 🌈' : d.stars >= 25 ? ' ✨' : d.stars >= 20 ? ' 🔥' : d.stars >= 15 ? ' 💜' : d.stars >= 10 ? ' 💙' : d.stars >= 5 ? ' 🤍' : '';
+    addSystemMessage(`📢 ${d.nickname}#${d.tag}님이 낚싯대 ${d.stars}성을 자랑합니다!${flair}`);
+  });
   window.overlay.on('self:wallet', () => {
     if (forgePanel.classList.contains('open') && !forging) void renderForge();
   });
@@ -715,6 +750,183 @@
         ? `🔨 ${d.nickname}#${d.tag}님의 낚싯대가 ${d.stars}성 강화에 성공했습니다!!`
         : `💥 ${d.nickname}#${d.tag}님의 낚싯대가 ${d.stars}성으로 하락했습니다...`,
     );
+  });
+
+  // ---- 그림 쪽지 (64x64 픽셀 그림판 → 5코인으로 전송) ----
+
+  const notePanel = document.getElementById('note-panel')!;
+  const noteClose = document.getElementById('note-close') as HTMLButtonElement;
+  const noteCanvas = document.getElementById('note-canvas') as HTMLCanvasElement;
+  const notePalette = document.getElementById('note-palette')!;
+  const noteRecipient = document.getElementById('note-recipient') as HTMLSelectElement;
+  const noteSendBtn = document.getElementById('note-send-btn') as HTMLButtonElement;
+  const nctx = noteCanvas.getContext('2d')!;
+
+  const NOTE_COLORS = [
+    '#000000', '#5a5f6b', '#ffffff', '#d94f63', '#ff8dc7', '#ff7b3f', '#ffd66e',
+    '#8be06a', '#3fa66a', '#6ec3ff', '#4f7bd9', '#8a5fd9', '#8a6d3b', '#3a2430',
+  ];
+  let noteColor = NOTE_COLORS[0];
+  let noteBrush = 1;
+  let noteEraser = false;
+  let notePainting = false;
+  let noteLast: { x: number; y: number } | null = null;
+
+  for (const color of NOTE_COLORS) {
+    const btn = document.createElement('button');
+    btn.className = color === noteColor ? 'npal active' : 'npal';
+    btn.style.background = color;
+    btn.title = color;
+    btn.addEventListener('click', () => {
+      noteColor = color;
+      noteEraser = false;
+      for (const el of notePalette.children) el.classList.toggle('active', el === btn);
+      noteEraserBtn.classList.remove('active');
+    });
+    notePalette.appendChild(btn);
+  }
+
+  const notePen1 = document.getElementById('note-pen1') as HTMLButtonElement;
+  const notePen3 = document.getElementById('note-pen3') as HTMLButtonElement;
+  const noteEraserBtn = document.getElementById('note-eraser') as HTMLButtonElement;
+  const noteClearBtn = document.getElementById('note-clear') as HTMLButtonElement;
+
+  notePen1.addEventListener('click', () => {
+    noteBrush = 1;
+    notePen1.classList.add('active');
+    notePen3.classList.remove('active');
+  });
+  notePen3.addEventListener('click', () => {
+    noteBrush = 3;
+    notePen3.classList.add('active');
+    notePen1.classList.remove('active');
+  });
+  noteEraserBtn.addEventListener('click', () => {
+    noteEraser = !noteEraser;
+    noteEraserBtn.classList.toggle('active', noteEraser);
+  });
+  noteClearBtn.addEventListener('click', () => nctx.clearRect(0, 0, 64, 64));
+
+  function notePos(e: PointerEvent): { x: number; y: number } {
+    const rect = noteCanvas.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(63, Math.floor(((e.clientX - rect.left) / rect.width) * 64))),
+      y: Math.max(0, Math.min(63, Math.floor(((e.clientY - rect.top) / rect.height) * 64))),
+    };
+  }
+
+  function notePlot(x: number, y: number): void {
+    const off = noteBrush >> 1;
+    if (noteEraser) {
+      nctx.clearRect(x - off, y - off, noteBrush, noteBrush);
+    } else {
+      nctx.fillStyle = noteColor;
+      nctx.fillRect(x - off, y - off, noteBrush, noteBrush);
+    }
+  }
+
+  function noteLine(from: { x: number; y: number }, to: { x: number; y: number }): void {
+    const steps = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y), 1);
+    for (let i = 0; i <= steps; i++) {
+      notePlot(
+        Math.round(from.x + ((to.x - from.x) * i) / steps),
+        Math.round(from.y + ((to.y - from.y) * i) / steps),
+      );
+    }
+  }
+
+  noteCanvas.addEventListener('pointerdown', (e) => {
+    notePainting = true;
+    noteCanvas.setPointerCapture(e.pointerId);
+    const p = notePos(e);
+    notePlot(p.x, p.y);
+    noteLast = p;
+  });
+  noteCanvas.addEventListener('pointermove', (e) => {
+    if (!notePainting) return;
+    const p = notePos(e);
+    if (noteLast) noteLine(noteLast, p);
+    noteLast = p;
+  });
+  const noteEnd = () => {
+    notePainting = false;
+    noteLast = null;
+  };
+  noteCanvas.addEventListener('pointerup', noteEnd);
+  noteCanvas.addEventListener('pointercancel', noteEnd);
+
+  async function populateNoteRecipients(): Promise<void> {
+    const state = await window.overlay.getNetState();
+    const prev = noteRecipient.value;
+    noteRecipient.innerHTML = '';
+    const others = state.players.filter((p) => p.id !== chatSelfId);
+    if (others.length === 0) {
+      const opt = document.createElement('option');
+      opt.textContent = '접속 중인 사람이 없어요';
+      opt.value = '';
+      noteRecipient.appendChild(opt);
+      return;
+    }
+    const seen = new Set<string>();
+    for (const p of others) {
+      const key = `${p.nickname}#${p.tag}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = key;
+      noteRecipient.appendChild(opt);
+    }
+    if (prev && seen.has(prev)) noteRecipient.value = prev;
+  }
+
+  let noteCooldownTimer = 0;
+
+  function startNoteCooldown(sec: number): void {
+    window.clearInterval(noteCooldownTimer);
+    let remain = sec;
+    noteSendBtn.disabled = true;
+    const tickCd = () => {
+      if (remain <= 0) {
+        window.clearInterval(noteCooldownTimer);
+        noteSendBtn.disabled = false;
+        noteSendBtn.textContent = '보내기 (5 🪙)';
+        return;
+      }
+      noteSendBtn.textContent = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
+      remain--;
+    };
+    tickCd();
+    noteCooldownTimer = window.setInterval(tickCd, 1000);
+  }
+
+  noteSendBtn.addEventListener('click', async () => {
+    const to = noteRecipient.value;
+    if (!to) {
+      addSystemMessage('받는 사람을 선택해주세요.');
+      return;
+    }
+    noteSendBtn.disabled = true;
+    const res = (await window.overlay.sendNote({ to, image: noteCanvas.toDataURL('image/png') })) as {
+      ok: boolean;
+      error?: string;
+    };
+    if (res.ok) {
+      addSystemMessage(`✉️ ${to}님에게 쪽지를 보냈어요! (-5🪙)`);
+      nctx.clearRect(0, 0, 64, 64);
+      startNoteCooldown(180);
+    } else {
+      addSystemMessage(res.error ?? '쪽지 전송에 실패했어요.');
+      noteSendBtn.disabled = false;
+    }
+  });
+
+  noteClose.addEventListener('click', () => notePanel.classList.remove('open'));
+  window.overlay.on('net:player-joined', () => {
+    if (notePanel.classList.contains('open')) void populateNoteRecipients();
+  });
+  window.overlay.on('net:player-left', () => {
+    if (notePanel.classList.contains('open')) void populateNoteRecipients();
   });
 
   // ---- 옵션 패널 (투명도 / 표시 배율) ----
@@ -1164,6 +1376,7 @@
     shopPanel.classList.remove('open');
     minigamePanel.classList.remove('open');
     forgePanel.classList.remove('open');
+    notePanel.classList.remove('open');
   }
 
   menuBtn.addEventListener('click', (e) => {
@@ -1192,6 +1405,10 @@
       case 'forge':
         forgePanel.classList.add('open');
         void renderForge();
+        break;
+      case 'note':
+        notePanel.classList.add('open');
+        void populateNoteRecipients();
         break;
       case 'shop':
         shopPanel.classList.add('open');

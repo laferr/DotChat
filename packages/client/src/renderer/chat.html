@@ -564,6 +564,115 @@
       }
       #forge-btn:hover:enabled { background: var(--accent-hover); }
       #forge-btn:disabled { opacity: 0.5; cursor: default; }
+      #forge-btn-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      #forge-brag {
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
+        font-weight: 700;
+        font-size: 12px;
+        border-radius: 8px;
+        padding: 9px 12px;
+        cursor: pointer;
+      }
+      #forge-brag:hover:enabled { border-color: var(--accent); }
+      #forge-brag:disabled { opacity: 0.5; cursor: default; }
+      /* ---- 그림 쪽지 (64x64 픽셀 그림판) ---- */
+      #note-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 14px 12px;
+        overflow-y: auto;
+      }
+      #note-canvas {
+        width: 256px;
+        height: 256px;
+        image-rendering: pixelated;
+        background: #ffe9a8;
+        border: 2px solid #8a6d3b;
+        border-radius: 4px;
+        cursor: crosshair;
+        touch-action: none;
+        flex-shrink: 0;
+      }
+      #note-palette {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        justify-content: center;
+        max-width: 290px;
+      }
+      .npal {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        padding: 0;
+      }
+      .npal.active { border-color: #fffdf7; }
+      #note-tools {
+        display: flex;
+        gap: 6px;
+      }
+      .ntool {
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .ntool:hover { border-color: var(--accent); }
+      .ntool.active {
+        background: var(--self-bubble);
+        border-color: var(--accent);
+      }
+      #note-send-row {
+        display: flex;
+        gap: 6px;
+        width: 100%;
+      }
+      #note-recipient {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--header);
+        background: var(--bg-input);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        outline: none;
+      }
+      #note-send-btn {
+        border: 0;
+        background: var(--accent);
+        color: #fffdf7;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 0 14px;
+        cursor: pointer;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      #note-send-btn:hover:enabled { background: var(--accent-hover); }
+      #note-send-btn:disabled { opacity: 0.5; cursor: default; }
+      #note-body .hint {
+        font-size: 10px;
+        color: var(--text-dim);
+        line-height: 1.6;
+        text-align: center;
+        margin: 0;
+      }
       #forge-body .hint {
         font-size: 10px;
         color: var(--text-dim);
@@ -793,6 +902,7 @@
       #minigame-panel,
       #fishdex-panel,
       #forge-panel,
+      #note-panel,
       #slot-panel {
         position: absolute;
         left: 0;
@@ -812,6 +922,7 @@
       #minigame-panel.open,
       #fishdex-panel.open,
       #forge-panel.open,
+      #note-panel.open,
       #slot-panel.open {
         display: flex;
       }
@@ -1090,6 +1201,7 @@
       <button data-menu="minigame">🕹️ 미니게임</button>
       <button data-menu="slot">🎰 슬롯머신</button>
       <button data-menu="forge">🔨 대장간</button>
+      <button data-menu="note">✉️ 쪽지</button>
       <button data-menu="shop">🛒 상점</button>
       <button data-menu="fishdex">📖 낚시도감</button>
       <button data-menu="appearance">👕 외모 변경</button>
@@ -1153,12 +1265,36 @@
         </div>
         <div id="forge-stars"></div>
         <div id="forge-rates"></div>
-        <button id="forge-btn">강화하기</button>
+        <div id="forge-btn-row">
+          <button id="forge-btn">강화하기</button>
+          <button id="forge-brag" title="내 강화도를 채팅에 자랑 (쿨타임 1분)">📢 자랑</button>
+        </div>
         <p class="hint">
           10성 미만은 입질이 느리고 월척이 잘 안 나와요 — 10성부터 낚싯대 제 성능!<br />
           15·20·25성은 체크포인트 — 하락해도 그 밑으로는 떨어지지 않아요.<br />
           같은 성에서 10번 연속 실패하면 다음 강화는 반드시 성공! · 주말엔 하락 확률 30% 감소
         </p>
+      </div>
+    </div>
+    <div id="note-panel">
+      <div class="panel-head">
+        <span>그림 쪽지</span>
+        <button id="note-close">✕</button>
+      </div>
+      <div id="note-body">
+        <canvas id="note-canvas" width="64" height="64"></canvas>
+        <div id="note-palette"></div>
+        <div id="note-tools">
+          <button id="note-pen1" class="ntool active" title="가는 붓">✏️ 가는붓</button>
+          <button id="note-pen3" class="ntool" title="굵은 붓">🖌️ 굵은붓</button>
+          <button id="note-eraser" class="ntool" title="지우개">🧽 지우개</button>
+          <button id="note-clear" class="ntool" title="전부 지우기">🗑️</button>
+        </div>
+        <div id="note-send-row">
+          <select id="note-recipient"></select>
+          <button id="note-send-btn">보내기 (5 🪙)</button>
+        </div>
+        <p class="hint">마우스로 그림을 그려 접속 중인 사람에게 보내요. 쿨타임 3분.<br />받는 사람 화면 위쪽에 포스트잇으로 나타납니다.</p>
       </div>
     </div>
     <div id="options-panel">

@@ -24,6 +24,9 @@ const NET_CHANNELS = new Set([
   'net:slot-win',
   'net:player-fishing',
   'net:enhance-news',
+  'net:brag-news',
+  'self:notes',
+  'self:note',
   'self:minigame',
   'self:runner-key',
 ]);
@@ -84,6 +87,11 @@ contextBridge.exposeInMainWorld('overlay', {
     ipcRenderer.invoke('fish-caught', fishId, trophy),
   buyRandom: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy-random', itemId),
   enhance: (): Promise<unknown> => ipcRenderer.invoke('enhance'),
+  brag: (): Promise<unknown> => ipcRenderer.invoke('brag'),
+  getNotes: (): Promise<unknown[]> => ipcRenderer.invoke('get-notes'),
+  sendNote: (data: { to: string; image: string }): Promise<unknown> =>
+    ipcRenderer.invoke('note-send', data),
+  readNote: (noteId: string) => ipcRenderer.send('note-read', noteId),
   endRunner: (seconds: number): Promise<unknown> => ipcRenderer.invoke('runner-end', seconds),
   sendReaction: (index: number) => ipcRenderer.send('reaction-send', index),
   equip: (payload: { slot: string; name: string | null; h?: number; s?: number; v?: number }) =>

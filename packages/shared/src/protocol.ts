@@ -201,6 +201,15 @@ export interface ClientToServerEvents {
       coins?: number;
     }) => void,
   ) => void;
+  /** 강화도 자랑 (쿨타임 1분) — 전체에게 brag-news 브로드캐스트 */
+  brag: (ack: (res: { ok: boolean; error?: string }) => void) => void;
+  /** 그림 쪽지 보내기 (NOTE_COST 코인, 쿨타임 NOTE_COOLDOWN_MS) */
+  'note-send': (
+    data: { to: string; image: string },
+    ack: (res: { ok: boolean; error?: string; coins?: number }) => void,
+  ) => void;
+  /** 쪽지 열람 → 서버 보관함에서 삭제 */
+  'note-read': (noteId: string) => void;
   /** 보유 파츠 목록 동기화 — 클라 목록을 서버 지갑에 합집합 등록, ack로 병합 결과 반환 */
   'parts-sync': (parts: string[], ack: (res: { ok: boolean; parts?: string[] }) => void) => void;
   /** 러너 생존 시간 보고 → 코인 정산 */
@@ -249,6 +258,12 @@ export interface ServerToClientEvents {
     stars: number;
     result: 'success' | 'drop';
   }) => void;
+  /** 강화도 자랑 전체 알림 */
+  'brag-news': (data: { id: string; nickname: string; tag: string; stars: number }) => void;
+  /** 접속 시 미확인 쪽지 일괄 전달 */
+  notes: (notes: NotePayload[]) => void;
+  /** 실시간 쪽지 수신 */
+  note: (note: NotePayload) => void;
   /** 누군가의 낚시 상태 (애니메이션 동기화, trophy = 월척 3배, rod = 강화 성) */
   'player-fishing': (data: {
     id: string;
@@ -260,6 +275,25 @@ export interface ServerToClientEvents {
   /** 슬롯 대박 전체 알림 */
   'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
 }
+
+// ---- 그림 쪽지 (64x64 픽셀 그림을 특정 유저에게 전달) ----
+
+export interface NotePayload {
+  id: string;
+  /** 보낸 사람 (닉네임#태그) */
+  from: string;
+  ts: number;
+  /** 64x64 PNG data URL */
+  image: string;
+}
+
+export const NOTE_COST = 5;
+export const NOTE_COOLDOWN_MS = 3 * 60 * 1000;
+export const NOTE_IMAGE_MAX = 20_000; // data URL 최대 길이
+export const NOTE_PENDING_MAX = 10; // 수신자별 미확인 쪽지 보관 한도
+export const NOTE_RETENTION_DAYS = 7;
+/** 그림판 논리 해상도 (표시는 4배 = 256px) */
+export const NOTE_SIZE = 64;
 
 /** 고정메시지 정제 — 줄바꿈 제거 + 길이 제한 (빈 문자열 = 해제) */
 export function sanitizePinned(raw: unknown): string {

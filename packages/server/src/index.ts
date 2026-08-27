@@ -52,6 +52,12 @@ import {
   IMAGE_RETENTION_DAYS,
   MAX_CHAT_LEN,
   MAX_NICKNAME_LEN,
+  NOTE_COOLDOWN_MS,
+  NOTE_COST,
+  NOTE_IMAGE_MAX,
+  NOTE_PENDING_MAX,
+  NOTE_RETENTION_DAYS,
+  NotePayload,
   PlayerState,
   sanitizeAppearance,
   sanitizePinned,
@@ -157,6 +163,41 @@ function loadWallets(): void {
     wallets = {};
   }
 }
+
+// ---- 그림 쪽지 보관함 (수신자 지갑 키별, 열람 전까지 보관) ----
+
+const NOTES_PATH = path.join(UPLOAD_DIR, 'notes.json');
+let notesStore: Record<string, NotePayload[]> = {};
+
+function loadNotes(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(NOTES_PATH, 'utf8'));
+    if (raw && typeof raw === 'object') {
+      const cutoff = Date.now() - NOTE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+      for (const [k, v] of Object.entries(raw)) {
+        if (!Array.isArray(v)) continue;
+        const list = v.filter(
+          (n) => n && typeof n.id === 'string' && typeof n.image === 'string' && Number(n.ts) >= cutoff,
+        );
+        if (list.length > 0) notesStore[k] = list;
+      }
+    }
+    const total = Object.values(notesStore).reduce((a, l) => a + l.length, 0);
+    if (total > 0) console.log(`[note] 미확인 쪽지 ${total}개 로드`);
+  } catch {
+    notesStore = {};
+  }
+}
+
+function saveNotes(): void {
+  try {
+    fs.writeFileSync(NOTES_PATH, JSON.stringify(notesStore), 'utf8');
+  } catch (err) {
+    console.log('[note] 저장 실패:', String(err));
+  }
+}
+
+loadNotes();
 
 // 미구매 상점 치장은 외형에서 제거 (조작 방지)
 function stripUnownedCosmetics(appearance: Appearance, key: string): Appearance {
@@ -292,6 +333,8 @@ const lastRunnerAt = new Map<string, number>(); // 지갑 키 기준 (러너 쿨
 const lastPinnedAt = new Map<string, number>();
 const lastRandomBuyAt = new Map<string, number>();
 const lastEnhanceAt = new Map<string, number>();
+const lastNoteAt = new Map<string, number>(); // 지갑 키 기준
+const lastBragAt = new Map<string, number>(); // 지갑 키 기준
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
@@ -338,6 +381,8 @@ io.on('connection', (socket) => {
       rodFails: wallets[key].rodFails ?? 0,
     });
     socket.emit('chat-history', chatHistory.slice(-100));
+    // 미확인 그림 쪽지 배달
+    if (notesStore[key]?.length) socket.emit('notes', [...notesStore[key]]);
     socket.broadcast.emit('player-joined', player);
     console.log(`+ ${nickname}#${tag} [${appearance.race.name}] — ${players.size}명 접속중`);
   });
@@ -616,6 +661,101 @@ io.on('connection', (socket) => {
     console.log(
       `[enhance] ${key}: ${stars}성 → ${result}${guaranteed ? '(천장)' : ''} (현재 ${wallet.rodStars}성, -${stage.cost}) 잔액 ${wallet.coins}`,
     );
+  });
+
+  // ---- 강화도 자랑 (쿨타임 1분, 전체 브로드캐스트) ----
+
+  socket.on('brag', (ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const now = Date.now();
+    const last = lastBragAt.get(key) ?? 0;
+    if (now - last < 60_000) {
+      reply({ ok: false, error: `자랑은 ${Math.ceil((60_000 - (now - last)) / 1000)}초 후에 다시 할 수 있어요.` });
+      return;
+    }
+    lastBragAt.set(key, now);
+    const stars = wallets[key]?.rodStars ?? 0;
+    io.emit('brag-news', { id: socket.id, nickname: player.nickname, tag: player.tag, stars });
+    reply({ ok: true });
+    console.log(`[brag] ${key}: ${stars}성 자랑`);
+  });
+
+  // ---- 그림 쪽지 ----
+
+  socket.on('note-send', (data, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const to = String(data?.to ?? '');
+    if (!/^.{1,16}#\d{4}$/.test(to)) {
+      reply({ ok: false, error: '받는 사람이 올바르지 않아요.' });
+      return;
+    }
+    if (to === key) {
+      reply({ ok: false, error: '자신에게는 보낼 수 없어요.' });
+      return;
+    }
+    const image = String(data?.image ?? '');
+    if (!image.startsWith('data:image/png;base64,') || image.length > NOTE_IMAGE_MAX) {
+      reply({ ok: false, error: '그림이 올바르지 않아요.' });
+      return;
+    }
+    const now = Date.now();
+    const last = lastNoteAt.get(key) ?? 0;
+    if (now - last < NOTE_COOLDOWN_MS) {
+      reply({ ok: false, error: `쪽지는 ${Math.ceil((NOTE_COOLDOWN_MS - (now - last)) / 1000)}초 후에 보낼 수 있어요.` });
+      return;
+    }
+    const recipientOnline = [...players.values()].some((p) => walletKey(p) === to);
+    if (!recipientOnline && !(to in wallets)) {
+      reply({ ok: false, error: '그런 사람을 찾을 수 없어요.' });
+      return;
+    }
+    const queue = (notesStore[to] = notesStore[to] ?? []);
+    if (queue.length >= NOTE_PENDING_MAX) {
+      reply({ ok: false, error: '받는 사람의 쪽지함이 가득 찼어요.' });
+      return;
+    }
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    if (wallet.coins < NOTE_COST) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${NOTE_COST})`, coins: wallet.coins });
+      return;
+    }
+    wallet.coins -= NOTE_COST;
+    saveWallets();
+    lastNoteAt.set(key, now);
+    const note: NotePayload = { id: randomBytes(8).toString('hex'), from: key, ts: now, image };
+    queue.push(note);
+    saveNotes();
+    // 접속 중인 수신자에게 즉시 배달
+    for (const [sid, p] of players) {
+      if (walletKey(p) === to) io.sockets.sockets.get(sid)?.emit('note', note);
+    }
+    reply({ ok: true, coins: wallet.coins });
+    console.log(`[note] ${key} → ${to} (${Math.round(image.length / 1024)}KB, 대기 ${queue.length}개)`);
+  });
+
+  socket.on('note-read', (noteId) => {
+    const player = players.get(socket.id);
+    if (!player) return;
+    const key = walletKey(player);
+    const queue = notesStore[key];
+    if (!queue) return;
+    const idx = queue.findIndex((n) => n.id === String(noteId));
+    if (idx < 0) return;
+    queue.splice(idx, 1);
+    if (queue.length === 0) delete notesStore[key];
+    saveNotes();
   });
 
   // ---- 미보유 랜덤 파츠 뽑기 (결제만 서버, 지급은 클라이언트 로컬 풀) ----

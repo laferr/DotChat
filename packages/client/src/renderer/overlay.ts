@@ -130,6 +130,10 @@ interface OverlayApi {
     item?: { id: string; name: string };
   }>;
   buyRandom(itemId: string): Promise<{ ok: boolean; error?: string; label?: string; coins?: number }>;
+  brag(): Promise<{ ok: boolean; error?: string }>;
+  getNotes(): Promise<{ id: string; from: string; ts: number; image: string }[]>;
+  sendNote(data: { to: string; image: string }): Promise<{ ok: boolean; error?: string; coins?: number }>;
+  readNote(noteId: string): void;
   enhance(): Promise<{
     ok: boolean;
     error?: string;
@@ -1204,8 +1208,8 @@ function drawFishing(actor: Actor, time: number): void {
   stageCtx.restore();
 }
 
-// 강화 낚싯대 글로우 (5성+) — 낚싯대 라인을 따라 얇게 흐르는 불씨 + 촉 끝 작은 불꽃 (4티어+)
-// 뚱뚱한 원형 글로우 대신 막대를 따라가는 슬림한 연출.
+// 강화 낚싯대 글로우 (5성+) — 낚싯대 위 은은한 원형 글로우 + 막대 라인 불씨 + 촉 끝 불꽃 (4티어+)
+// 낚싯대 실측 위치(스트립 픽셀 스캔): 막대 = 프레임 x40~64 y31~40 → 화면 캐릭터 +24~+48, 위 25~31px
 // drawFishing의 미러 컨텍스트 안에서 호출되므로 dir 무관하게 앞쪽에 그려짐
 function drawRodGlow(stars: number, actorX: number, time: number): void {
   const tier = rodTier(stars);
@@ -1215,14 +1219,25 @@ function drawRodGlow(stars: number, actorX: number, time: number): void {
   const colors = ROD_TIER_COLORS[tier];
   const main = rainbow ? `hsl(${(time / 8) % 360} 90% 65%)` : colors![0];
   const bright = rainbow ? `hsl(${(time / 8 + 60) % 360} 90% 80%)` : colors![1];
-  // 낚싯대 대략선: 손잡이(캐릭터 앞) → 촉(앞쪽 위)
-  const hx = actorX + 8 * vs;
-  const hy = viewH - 16 * vs;
-  const tx = actorX + 36 * vs;
-  const ty = viewH - 33 * vs;
+  // 낚싯대 라인: 손잡이 → 촉 (실측)
+  const hx = actorX + 26 * vs;
+  const hy = viewH - 25 * vs;
+  const tx = actorX + 47 * vs;
+  const ty = viewH - 31 * vs;
+  const cx = (hx + tx) / 2;
+  const cy = (hy + ty) / 2;
+  stageCtx.save();
+  // 낚싯대를 감싸는 원형 글로우 (막대 중심) — 중심부 밝은 코어 + 넓은 확산
+  stageCtx.globalAlpha = 0.3 + 0.08 * Math.sin(time / 300);
+  const grad = stageCtx.createRadialGradient(cx, cy, 0, cx, cy, 17 * vs);
+  grad.addColorStop(0, bright);
+  grad.addColorStop(0.35, main);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  stageCtx.fillStyle = grad;
+  stageCtx.fillRect(cx - 17 * vs, cy - 17 * vs, 34 * vs, 34 * vs);
+  // 막대 라인을 따라 떠오르는 불씨
   const count = 3 + tier;
   const size = Math.max(1, Math.round(vs));
-  stageCtx.save();
   for (let i = 0; i < count; i++) {
     const cycle = ((time / 12 + i * 37) % 70) / 70; // 0→1 상승 후 리셋
     const along = (i * 0.618) % 1; // 막대 위 분산 배치 (황금비)
@@ -1449,6 +1464,155 @@ function drawReaction(actor: Actor, time: number): void {
   stageCtx.globalAlpha = 1;
 }
 
+// ---- 그림 쪽지 (화면 위쪽 포스트잇 버튼 → 클릭 시 펼침) ----
+
+interface OverlayNote {
+  id: string;
+  from: string;
+  ts: number;
+  image: string;
+  x: number;
+  y: number;
+  img: HTMLImageElement | null;
+}
+
+let noteIconCanvas: HTMLCanvasElement;
+const overlayNotes: OverlayNote[] = [];
+let noteOpen: { note: OverlayNote; start: number } | null = null;
+let noteHoverIdx = -1;
+let noteOpenHover = false;
+let openNoteHitRect = { x: 0, y: 0, w: 0, h: 0 };
+const NOTE_SHOW_MAX = 6;
+
+// 접힌 쪽지(딱지 편지) 아이콘 — 위 삼각 접힘 + 가로 띠 + 아래 꼬리, 가운데 X자 접힌 자국
+const NOTE_ICON_RENDER_SCALE = 2; // 표시 크기 56x52
+function buildNoteIconCanvas(): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = 28 * NOTE_ICON_RENDER_SCALE;
+  canvas.height = 26 * NOTE_ICON_RENDER_SCALE;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(NOTE_ICON_RENDER_SCALE, NOTE_ICON_RENDER_SCALE);
+  const outline: [number, number][] = [
+    [14, 0.8], // 위 꼭짓점
+    [27, 4.8], // 오른쪽 날개 끝
+    [22.6, 14.5], // 가운데 오른쪽 (접힘 교차)
+    [24.8, 22.8], // 아래 꼬리 우하단
+    [16, 25.2], // 아래 꼬리 좌하단
+    [12.2, 18.2], // 띠와 꼬리 경계
+    [3.8, 21], // 띠 좌하단
+    [1, 13.7], // 띠 왼쪽 끝
+    [7.8, 10.6], // 띠 좌상단 (삼각형과 만나는 점)
+  ];
+  ctx.beginPath();
+  outline.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+  ctx.closePath();
+  ctx.fillStyle = '#fff7dd';
+  ctx.fill();
+  ctx.strokeStyle = '#4a3826';
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  // 접힌 자국 (안쪽 선 — 가운데에서 X자로 교차)
+  ctx.strokeStyle = '#a98d55';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(7.8, 10.6);
+  ctx.lineTo(27, 4.8);
+  ctx.moveTo(14, 0.8);
+  ctx.lineTo(22.6, 14.5);
+  ctx.moveTo(12.2, 18.2);
+  ctx.lineTo(22.6, 14.5);
+  ctx.stroke();
+  return canvas;
+}
+
+function addOverlayNote(raw: { id: string; from: string; ts: number; image: string }): void {
+  if (overlayNotes.some((n) => n.id === raw.id)) return;
+  const img = new Image();
+  img.src = raw.image;
+  overlayNotes.push({
+    ...raw,
+    x: 50 + Math.random() * Math.max(100, viewW - 260), // 채팅버튼/우측 여백 회피
+    y: 6 + Math.random() * 16,
+    img,
+  });
+}
+
+function noteBtnRect(i: number): { x: number; y: number; w: number; h: number } {
+  const n = overlayNotes[i];
+  return { x: n.x, y: n.y, w: 28 * NOTE_ICON_RENDER_SCALE, h: 26 * NOTE_ICON_RENDER_SCALE };
+}
+
+function drawNotes(time: number): void {
+  // 포스트잇 버튼 (열려있는 쪽지는 버튼 대신 펼침으로)
+  const shown = overlayNotes.slice(0, NOTE_SHOW_MAX);
+  shown.forEach((n, i) => {
+    if (noteOpen?.note.id === n.id) return;
+    const bob = Math.sin(time / 320 + i * 1.9) * 2;
+    const r = noteBtnRect(i);
+    const hover = i === noteHoverIdx;
+    stageCtx.save();
+    stageCtx.globalAlpha = hover ? 1 : 0.92;
+    const scale = hover ? 1.25 : 1;
+    stageCtx.translate(r.x + r.w / 2, r.y + r.h / 2 + bob);
+    stageCtx.rotate(Math.sin(time / 700 + i) * 0.08 - 0.04);
+    stageCtx.drawImage(
+      noteIconCanvas,
+      Math.round((-noteIconCanvas.width * scale) / 2),
+      Math.round((-noteIconCanvas.height * scale) / 2),
+      noteIconCanvas.width * scale,
+      noteIconCanvas.height * scale,
+    );
+    stageCtx.restore();
+  });
+
+  // 펼쳐진 쪽지
+  if (!noteOpen) return;
+  const p = Math.min(1, (time - noteOpen.start) / 250);
+  const ease = 1 - (1 - p) * (1 - p);
+  const size = 26 + (196 - 26) * ease;
+  const pad = 8;
+  const footer = 16 * ease;
+  const nx = Math.max(8, Math.min(viewW - size - 8, noteOpen.note.x - size / 2));
+  const ny = 6;
+  stageCtx.save();
+  stageCtx.translate(nx + size / 2, ny + (size + footer) / 2);
+  stageCtx.rotate(-0.035);
+  stageCtx.translate(-size / 2, -(size + footer) / 2);
+  // 그림자 + 종이
+  stageCtx.fillStyle = 'rgba(0,0,0,0.28)';
+  stageCtx.fillRect(4, 5, size, size + footer);
+  stageCtx.fillStyle = '#ffe9a8';
+  stageCtx.strokeStyle = '#8a6d3b';
+  stageCtx.lineWidth = 2;
+  stageCtx.fillRect(0, 0, size, size + footer);
+  stageCtx.strokeRect(0, 0, size, size + footer);
+  if (p > 0.45) {
+    const img = noteOpen.note.img;
+    stageCtx.globalAlpha = Math.min(1, (p - 0.45) * 2.5);
+    if (img && img.complete && img.naturalWidth > 0) {
+      stageCtx.imageSmoothingEnabled = false;
+      stageCtx.drawImage(img, pad, pad, size - pad * 2, size - pad * 2);
+    }
+    stageCtx.fillStyle = '#6b4a00';
+    stageCtx.font = '11px "Segoe UI", "Malgun Gothic", sans-serif';
+    stageCtx.fillText(`from. ${noteOpen.note.from}`, pad, size + footer - 5);
+    stageCtx.globalAlpha = 1;
+  }
+  stageCtx.restore();
+  openNoteHitRect = { x: nx, y: ny, w: size + 4, h: size + footer + 5 };
+}
+
+// 쪽지 닫기 = 열람 완료 → 서버 보관함에서 삭제
+function closeOpenNote(): void {
+  if (!noteOpen) return;
+  const id = noteOpen.note.id;
+  window.overlay.readNote(id);
+  const idx = overlayNotes.findIndex((n) => n.id === id);
+  if (idx >= 0) overlayNotes.splice(idx, 1);
+  noteOpen = null;
+}
+
 // ---- 채팅 버튼 (우측 하단) ----
 
 const CHAT_BTN = { w: 38, h: 30, marginX: 10, marginY: 6 };
@@ -1526,7 +1690,19 @@ function updateInteractive(): void {
   chatBtnHover = pointIn(chatBtnRect(), 2);
   giftHover = gift.present && pointIn(giftRect(), 4);
   fishStopHover = !!me.fishing && pointIn(fishStopRect, 4);
-  const over = selfHover || chatBtnHover || giftHover || fishStopHover;
+  // 그림 쪽지: 펼쳐진 쪽지 or 포스트잇 버튼 호버
+  noteOpenHover = !!noteOpen && pointIn(openNoteHitRect, 4);
+  noteHoverIdx = -1;
+  if (!noteOpen) {
+    for (let i = 0; i < Math.min(overlayNotes.length, NOTE_SHOW_MAX); i++) {
+      if (pointIn(noteBtnRect(i), 4)) {
+        noteHoverIdx = i;
+        break;
+      }
+    }
+  }
+  const over =
+    selfHover || chatBtnHover || giftHover || fishStopHover || noteOpenHover || noteHoverIdx >= 0;
   if (over !== interactive) {
     interactive = over;
     window.overlay.setInteractive(over);
@@ -1535,6 +1711,14 @@ function updateInteractive(): void {
 }
 
 window.addEventListener('mousedown', () => {
+  if (noteOpenHover && noteOpen) {
+    closeOpenNote();
+    return;
+  }
+  if (noteHoverIdx >= 0 && !noteOpen) {
+    noteOpen = { note: overlayNotes[noteHoverIdx], start: performance.now() };
+    return;
+  }
   if (fishStopHover) {
     stopFishing();
     return;
@@ -1699,6 +1883,25 @@ function wireNet(): void {
     showBubble(actor, text);
     spawnHearts(actor.x, actorBox(actor).y);
   });
+
+  window.overlay.on('net:brag-news', (data) => {
+    const d = data as { id: string; stars: number };
+    const actor = d.id === selfId ? me : remotes.get(d.id);
+    if (!actor) return;
+    showBubble(actor, `🎣 내 낚싯대 ${d.stars}성이다!`);
+    spawnHearts(actor.x, actorBox(actor).y);
+  });
+
+  window.overlay.on('self:notes', (data) => {
+    const list = data as { id: string; from: string; ts: number; image: string }[];
+    overlayNotes.length = 0;
+    noteOpen = null;
+    for (const n of list) addOverlayNote(n);
+  });
+
+  window.overlay.on('self:note', (data) => {
+    addOverlayNote(data as { id: string; from: string; ts: number; image: string });
+  });
 }
 
 // ---- 메인 루프 ----
@@ -1728,6 +1931,7 @@ function tick(time: number): void {
   drawFishingStop();
   drawHearts(time);
   drawChatButton();
+  drawNotes(time);
 
   requestAnimationFrame(tick);
 }
@@ -1764,6 +1968,10 @@ async function init(): Promise<void> {
 
   heartCanvas = buildHeartCanvas();
   giftCanvas = buildGiftCanvas();
+  noteIconCanvas = buildNoteIconCanvas();
+  void window.overlay.getNotes().then((list) => {
+    for (const n of list) addOverlayNote(n);
+  });
   void initExtras();
   console.log(`[overlay] ready, viewport ${viewW}x${viewH}`);
   requestAnimationFrame((t) => {
