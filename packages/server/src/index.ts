@@ -45,6 +45,8 @@ import {
   SHOP_ITEMS,
   STOCK_HISTORY_SEND,
   STOCK_MAX_RATIO,
+  STOCK_MIN_RATIO,
+  STOCK_REBOUND_PCT,
   STOCK_QTY_MAX,
   STOCK_TICK_SEC,
   STOCKS,
@@ -445,8 +447,12 @@ function runStockTick(): void {
     }
     // 시작가 10배 초과 시 평균회귀 압력
     if (s.price > def.initial * STOCK_MAX_RATIO) pct -= 8;
+    // 시작가 10% 이하로 추락하면 회복 압력 (상폐 확률 완화)
+    if (s.price <= def.initial * STOCK_MIN_RATIO) pct += STOCK_REBOUND_PCT;
     s.prev = s.price;
-    s.price = Math.max(1, Math.round(s.price * (1 + pct / 100)));
+    // 확률적 반올림 — 저가주(변동이 ±0.5코인 미만)도 기대값 그대로 움직이게 (정수 고착 방지)
+    const raw = s.price * (1 + pct / 100);
+    s.price = Math.max(1, Math.floor(raw) + (Math.random() < raw - Math.floor(raw) ? 1 : 0));
     s.history.push(s.price);
     if (s.history.length > 288) s.history = s.history.slice(-288);
 

@@ -1057,7 +1057,7 @@
     stockBuyBtn.disabled = delisted || stockTrading;
     stockSellBtn.disabled = delisted || stockTrading;
     const h = myHoldings[id!];
-    const warn = !delisted && m.price <= Math.max(1, Math.floor(def.initial * 0.05)) * 2;
+    const warn = !delisted && m.price <= Math.max(1, Math.floor(def.initial * 0.03)) * 2;
     stockDetailLeft.innerHTML = delisted
       ? `<span class="delist-warn">💀 상장폐지 — 재상장 대기 중</span>`
       : `시작가 ${def.initial.toLocaleString()} · 현재 ${((m.price / def.initial) * 100).toFixed(0)}%` +

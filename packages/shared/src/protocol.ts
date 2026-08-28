@@ -745,8 +745,11 @@ export const STOCKS: StockDef[] = [
 ];
 
 export const STOCK_TICK_SEC = 300; // 5분 (서버 env DOTCHAT_STOCK_SEC로 단축 가능)
-export const STOCK_DELIST_RATIO = 0.05; // 시작가 5% 이하 → 상장폐지 (보유주 즉시 증발)
+export const STOCK_DELIST_RATIO = 0.03; // 시작가 3% 이하 → 상장폐지 (보유주 즉시 증발, 5%→3% 완화)
 export const STOCK_MAX_RATIO = 10; // 시작가 10배부터 평균회귀 압력
+/** 시작가 10% 이하로 추락하면 회복 압력(+%p) — 상폐 확률 완화 */
+export const STOCK_MIN_RATIO = 0.1;
+export const STOCK_REBOUND_PCT = 6;
 export const STOCK_QTY_MAX = 9999; // 종목당 보유 한도
 export const STOCK_HISTORY_SEND = 48; // 클라 차트 (4시간)
 
