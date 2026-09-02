@@ -159,9 +159,9 @@ const FORGE_TABLE: { succ: number; drop: number; cost: number }[] = [
 const FORGE_MAX = 30;
 const FORGE_PITY = 10;
 
-function forgeWeekend(): boolean {
-  const day = new Date(Date.now() + 9 * 3600_000).getUTCDay(); // KST
-  return day === 0 || day === 6;
+// 샤이닝 스타포스 — shared isEnhanceFriday와 동일 (KST 금요일 하락 30% 감소)
+function forgeFriday(): boolean {
+  return new Date(Date.now() + 9 * 3600_000).getUTCDay() === 5; // KST
 }
 
 // 강화 단계 → 이펙트 티어 (0=없음, 1=흰반짝 2=파랑 3=보라 4=불꽃 5=금빛 6=무지개)
@@ -370,6 +370,19 @@ const ACH_DEFS: {
   { id: 'x-relics', cat: '발굴', name: '과거를 캐는 자', desc: '유물 8종 수집', gems: 10, title: '고고학자', stat: 'relicDex', goal: 8 },
   { id: 'x-diamond', cat: '발굴', name: '심봤다!', desc: '다이아몬드 첫 발굴', gems: 10, stat: 'diamondDex', goal: 1 },
   { id: 'x-goldbar', cat: '발굴', name: '노다지', desc: '금괴 첫 발굴', gems: 3, stat: 'goldbar', goal: 1 },
+  { id: 'b-first', cat: '원정', name: '첫 원정', desc: '원정 전리품 첫 수령', gems: 2, stat: 'battleClaims', goal: 1 },
+  { id: 'b-stage5', cat: '원정', name: '풀숲 너머', desc: '원정 5층 돌파', gems: 2, stat: 'battleMax', goal: 5 },
+  { id: 'b-stage10', cat: '원정', name: '슬라임 킹 격파', desc: '원정 10층 돌파', gems: 5, stat: 'battleMax', goal: 10 },
+  { id: 'b-stage25', cat: '원정', name: '호수를 건너', desc: '원정 25층 돌파', gems: 5, title: '던전 탐험가', stat: 'battleMax', goal: 25 },
+  { id: 'b-stage50', cat: '원정', name: '화룡 사냥꾼', desc: '원정 50층 돌파', gems: 10, title: '용 사냥꾼', stat: 'battleMax', goal: 50 },
+  { id: 'b-stage100', cat: '원정', name: '탑의 정상', desc: '원정 100층 돌파 (봇순이 격파)', gems: 30, title: '탑의 지배자', stat: 'battleMax', goal: 100 },
+  { id: 'b-kills1000', cat: '원정', name: '천 마리째', desc: '몬스터 누적 처치 1,000', gems: 3, stat: 'battleKills', goal: 1000 },
+  { id: 'b-kills10000', cat: '원정', name: '만 마리째', desc: '몬스터 누적 처치 10,000', gems: 10, title: '몬스터 헌터', stat: 'battleKills', goal: 10000 },
+  { id: 'b-lv10', cat: '원정', name: '보석 세공 입문', desc: '보석 강화 합계 10레벨', gems: 3, stat: 'battleLv', goal: 10 },
+  { id: 'b-lv50', cat: '원정', name: '보석 세공 장인', desc: '보석 강화 합계 50레벨', gems: 10, title: '보석 세공사', stat: 'battleLv', goal: 50 },
+  { id: 'b-loot', cat: '원정', name: '전리품 감정', desc: '원정 드랍으로 광물 첫 획득', gems: 2, stat: 'battleMinerals', goal: 1 },
+  { id: 'b-lose', cat: '원정', name: '패배의 교훈', desc: '수문장에게 첫 패배', gems: 2, hidden: true },
+  { id: 'b-afk', cat: '원정', name: '진정한 방치', desc: '전리품 가방이 가득 찬 채로 수령', gems: 3, hidden: true },
   { id: 'h-owl', cat: '히든', name: '올빼미', desc: '새벽 3~5시에 채팅', gems: 3, hidden: true },
   { id: 'h-broke', cat: '히든', name: '빈털터리', desc: '코인 0으로 슬롯 시도', gems: 3, hidden: true },
   { id: 'h-shoelace', cat: '히든', name: '신발끈부터', desc: '러너 시작 1초 내 탈락', gems: 2, hidden: true },

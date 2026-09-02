@@ -1078,6 +1078,7 @@
       #daily-panel,
       #ach-panel,
       #mineraldex-panel,
+      #battle-panel,
       #slot-panel {
         position: absolute;
         left: 0;
@@ -1103,6 +1104,7 @@
       #daily-panel.open,
       #ach-panel.open,
       #mineraldex-panel.open,
+      #battle-panel.open,
       #slot-panel.open {
         display: flex;
       }
@@ -1441,6 +1443,189 @@
       body.popout .panel-head button {
         -webkit-app-region: no-drag;
       }
+      /* ---- 원정 (방치형 전투) 패널 ---- */
+      #battle-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #battle-body::-webkit-scrollbar { width: 8px; }
+      #battle-body::-webkit-scrollbar-thumb { background: var(--header); border-radius: 4px; }
+      #bt-arena {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        padding: 12px 10px 10px;
+        background: linear-gradient(180deg, var(--bg) 0%, var(--bubble-other) 100%);
+        border: 1px solid var(--header);
+        border-radius: 10px;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .bt-side { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+      .bt-avatar {
+        width: 144px;
+        height: 126px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 56px;
+        line-height: 1;
+      }
+      /* 합성 프레임의 캐릭터 영역(48x42)을 3배 도트 확대 */
+      .bt-avatar canvas { width: 144px; height: 126px; image-rendering: pixelated; }
+      .bt-avatar.foe { animation: bt-bob 1.6s ease-in-out infinite; }
+      .bt-avatar.hit { animation: bt-hit 0.35s ease-out; }
+      .bt-avatar.dead { animation: bt-dead 0.5s ease-in forwards; }
+      @keyframes bt-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+      @keyframes bt-hit {
+        0% { transform: translateX(0); filter: brightness(2.2); }
+        30% { transform: translateX(6px); }
+        60% { transform: translateX(-4px); }
+        100% { transform: translateX(0); filter: none; }
+      }
+      @keyframes bt-dead { to { transform: scale(0.2) rotate(30deg); opacity: 0; } }
+      .bt-name { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .bt-hpbar { width: 100%; height: 7px; border-radius: 4px; background: var(--bg-input); overflow: hidden; border: 1px solid var(--header); }
+      .bt-hpfill { height: 100%; border-radius: 4px; transition: width 0.2s linear; }
+      .bt-hpfill.me { background: #6ecf7a; }
+      .bt-hpfill.foe { background: var(--accent); }
+      .bt-hptext { font-size: 10px; color: var(--text-dim); }
+      #bt-vs { font-size: 20px; flex-shrink: 0; }
+      #bt-vs.swing { animation: bt-swing 0.35s ease-out; }
+      @keyframes bt-swing { 0% { transform: rotate(-35deg) scale(1.4); } 100% { transform: rotate(0) scale(1); } }
+      #bt-floats { position: absolute; inset: 0; pointer-events: none; }
+      .bt-float {
+        position: absolute;
+        font-size: 13px;
+        font-weight: 800;
+        color: #ffd66e;
+        text-shadow: 0 1px 2px #000;
+        animation: bt-float 0.9s ease-out forwards;
+        white-space: nowrap;
+      }
+      .bt-float.crit { color: #ff7a7a; font-size: 16px; }
+      .bt-float.hurt { color: #ff9a9a; }
+      .bt-float.loot { color: #8be06a; }
+      @keyframes bt-float { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-28px); opacity: 0; } }
+      #bt-banner {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        text-align: center;
+        font-size: 18px;
+        font-weight: 800;
+        text-shadow: 0 2px 4px #000;
+        opacity: 0;
+        pointer-events: none;
+      }
+      #bt-banner.show { animation: bt-banner 1.6s ease-out forwards; }
+      @keyframes bt-banner {
+        0% { opacity: 0; transform: translateY(-50%) scale(0.6); }
+        20% { opacity: 1; transform: translateY(-50%) scale(1.1); }
+        80% { opacity: 1; transform: translateY(-50%) scale(1); }
+        100% { opacity: 0; transform: translateY(-50%) scale(1); }
+      }
+      #bt-stage-row { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+      #bt-stage-row button {
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 8px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      #bt-stage-row button:hover:enabled { border-color: var(--accent); }
+      #bt-stage-row button:disabled { opacity: 0.4; cursor: default; }
+      #bt-stage-label { flex: 1; display: flex; flex-direction: column; align-items: center; line-height: 1.2; min-width: 0; }
+      #bt-stage-label b { font-size: 13px; }
+      #bt-stage-label span { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+      #bt-challenge { background: var(--accent) !important; border-color: var(--accent) !important; color: #fff !important; font-weight: 700; white-space: nowrap; }
+      #bt-challenge:hover:enabled { background: var(--accent-hover) !important; }
+      #bt-retreat {
+        font-size: 11px;
+        color: #ffb36b;
+        background: rgba(255, 179, 107, 0.12);
+        border: 1px solid rgba(255, 179, 107, 0.4);
+        border-radius: 6px;
+        padding: 5px 8px;
+        line-height: 1.4;
+      }
+      #bt-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; flex-shrink: 0; }
+      .bt-stat { background: var(--bg); border: 1px solid var(--header); border-radius: 6px; padding: 5px 4px; text-align: center; cursor: help; }
+      .bt-stat .v { font-size: 13px; font-weight: 700; }
+      .bt-stat .k { font-size: 10px; color: var(--text-dim); }
+      .bt-stat .b { font-size: 9px; color: #8be06a; min-height: 11px; }
+      #bt-loot {
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 8px;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        flex-shrink: 0;
+      }
+      #bt-loot.full { border-color: #ffd66e; box-shadow: 0 0 8px rgba(255, 214, 110, 0.35); }
+      .bt-loot-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
+      .bt-loot-head span:last-child { color: var(--text-dim); font-weight: 400; }
+      #bt-loot-summary { font-size: 11px; line-height: 1.4; }
+      #bt-loot-btns { display: flex; gap: 6px; }
+      #bt-claim { flex: 1; border: 0; background: var(--accent); color: #fff; border-radius: 6px; padding: 7px; font-size: 13px; font-weight: 700; cursor: pointer; }
+      #bt-toggle {
+        border: 1px solid var(--accent);
+        background: transparent;
+        color: var(--text);
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #bt-toggle:hover:enabled { background: var(--self-bubble); }
+      #bt-toggle:disabled { opacity: 0.5; cursor: default; }
+      #bt-toggle.start { flex: 1; background: var(--accent); color: #fff; font-size: 13px; }
+      #bt-toggle.start:hover:enabled { background: var(--accent-hover); }
+      #bt-claim:hover:enabled { background: var(--accent-hover); }
+      #bt-claim:disabled { opacity: 0.5; cursor: default; }
+      #bt-result { font-size: 11px; color: var(--text-dim); line-height: 1.5; flex-shrink: 0; }
+      #bt-result:empty { display: none; }
+      #bt-result b { color: var(--text); }
+      .bt-section-head { font-size: 11px; font-weight: 700; color: var(--nick); padding-top: 2px; display: flex; justify-content: space-between; flex-shrink: 0; }
+      #bt-upgrades { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+      .bt-up { display: flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--header); border-radius: 6px; padding: 5px 8px; }
+      .bt-up .icon { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
+      .bt-up .info { flex: 1; min-width: 0; line-height: 1.25; }
+      .bt-up .info b { font-size: 12px; }
+      .bt-up .info small { display: block; font-size: 10px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .bt-up button {
+        border: 1px solid var(--accent);
+        background: transparent;
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .bt-up button:hover:enabled { background: var(--accent); color: #fff; }
+      .bt-up button:disabled { opacity: 0.45; cursor: default; }
+      #bt-top { display: flex; flex-direction: column; gap: 2px; font-size: 11px; flex-shrink: 0; }
+      .bt-top-row { display: flex; justify-content: space-between; padding: 2px 4px; gap: 8px; }
+      .bt-top-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bt-top-row.me { color: var(--nick-self); font-weight: 700; }
+      #battle-body .hint { font-size: 10px; color: var(--text-dim); line-height: 1.5; margin: 2px 0 0; flex-shrink: 0; }
       /* ---- 일일퀘스트 ---- */
       #daily-list {
         padding: 10px 12px;
@@ -1710,6 +1895,7 @@
       <button data-menu="ach">🎖️ 도전과제</button>
       <button data-menu="slot">🎰 슬롯머신</button>
       <button data-menu="forge">🔨 대장간</button>
+      <button data-menu="battle">⚔️ 원정</button>
       <button data-menu="note">✉️ 쪽지</button>
       <button data-menu="stock">📈 주식</button>
       <button data-menu="tickerlog">🗞️ 전광판</button>
@@ -1736,6 +1922,11 @@
           <span class="mg-icon">⛏️</span>
           <span class="mg-name">땅파기</span>
           <span class="mg-desc" id="dig-desc">⚪ 쉬는 중 — 누르면 시작<br />쿨타임 없음 · 광물 도감 수집</span>
+        </button>
+        <button class="mg-card" data-game="battle">
+          <span class="mg-icon">⚔️</span>
+          <span class="mg-name">원정</span>
+          <span class="mg-desc" id="battle-desc">⚪ 쉬는 중 — 누르면 출발<br />앱을 꺼도 계속 · 💎 강화 · 층 돌파</span>
         </button>
         <button class="mg-card" data-game="runner">
           <span class="mg-icon">🏃</span>
@@ -1815,7 +2006,59 @@
         <p class="hint">
           10성 미만은 입질이 느리고 월척이 잘 안 나와요 — 10성부터 낚싯대 제 성능!<br />
           15·20·25성은 체크포인트 — 하락해도 그 밑으로는 떨어지지 않아요.<br />
-          같은 성에서 10번 연속 실패하면 다음 강화는 반드시 성공! · 주말엔 하락 확률 30% 감소
+          같은 성에서 10번 연속 실패하면 다음 강화는 반드시 성공! · ✨금요일엔 하락 확률 30% 감소
+        </p>
+      </div>
+    </div>
+    <div id="battle-panel">
+      <div class="panel-head">
+        <span>⚔️ 원정 <span id="battle-head-info"></span></span>
+        <button id="battle-close">✕</button>
+      </div>
+      <div id="battle-body">
+        <div id="bt-arena">
+          <div class="bt-side">
+            <div class="bt-avatar" id="bt-me-avatar">🧑</div>
+            <div class="bt-name" id="bt-me-name">나</div>
+            <div class="bt-hpbar"><div class="bt-hpfill me" id="bt-me-hp"></div></div>
+            <div class="bt-hptext" id="bt-me-hptext"></div>
+          </div>
+          <div id="bt-vs">⚔️</div>
+          <div class="bt-side">
+            <div class="bt-avatar foe" id="bt-foe-avatar">🟢</div>
+            <div class="bt-name" id="bt-foe-name">슬라임</div>
+            <div class="bt-hpbar"><div class="bt-hpfill foe" id="bt-foe-hp"></div></div>
+            <div class="bt-hptext" id="bt-foe-hptext"></div>
+          </div>
+          <div id="bt-floats"></div>
+          <div id="bt-banner"></div>
+        </div>
+        <div id="bt-stage-row">
+          <button id="bt-stage-prev" title="한 층 아래로 (쌓인 전리품은 자동 수령)">◀</button>
+          <div id="bt-stage-label"><b id="bt-stage-num">1층</b><span id="bt-stage-tier">뒷마당 풀숲</span></div>
+          <button id="bt-stage-next" title="한 층 위로 (쌓인 전리품은 자동 수령)">▶</button>
+          <button id="bt-challenge">🛡️ 수문장 도전</button>
+        </div>
+        <div id="bt-retreat" hidden></div>
+        <div id="bt-stats"></div>
+        <div id="bt-loot">
+          <div class="bt-loot-head"><span>🎒 전리품 가방</span><span id="bt-loot-time">-</span></div>
+          <div class="dq-bar"><div class="dq-fill" id="bt-loot-fill"></div></div>
+          <div id="bt-loot-summary">-</div>
+          <div id="bt-loot-btns">
+            <button id="bt-claim">전리품 수령</button>
+            <button id="bt-toggle">⚔️ 원정 출발</button>
+          </div>
+        </div>
+        <div id="bt-result"></div>
+        <div class="bt-section-head"><span>💎 보석 강화</span><span id="bt-gems"></span></div>
+        <div id="bt-upgrades"></div>
+        <div class="bt-section-head"><span>🏆 원정 랭킹 TOP5</span></div>
+        <div id="bt-top"></div>
+        <p class="hint">
+          캐릭터가 고른 층에서 쉬지 않고 사냥해요 — 앱을 꺼도 가방이 찰 때까지 계속!<br />
+          🎣 낚싯대 성 → 공격력 · ⛏️ 광물도감 → 체력 · 📖 낚시도감 → 행운 · 🎖️ 도전과제 → 공격·체력 보너스.<br />
+          수문장을 처치하면 다음 층이 열리고, 5·10층 보스는 💎와 상점 아이템을 떨어뜨려요. 몬스터가 떨군 광물은 광물도감에 실려요.
         </p>
       </div>
     </div>

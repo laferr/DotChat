@@ -12,6 +12,8 @@ interface NetPlayer {
   pinned?: string;
   /** 착용 중인 도전과제 칭호 */
   title?: string;
+  /** 원정 중 (공격 모션 반복 + '원정중' 라벨) */
+  battle?: boolean;
 }
 
 interface NetChatMessage {
@@ -133,7 +135,12 @@ interface OverlayApi {
   resizePopout(panel: string, height: number): void;
   getExtras(): Promise<ExtrasManifest | null>;
   loadExtra(relPath: string): Promise<string | null>;
-  getMinigameState(): Promise<{ runnerRemainSec: number; fishingActive: boolean; diggingActive: boolean }>;
+  getMinigameState(): Promise<{
+    runnerRemainSec: number;
+    fishingActive: boolean;
+    diggingActive: boolean;
+    battleActive: boolean;
+  }>;
   startMinigame(game: string): Promise<{ ok: boolean; error?: string }>;
   sendFishing(data: { phase: string; fishId?: string; trophy?: boolean }): void;
   sendDigging(data: { phase: string; itemId?: string }): void;
@@ -147,6 +154,12 @@ interface OverlayApi {
     item?: { id: string; name: string };
   }>;
   getAchState(): Promise<{ ach: string[]; title: string; metrics: Record<string, number> } | null>;
+  battleState(): Promise<unknown>;
+  battleClaim(): Promise<unknown>;
+  battleUpgrade(key: string): Promise<unknown>;
+  battleStage(stage: number): Promise<unknown>;
+  battleChallenge(): Promise<unknown>;
+  battleActive(active: boolean): Promise<unknown>;
   setTitle(title: string): Promise<{ ok: boolean; error?: string; title?: string }>;
   reportFish(fishId: string, trophy?: boolean): Promise<{
     ok: boolean;
@@ -320,6 +333,8 @@ interface Actor {
   } | null;
   /** 착용 중인 도전과제 칭호 (닉네임 위 금색 표시) */
   title: string;
+  /** 원정 중 — 제자리에서 공격 모션 반복 + 머리 위 '⚔️ 원정중' (낚시·땅파기·러너가 우선) */
+  battle: boolean;
 }
 
 // 액션 재생 정의: loop = 반복, hold = 마지막 프레임 유지
@@ -394,6 +409,7 @@ function makeActor(nickname: string, appearance: Appearance, x: number): Actor {
     reaction: null,
     digging: null,
     title: '',
+    battle: false,
   };
   setAppearance(actor, appearance);
   return actor;
@@ -454,6 +470,8 @@ function updateSelf(dt: number): void {
     me.walking = false;
   } else if (actionActive(me)) {
     me.walking = false;
+  } else if (me.battle) {
+    me.walking = false; // 원정 중: 제자리에서 사냥
   } else {
     me.walking = selfMode === 'walk';
     if (me.walking) {
@@ -517,7 +535,27 @@ function addRemote(p: NetPlayer): void {
   actor.targetX = p.x * viewW;
   actor.pinned = p.pinned ?? '';
   actor.title = p.title ?? '';
+  actor.battle = p.battle === true;
   remotes.set(p.id, actor);
+}
+
+/** 원정 모션/라벨 표시 여부 — 낚시·땅파기·(본인)러너가 우선 */
+function battleVisible(actor: Actor): boolean {
+  return actor.battle && !actor.fishing && !actor.digging && !(actor === me && runnerState.active);
+}
+
+/** 원정 공격 모션: 활이면 쏘기, 아니면 베기 — 10fps로 한 번 휘두르고 0.5초 숨 고르기(idle) 반복 */
+function battleFrame(actor: Actor): HTMLCanvasElement | null {
+  const frames = actor.frames;
+  if (!frames) return null;
+  const weapon = actor.appearance.weapon?.name ?? '';
+  const anim = (/bow/i.test(weapon) ? frames.anims.shot : frames.anims.slash) ?? frames.anims.slash ?? frames.anims.jab;
+  if (!anim || anim.length === 0) return null;
+  const fps = 10;
+  const attackDur = anim.length / fps;
+  const t = actor.animClock % (attackDur + 0.5);
+  if (t < attackDur) return anim[Math.min(anim.length - 1, Math.floor(t * fps))];
+  return frames.idle[Math.floor(actor.animClock * IDLE_FPS) % frames.idle.length];
 }
 
 // ---- 그리기 ----
@@ -544,6 +582,10 @@ function currentFrame(actor: Actor): HTMLCanvasElement | null {
       const idx = play.mode === 'loop' ? raw % anim.length : Math.min(raw, anim.length - 1);
       return anim[idx];
     }
+  }
+  if (battleVisible(actor)) {
+    const frame = battleFrame(actor);
+    if (frame) return frame;
   }
   if (actor.walking) {
     const idx = Math.floor(actor.animClock * RUN_FPS) % actor.frames.run.length;
@@ -689,7 +731,7 @@ function drawPinned(actor: Actor, now: number): void {
     box.y -
     15 -
     (actor.title ? 11 : 0) -
-    ((actor.fishing || actor.digging) && actor !== me ? 13 : 0);
+    (((actor.fishing || actor.digging) && actor !== me) || battleVisible(actor) ? 13 : 0);
   const bx = Math.max(4, Math.min(viewW - w - 4, actor.x - w / 2));
   const by = above - h - 2;
 
@@ -824,18 +866,18 @@ function drawActor(actor: Actor, now: number): void {
   drawName(actor);
   drawTitle(actor);
   drawPinned(actor, now);
-  // 원격 유저 머리 위 '낚시중/땅파는중 ...' 표시
-  if ((actor.fishing || actor.digging) && actor !== me && !actor.bubble) {
+  // 원격 유저 머리 위 '낚시중/땅파는중 ...' + (본인 포함) '⚔️ 원정중 ...' 표시
+  if ((((actor.fishing || actor.digging) && actor !== me) || battleVisible(actor)) && !actor.bubble) {
     const dots = '.'.repeat(1 + (Math.floor(now / 500) % 3));
     stageCtx.font = NAME_FONT;
-    const label = `${actor.fishing ? '낚시중' : '땅파는중'} ${dots}`;
+    const label = `${actor.fishing ? '낚시중' : actor.digging ? '땅파는중' : '⚔️ 원정중'} ${dots}`;
     const w = stageCtx.measureText(label).width;
     const box = actorBox(actor);
     const ly = box.y - 18 - (actor.title ? 11 : 0);
     stageCtx.strokeStyle = 'rgba(0,0,0,0.7)';
     stageCtx.lineWidth = 3;
     stageCtx.strokeText(label, actor.x - w / 2, ly);
-    stageCtx.fillStyle = actor.fishing ? '#9fdcff' : '#e8c17a';
+    stageCtx.fillStyle = actor.fishing ? '#9fdcff' : actor.digging ? '#e8c17a' : '#ff9a9a';
     stageCtx.fillText(label, actor.x - w / 2, ly);
   }
   drawBubble(actor, now);
@@ -1558,7 +1600,7 @@ let fishStopRect = { x: 0, y: 0, w: 0, h: 0 };
 let fishStopHover = false;
 
 function drawFishingStop(): void {
-  if (!me.fishing && !me.digging) return;
+  if (!me.fishing && !me.digging && !battleVisible(me)) return;
   const box = actorBox(me);
   const w = 56;
   const h = 18;
@@ -1573,7 +1615,7 @@ function drawFishingStop(): void {
   stageCtx.stroke();
   stageCtx.fillStyle = '#fffdf7';
   stageCtx.font = '10px "Segoe UI", "Malgun Gothic", sans-serif';
-  stageCtx.fillText('그만하기', fishStopRect.x + 8, fishStopRect.y + 13);
+  stageCtx.fillText(me.fishing || me.digging ? '그만하기' : '귀환하기', fishStopRect.x + 8, fishStopRect.y + 13);
   stageCtx.globalAlpha = 1;
 }
 
@@ -1983,7 +2025,7 @@ function updateInteractive(): void {
   selfHover = pointIn(actorBox(me), HOVER_PAD);
   chatBtnHover = pointIn(chatBtnRect(), 2);
   giftHover = gift.present && pointIn(giftRect(), 4);
-  fishStopHover = (!!me.fishing || !!me.digging) && pointIn(fishStopRect, 4);
+  fishStopHover = (!!me.fishing || !!me.digging || battleVisible(me)) && pointIn(fishStopRect, 4);
   // 그림 쪽지: 펼쳐진 쪽지 or 포스트잇 버튼 호버
   noteOpenHover = !!noteOpen && pointIn(openNoteHitRect, 4);
   noteHoverIdx = -1;
@@ -2014,8 +2056,12 @@ window.addEventListener('mousedown', () => {
     return;
   }
   if (fishStopHover) {
-    stopFishing();
-    stopDigging();
+    if (me.fishing || me.digging) {
+      stopFishing();
+      stopDigging();
+    } else if (me.battle) {
+      void window.overlay.battleActive(false); // 귀환 (서버 확정 후 self:battle로 반영)
+    }
     return;
   }
   if (chatBtnHover) {
@@ -2060,6 +2106,7 @@ function wireNet(): void {
     selfId = d.selfId;
     remotes.clear();
     d.players.forEach(addRemote);
+    me.battle = d.players.find((p) => p.id === selfId)?.battle === true;
     console.log(`[overlay] welcome: ${d.players.length}명`);
   });
 
@@ -2153,6 +2200,18 @@ function wireNet(): void {
       dir: actor.digging?.dir ?? actor.dir,
     };
     actor.walking = false;
+  });
+
+  window.overlay.on('net:player-battle', (data) => {
+    const d = data as { id: string; active: boolean };
+    const actor = d.id === selfId ? me : remotes.get(d.id);
+    if (!actor) return;
+    actor.battle = d.active === true;
+    if (actor.battle) actor.walking = false;
+  });
+
+  window.overlay.on('self:battle', (data) => {
+    me.battle = (data as { active?: boolean })?.active === true;
   });
 
   window.overlay.on('net:player-title', (data) => {
@@ -2286,6 +2345,8 @@ async function init(): Promise<void> {
   const state = await window.overlay.getNetState();
   selfId = state.selfId;
   state.players.forEach(addRemote);
+  // welcome이 오버레이 창보다 먼저 도착했으면 스냅샷에서 내 원정 상태 복원
+  me.battle = state.players.find((p) => p.id === selfId)?.battle === true;
   void window.overlay.getWallet().then((w) => {
     myRodStars = Number(w.rodStars) || 0;
   });

@@ -635,12 +635,12 @@
       return;
     }
     const st = FORGE_TABLE[stars];
-    const weekend = forgeWeekend();
-    const drop = round1(st.drop * (weekend ? 0.7 : 1));
+    const friday = forgeFriday();
+    const drop = round1(st.drop * (friday ? 0.7 : 1));
     const keep = round1(Math.max(0, 100 - st.succ - drop));
     forgeRates.innerHTML =
       `<b>${stars}성 → ${stars + 1}성</b> · 성공 <b>${st.succ}%</b> · 유지 ${keep}%` +
-      (st.drop > 0 ? ` · 하락 ${drop}%${weekend ? ' <span style="color:#8be06a">주말↓</span>' : ''}` : '') +
+      (st.drop > 0 ? ` · 하락 ${drop}%${friday ? ' <span style="color:#8be06a">금요일↓</span>' : ''}` : '') +
       '<br />' +
       (fails >= FORGE_PITY
         ? '<span class="pity-full">✨ 다음 강화 성공 보장! (천장)</span>'
@@ -1103,6 +1103,12 @@
 
   function updateStockTimer(): void {
     if (!stockMarket) return;
+    // 주말(KST 토·일)은 휴장 — 서버가 시세를 동결하고 매매를 거부한다
+    const kstDay = new Date(Date.now() + 9 * 3600_000).getUTCDay();
+    if (kstDay === 0 || kstDay === 6) {
+      stockTimer.textContent = '주말 휴장 💤';
+      return;
+    }
     const remain = Math.max(0, Math.floor((stockMarket.nextTickTs - Date.now()) / 1000));
     stockTimer.textContent = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
   }
@@ -1628,6 +1634,8 @@
   const fishingCardEl = document.querySelector('.mg-card[data-game="fishing"]')!;
   const digDescEl = document.getElementById('dig-desc')!;
   const digCardEl = document.querySelector('.mg-card[data-game="dig"]')!;
+  const battleDescEl = document.getElementById('battle-desc')!;
+  const battleCardEl = document.querySelector('.mg-card[data-game="battle"]')!;
 
   async function renderMinigame(): Promise<void> {
     const state = await window.overlay.getMinigameState();
@@ -1643,6 +1651,10 @@
       ? '땅파는 중 — 누르면 중지'
       : '쉬는 중 — 누르면 시작<br />쿨타임 없음 · 광물 도감 수집';
     digCardEl.classList.toggle('active', state.diggingActive);
+    battleDescEl.innerHTML = state.battleActive
+      ? '⚔️ 원정 중 — 누르면 귀환 (전리품 자동 수령)'
+      : '쉬는 중 — 누르면 출발<br />앱을 꺼도 계속 · 💎 강화 · 층 돌파';
+    battleCardEl.classList.toggle('active', state.battleActive);
   }
 
   minigameClose.addEventListener('click', () => minigamePanel.classList.remove('open'));
@@ -1666,6 +1678,14 @@
           }
           void renderMinigame(); // 카드 상태(⚪/🟢)와 하이라이트 갱신 — 패널은 열어둔다
         }, 250);
+      } else if (game === 'battle') {
+        const st = await window.overlay.getMinigameState();
+        addSystemMessage(
+          st.battleActive
+            ? '⚔️ 원정을 떠났어요 — 캐릭터가 제자리에서 사냥을 시작해요. (☰ → ⚔️ 원정에서 전리품·강화)'
+            : '🏠 원정에서 귀환했어요. 쌓인 전리품은 자동으로 받았어요.',
+        );
+        void renderMinigame();
       } else {
         addSystemMessage('🏃 달리기 시작! (↑점프 ↓엎드리기)');
         minigamePanel.classList.remove('open');
@@ -2193,6 +2213,556 @@
     else void window.overlay.getRanking().then(renderRanking);
   });
 
+  // ---- 원정 (방치형 전투) 패널 — 판정·정산은 서버, 여기서는 상태 표시 + 연출 ----
+
+  interface BattleStatsView {
+    atk: number;
+    hp: number;
+    crit: number;
+    luck: number;
+    dps: number;
+    capMs: number;
+    bonus: { rodAtkPct: number; mineralHpPct: number; fishLuckPct: number; achPct: number };
+  }
+  interface BattleView {
+    active: boolean;
+    stage: number;
+    effStage: number;
+    maxStage: number;
+    lv: Record<string, number>;
+    costs: Record<string, number | null>;
+    stats: BattleStatsView;
+    tier: string;
+    mob: { emoji: string; name: string; hp: number; atk: number };
+    guardian: {
+      stage: number;
+      emoji: string;
+      name: string;
+      hp: number;
+      atk: number;
+      kind: string;
+      reward: { coins: number; gems: number };
+    } | null;
+    killMs: number;
+    coinPerKill: number;
+    since: number;
+    now: number;
+    pending: { kills: number; coins: number; elapsedMs: number; capped: boolean };
+    kills: number;
+    challengeAt: number;
+    top: { name: string; maxStage: number }[];
+    coins: number;
+    gems: number;
+  }
+  interface BattleClaimView {
+    ok: boolean;
+    error?: string;
+    kills?: number;
+    coins?: number;
+    gems?: number;
+    minerals?: { id: string; name: string; count: number; isNew: boolean }[];
+    newMinerals?: number;
+    elapsedMs?: number;
+    capped?: boolean;
+    state?: BattleView;
+  }
+  interface BattleChallengeView {
+    ok: boolean;
+    error?: string;
+    win?: boolean;
+    stage?: number;
+    foe?: { emoji: string; name: string; hp: number; atk: number };
+    log?: [number, number, number, number][];
+    reward?: { coins: number; gems: number; item?: { id: string; name: string } };
+    settled?: { kills: number; coins: number; gems: number };
+    state?: BattleView;
+  }
+
+  const battlePanel = document.getElementById('battle-panel')!;
+  const battleClose = document.getElementById('battle-close') as HTMLButtonElement;
+  const btHeadInfo = document.getElementById('battle-head-info')!;
+  const btMeAvatar = document.getElementById('bt-me-avatar')!;
+  const btMeName = document.getElementById('bt-me-name')!;
+  const btMeHp = document.getElementById('bt-me-hp')!;
+  const btMeHptext = document.getElementById('bt-me-hptext')!;
+  const btFoeAvatar = document.getElementById('bt-foe-avatar')!;
+  const btFoeName = document.getElementById('bt-foe-name')!;
+  const btFoeHp = document.getElementById('bt-foe-hp')!;
+  const btFoeHptext = document.getElementById('bt-foe-hptext')!;
+  const btVs = document.getElementById('bt-vs')!;
+  const btFloats = document.getElementById('bt-floats')!;
+  const btBanner = document.getElementById('bt-banner')!;
+  const btStagePrev = document.getElementById('bt-stage-prev') as HTMLButtonElement;
+  const btStageNum = document.getElementById('bt-stage-num')!;
+  const btStageTier = document.getElementById('bt-stage-tier')!;
+  const btStageNext = document.getElementById('bt-stage-next') as HTMLButtonElement;
+  const btChallenge = document.getElementById('bt-challenge') as HTMLButtonElement;
+  const btRetreat = document.getElementById('bt-retreat')!;
+  const btStats = document.getElementById('bt-stats')!;
+  const btLoot = document.getElementById('bt-loot')!;
+  const btLootTime = document.getElementById('bt-loot-time')!;
+  const btLootFill = document.getElementById('bt-loot-fill')!;
+  const btLootSummary = document.getElementById('bt-loot-summary')!;
+  const btClaim = document.getElementById('bt-claim') as HTMLButtonElement;
+  const btToggle = document.getElementById('bt-toggle') as HTMLButtonElement;
+  const btResult = document.getElementById('bt-result')!;
+  const btGems = document.getElementById('bt-gems')!;
+  const btUpgrades = document.getElementById('bt-upgrades')!;
+  const btTop = document.getElementById('bt-top')!;
+  battleClose.addEventListener('click', () => battlePanel.classList.remove('open'));
+
+  let battleState: BattleView | null = null;
+  let battleClockOffset = 0; // 서버 now − 내 now (가방 진행 표시용)
+  let battleTimer = 0;
+  let battleBusy = false; // 요청/연출 중 — 버튼 잠금
+  let battleShownKills = 0; // idle 연출: 마지막으로 표시한 처치 수
+  let battleMyKey = '';
+
+  const BT_UPGRADES: { key: string; icon: string; name: string; desc: (s: BattleView) => string }[] = [
+    { key: 'atk', icon: '⚔️', name: '공격력', desc: (s) => `Lv당 ×1.10 · 지금 ${s.stats.atk}` },
+    { key: 'hp', icon: '❤️', name: '체력', desc: (s) => `Lv당 ×1.08 · 지금 ${s.stats.hp}` },
+    { key: 'crit', icon: '💥', name: '치명타', desc: (s) => `Lv당 +1.5%p (피해 150%) · 지금 ${s.stats.crit}%` },
+    { key: 'luck', icon: '🍀', name: '행운', desc: (s) => `Lv당 드랍률 +5% · 지금 +${s.stats.luck}%` },
+    { key: 'time', icon: '⏳', name: '원정 시간', desc: (s) => `가방 상한 +2시간 · 지금 ${s.stats.capMs / 3600000}시간` },
+  ];
+
+  const fmtNum = (n: number) => n.toLocaleString('ko-KR');
+  function fmtDur(ms: number): string {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}시간 ${m}분`;
+    if (m > 0) return `${m}분 ${s % 60}초`;
+    return `${s}초`;
+  }
+  const battleServerNow = () => Date.now() + battleClockOffset;
+
+  function btFloat(text: string, cls: string, side: 'me' | 'foe'): void {
+    const el = document.createElement('div');
+    el.className = `bt-float ${cls}`;
+    el.textContent = text;
+    el.style.left = side === 'foe' ? `${58 + Math.random() * 22}%` : `${12 + Math.random() * 22}%`;
+    el.style.top = `${18 + Math.random() * 24}%`;
+    btFloats.appendChild(el);
+    setTimeout(() => el.remove(), 950);
+  }
+  function btPulse(el: HTMLElement, cls: string): void {
+    el.classList.remove(cls);
+    void el.offsetWidth; // 애니메이션 재시작
+    el.classList.add(cls);
+  }
+  function btShowBanner(text: string, color: string): void {
+    btBanner.textContent = text;
+    btBanner.style.color = color;
+    btPulse(btBanner, 'show');
+  }
+  function btSetHp(fill: HTMLElement, textEl: HTMLElement, cur: number, max: number): void {
+    fill.style.width = `${Math.max(0, Math.min(100, (cur / Math.max(1, max)) * 100))}%`;
+    textEl.textContent = `${fmtNum(Math.max(0, Math.round(cur)))} / ${fmtNum(max)}`;
+  }
+
+  /** 현재 시각 기준 가방 진행 추정 (서버 since/killMs/capMs 기반 — 정산은 서버) */
+  function btEstimate(st: BattleView): { elapsed: number; kills: number; coins: number; capped: boolean } {
+    if (!st.active) return { elapsed: 0, kills: 0, coins: 0, capped: false };
+    const raw = Math.max(0, battleServerNow() - st.since);
+    const capped = raw >= st.stats.capMs;
+    const elapsed = Math.min(raw, st.stats.capMs);
+    const kills = Math.floor(elapsed / st.killMs);
+    return { elapsed, kills, coins: Math.floor(kills * st.coinPerKill), capped };
+  }
+
+  function paintBattle(): void {
+    const st = battleState;
+    if (!st) {
+      btHeadInfo.textContent = '';
+      btResult.innerHTML = '서버 연결 후 표시됩니다.';
+      return;
+    }
+    btHeadInfo.textContent = `· 최고 ${st.maxStage}층 돌파`;
+    btGems.textContent = `💎 ${st.gems}`;
+    // 전장
+    btFoeAvatar.textContent = st.mob.emoji;
+    btFoeAvatar.classList.remove('dead');
+    btFoeName.textContent = `${st.mob.name} (${st.effStage}층)`;
+    btMeName.textContent = battleMyKey.split('#')[0] || '나';
+    btSetHp(btMeHp, btMeHptext, st.stats.hp, st.stats.hp);
+    // 층 이동
+    btStageNum.textContent = `${st.stage}층`;
+    btStageTier.textContent = st.tier;
+    const topStage = Math.min(100, st.maxStage + 1);
+    btStagePrev.disabled = battleBusy || st.stage <= 1;
+    btStageNext.disabled = battleBusy || st.stage >= topStage;
+    if (st.guardian) {
+      const g = st.guardian;
+      const label = g.kind === 'big' ? '👑 대보스' : g.kind === 'boss' ? '🔥 보스' : '🛡️ 수문장';
+      btChallenge.textContent = `${label} 도전 (${g.stage}층)`;
+      btChallenge.title = `${g.emoji} ${g.name} · HP ${fmtNum(g.hp)} · 공격 ${g.atk}/초 · 첫 처치 +${g.reward.coins}🪙${g.reward.gems ? ` +${g.reward.gems}💎` : ''}`;
+      btChallenge.disabled = battleBusy;
+    } else {
+      btChallenge.textContent = '🏆 정복 완료';
+      btChallenge.title = '모든 층을 정복했어요!';
+      btChallenge.disabled = true;
+    }
+    if (st.effStage < st.stage) {
+      btRetreat.hidden = false;
+      btRetreat.textContent = `⚠️ ${st.stage}층 몬스터를 버티지 못해 ${st.effStage}층에서 사냥 중이에요 — 체력을 강화하거나 층을 낮춰 주세요.`;
+    } else {
+      btRetreat.hidden = true;
+    }
+    // 능력치
+    const b = st.stats.bonus;
+    const tip = (parts: string[]) => parts.filter(Boolean).join(' · ');
+    btStats.innerHTML = '';
+    for (const [k, v, bonus, title] of [
+      ['⚔️ 공격', String(st.stats.atk), b.rodAtkPct + b.achPct ? `+${Math.round(b.rodAtkPct + b.achPct)}%` : '', tip([`Lv ${st.lv.atk}`, b.rodAtkPct ? `낚싯대 +${b.rodAtkPct}%` : '', b.achPct ? `도전과제 +${b.achPct}%` : ''])],
+      ['❤️ 체력', String(st.stats.hp), b.mineralHpPct + b.achPct ? `+${Math.round(b.mineralHpPct + b.achPct)}%` : '', tip([`Lv ${st.lv.hp}`, b.mineralHpPct ? `광물도감 +${b.mineralHpPct}%` : '', b.achPct ? `도전과제 +${b.achPct}%` : ''])],
+      ['💥 치명', `${st.stats.crit}%`, '', `Lv ${st.lv.crit} · 치명타 피해 150%`],
+      ['🍀 행운', `+${st.stats.luck}%`, b.fishLuckPct ? `낚시 +${b.fishLuckPct}%` : '', tip([`Lv ${st.lv.luck}`, b.fishLuckPct ? `낚시도감 +${b.fishLuckPct}%` : '', '드랍률 보너스'])],
+    ] as [string, string, string, string][]) {
+      const cell = document.createElement('div');
+      cell.className = 'bt-stat';
+      cell.title = title;
+      cell.innerHTML = `<div class="v"></div><div class="k"></div><div class="b"></div>`;
+      (cell.children[0] as HTMLElement).textContent = v;
+      (cell.children[1] as HTMLElement).textContent = k;
+      (cell.children[2] as HTMLElement).textContent = bonus || ' ';
+      btStats.appendChild(cell);
+    }
+    // 강화
+    btUpgrades.innerHTML = '';
+    for (const def of BT_UPGRADES) {
+      const cost = st.costs[def.key];
+      const row = document.createElement('div');
+      row.className = 'bt-up';
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = def.icon;
+      const info = document.createElement('div');
+      info.className = 'info';
+      const nameEl = document.createElement('b');
+      nameEl.textContent = `${def.name} Lv ${st.lv[def.key] ?? 0}`;
+      const small = document.createElement('small');
+      small.textContent = def.desc(st);
+      info.append(nameEl, small);
+      const btn = document.createElement('button');
+      if (cost == null) {
+        btn.textContent = 'MAX';
+        btn.disabled = true;
+      } else {
+        btn.textContent = `강화 ${cost} 💎`;
+        btn.disabled = battleBusy || st.gems < cost;
+        btn.addEventListener('click', () => void battleUpgrade(def.key));
+      }
+      row.append(icon, info, btn);
+      btUpgrades.appendChild(row);
+    }
+    // 랭킹
+    btTop.innerHTML = '';
+    if (st.top.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bt-top-row';
+      empty.textContent = '아직 수문장을 처치한 사람이 없어요 — 첫 정복자가 되어 보세요!';
+      btTop.appendChild(empty);
+    }
+    st.top.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'bt-top-row' + (r.name === battleMyKey ? ' me' : '');
+      const left = document.createElement('span');
+      left.textContent = `${['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`} ${r.name}`;
+      const right = document.createElement('span');
+      right.textContent = `${r.maxStage}층`;
+      row.append(left, right);
+      btTop.appendChild(row);
+    });
+    btClaim.disabled = battleBusy || !st.active;
+    btClaim.hidden = !st.active;
+    btToggle.disabled = battleBusy;
+    btToggle.textContent = st.active ? '🏠 귀환' : '⚔️ 원정 출발';
+    btToggle.title = st.active ? '귀환하면 쌓인 전리품을 받고 캐릭터가 다시 돌아다녀요' : '출발하면 캐릭터가 제자리에서 사냥을 시작해요 (앱을 꺼도 계속)';
+    btToggle.classList.toggle('start', !st.active);
+    battleShownKills = btEstimate(st).kills;
+    tickBattle();
+  }
+
+  /** 200ms 틱 — 가방 진행/예상 전리품 갱신 + 방치 사냥 연출 (처치 경계마다 타격) */
+  function tickBattle(): void {
+    const st = battleState;
+    if (!st) return;
+    const est = btEstimate(st);
+    btLootTime.textContent = `${fmtDur(est.elapsed)} / ${st.stats.capMs / 3600000}시간`;
+    btLootFill.style.width = `${Math.min(100, (est.elapsed / st.stats.capMs) * 100)}%`;
+    btLoot.classList.toggle('full', est.capped);
+    if (!st.active) {
+      btLootSummary.textContent = '🏠 쉬는 중 — 출발하면 가방이 차기 시작해요. (앱을 꺼도 귀환 전까지 계속 사냥)';
+      if (!battleBusy) btSetHp(btFoeHp, btFoeHptext, st.mob.hp, st.mob.hp);
+      return;
+    }
+    btLootSummary.textContent = est.capped
+      ? `👾 ${fmtNum(est.kills)}마리 · 🪙 약 ${fmtNum(est.coins)} · 가방이 가득 찼어요! 수령해 주세요`
+      : `👾 ${fmtNum(est.kills)}마리 · 🪙 약 ${fmtNum(est.coins)} · ${(60000 / st.killMs).toFixed(1)}마리/분 (드랍은 수령 시 공개)`;
+    if (battleBusy) return;
+    // 방치 연출: 몬스터 체력이 처치 주기에 맞춰 줄고, 경계에서 쓰러짐
+    const phase = est.capped ? 1 : (est.elapsed % st.killMs) / st.killMs;
+    btSetHp(btFoeHp, btFoeHptext, st.mob.hp * (1 - phase), st.mob.hp);
+    if (est.kills > battleShownKills && !est.capped) {
+      battleShownKills = est.kills;
+      btPulse(btVs, 'swing');
+      btPulse(btFoeAvatar, 'hit');
+      btFloat(`-${fmtNum(st.mob.hp)}`, Math.random() * 100 < st.stats.crit ? 'crit' : '', 'foe');
+      if (st.coinPerKill >= 1 || Math.random() < st.coinPerKill) btFloat(`+🪙`, 'loot', 'foe');
+    }
+  }
+
+  // 내 캐릭터 전신 도트 (PartComposer 합성 프레임) — 공격 모션을 계속 반복
+  // 64px 셀 안에서 캐릭터(+무기 휘두름)가 차지하는 영역만 잘라 CSS로 3배 확대 (실측 본체 x25~47·y37~55, 무기 여유 포함)
+  const BT_CROP = { x: 12, y: 16, w: 48, h: 42 };
+  const btMeCanvas = document.createElement('canvas');
+  btMeCanvas.width = BT_CROP.w;
+  btMeCanvas.height = BT_CROP.h;
+  const btMeCtx = btMeCanvas.getContext('2d')!;
+  btMeCtx.imageSmoothingEnabled = false;
+  let battleMeFrames: ComposedFrames | null = null;
+  let battleAnimTimer = 0;
+
+  /** 무기에 맞는 공격 모션 — 활은 쏘기, 그 외 베기 (없으면 찌르기) */
+  function battleAttackAnim(frames: ComposedFrames, appearance: Appearance): HTMLCanvasElement[] {
+    const weapon = appearance.weapon?.name ?? '';
+    const prefer = /bow/i.test(weapon) ? 'shot' : 'slash';
+    return frames.anims[prefer]?.length ? frames.anims[prefer] : frames.anims.slash?.length ? frames.anims.slash : frames.anims.jab ?? [];
+  }
+
+  function startBattleMeAnim(appearance: Appearance): void {
+    window.clearTimeout(battleAnimTimer);
+    const frames = battleMeFrames;
+    if (!frames) return;
+    const attack = battleAttackAnim(frames, appearance);
+    // 공격 4프레임(120ms) → 숨 고르기 idle 2프레임(220ms) → 반복
+    const seq: { frame: HTMLCanvasElement; ms: number }[] = [
+      ...attack.map((frame) => ({ frame, ms: 120 })),
+      ...frames.idle.map((frame) => ({ frame, ms: 220 })),
+    ];
+    if (seq.length === 0) return;
+    let i = 0;
+    const step = () => {
+      const cur = seq[i % seq.length];
+      btMeCtx.clearRect(0, 0, BT_CROP.w, BT_CROP.h);
+      btMeCtx.drawImage(cur.frame, BT_CROP.x, BT_CROP.y, BT_CROP.w, BT_CROP.h, 0, 0, BT_CROP.w, BT_CROP.h);
+      i++;
+      battleAnimTimer = window.setTimeout(step, cur.ms);
+    };
+    step();
+  }
+
+  async function loadBattleMeAvatar(appearance: Appearance): Promise<void> {
+    const frames = await chatComposer.compose(appearance);
+    if (!frames) return; // 합성 실패 시 이모지 유지
+    battleMeFrames = frames;
+    if (btMeCanvas.parentElement !== btMeAvatar) {
+      btMeAvatar.textContent = '';
+      btMeAvatar.appendChild(btMeCanvas);
+    }
+    startBattleMeAnim(appearance);
+  }
+
+  async function openBattlePanel(): Promise<void> {
+    if (!battleMyKey) {
+      const me = (await window.overlay.getSelf()) as { nickname: string; tag: string; appearance: Appearance };
+      battleMyKey = `${me.nickname}#${me.tag}`;
+      void loadBattleMeAvatar(me.appearance);
+    }
+    await refreshBattle();
+    window.clearInterval(battleTimer);
+    battleTimer = window.setInterval(tickBattle, 200);
+  }
+
+  async function refreshBattle(): Promise<void> {
+    const st = (await window.overlay.battleState()) as BattleView | null;
+    if (st) {
+      battleClockOffset = st.now - Date.now();
+      battleState = st;
+    }
+    paintBattle();
+  }
+
+  function applyBattleState(st: BattleView | undefined): void {
+    if (!st) return;
+    battleClockOffset = st.now - Date.now();
+    battleState = st;
+    paintBattle();
+  }
+
+  function claimSummaryHtml(res: BattleClaimView, prefix: string): string {
+    const parts = [
+      `${prefix}<b>${fmtDur(res.elapsedMs ?? 0)}</b> 동안 👾 <b>${fmtNum(res.kills ?? 0)}</b>마리 → +<b>${fmtNum(res.coins ?? 0)}</b> 🪙`,
+    ];
+    if (res.gems) parts.push(`+<b>${res.gems}</b> 💎`);
+    if (res.minerals && res.minerals.length > 0) {
+      const total = res.minerals.reduce((s, m) => s + m.count, 0);
+      const fresh = res.minerals.filter((m) => m.isNew).map((m) => m.name);
+      parts.push(
+        `⛏️ 광물 <b>${total}</b>개${fresh.length ? ` (도감 신규 ${fresh.length}: ${fresh.slice(0, 4).join(', ')}${fresh.length > 4 ? ' …' : ''})` : ''}`,
+      );
+    }
+    if (res.capped) parts.push('🎒 가방이 가득 찬 채였어요');
+    return parts.join(' · ');
+  }
+
+  async function battleClaim(): Promise<void> {
+    if (battleBusy) return;
+    battleBusy = true;
+    btClaim.disabled = true;
+    const res = (await window.overlay.battleClaim()) as BattleClaimView;
+    battleBusy = false;
+    if (!res.ok) {
+      btResult.textContent = res.error ?? '수령에 실패했어요.';
+      btClaim.disabled = false;
+      return;
+    }
+    btResult.innerHTML = claimSummaryHtml(res, '🎒 ');
+    btShowBanner(`+${fmtNum(res.coins ?? 0)} 🪙`, '#ffd66e');
+    btFloat(`+${fmtNum(res.coins ?? 0)} 🪙`, 'loot', 'me');
+    if (res.gems) setTimeout(() => btFloat(`+${res.gems} 💎`, 'loot', 'me'), 250);
+    applyBattleState(res.state);
+  }
+
+  async function battleToggle(): Promise<void> {
+    if (battleBusy || !battleState) return;
+    const next = !battleState.active;
+    battleBusy = true;
+    paintBattle();
+    const res = (await window.overlay.battleActive(next)) as BattleClaimView;
+    battleBusy = false;
+    if (!res.ok) {
+      btResult.textContent = res.error ?? '원정 상태를 바꾸지 못했어요.';
+      paintBattle();
+      return;
+    }
+    if (next) {
+      btResult.innerHTML = `⚔️ <b>${res.state?.stage ?? battleState.stage}층</b>으로 원정 출발! 캐릭터가 제자리에서 사냥을 시작했어요.`;
+      btShowBanner('⚔️ 출발!', '#ff9a9a');
+    } else {
+      btResult.innerHTML = '🏠 귀환했어요. 캐릭터가 다시 돌아다녀요.' + (res.kills ? `<br />${claimSummaryHtml(res, '자동 수령: ')}` : '');
+      if (res.coins) btFloat(`+${fmtNum(res.coins)} 🪙`, 'loot', 'me');
+    }
+    applyBattleState(res.state);
+  }
+
+  async function battleUpgrade(key: string): Promise<void> {
+    if (battleBusy) return;
+    battleBusy = true;
+    paintBattle();
+    const res = (await window.overlay.battleUpgrade(key)) as BattleClaimView;
+    battleBusy = false;
+    if (!res.ok) {
+      btResult.textContent = res.error ?? '강화에 실패했어요.';
+      paintBattle();
+      return;
+    }
+    const def = BT_UPGRADES.find((d) => d.key === key)!;
+    const lv = res.state?.lv[key] ?? 0;
+    btResult.innerHTML =
+      `${def.icon} <b>${def.name} Lv ${lv}</b> 강화 완료!` +
+      (res.kills ? `<br />${claimSummaryHtml(res, '자동 수령: ')}` : '');
+    btShowBanner(`${def.icon} Lv ${lv}`, '#8be06a');
+    applyBattleState(res.state);
+  }
+
+  async function battleSetStage(stage: number): Promise<void> {
+    if (battleBusy) return;
+    battleBusy = true;
+    paintBattle();
+    const res = (await window.overlay.battleStage(stage)) as BattleClaimView;
+    battleBusy = false;
+    if (!res.ok) {
+      btResult.textContent = res.error ?? '층을 옮기지 못했어요.';
+      paintBattle();
+      return;
+    }
+    if (res.kills) btResult.innerHTML = claimSummaryHtml(res, '자동 수령: ');
+    applyBattleState(res.state);
+  }
+
+  async function battleChallenge(): Promise<void> {
+    if (battleBusy || !battleState?.guardian) return;
+    battleBusy = true;
+    paintBattle();
+    const res = (await window.overlay.battleChallenge()) as BattleChallengeView;
+    if (!res.ok || !res.foe || !res.log) {
+      battleBusy = false;
+      btResult.textContent = res.error ?? '도전에 실패했어요.';
+      paintBattle();
+      return;
+    }
+    // 수문장전 연출 — 서버 로그를 틱 단위로 재생 (긴 전투는 빠르게)
+    const foe = res.foe;
+    const stage = res.stage ?? 0;
+    const myMax = battleState.stats.hp;
+    btFoeAvatar.textContent = foe.emoji;
+    btFoeAvatar.classList.remove('dead');
+    btFoeName.textContent = `${foe.name} (${stage}층 수문장)`;
+    btSetHp(btFoeHp, btFoeHptext, foe.hp, foe.hp);
+    btSetHp(btMeHp, btMeHptext, myMax, myMax);
+    btResult.textContent = `${foe.emoji} ${foe.name}과(와) 전투 중…`;
+    const stepMs = Math.max(70, Math.min(220, 6000 / res.log.length));
+    for (const [me, foeHp, dmg, crit] of res.log) {
+      btPulse(btVs, 'swing');
+      btPulse(btFoeAvatar, 'hit');
+      btFloat(`-${fmtNum(dmg)}${crit ? '!' : ''}`, crit ? 'crit' : '', 'foe');
+      btSetHp(btFoeHp, btFoeHptext, foeHp, foe.hp);
+      await new Promise((r) => setTimeout(r, stepMs * 0.5));
+      if (foeHp > 0) {
+        btFloat(`-${foe.atk}`, 'hurt', 'me');
+        btSetHp(btMeHp, btMeHptext, me, myMax);
+      }
+      await new Promise((r) => setTimeout(r, stepMs * 0.5));
+    }
+    if (res.win) {
+      btFoeAvatar.classList.add('dead');
+      btShowBanner('🏆 승리!', '#ffd66e');
+      const r = res.reward;
+      btResult.innerHTML =
+        `🏆 <b>${stage}층 수문장 ${foe.name}</b> 격파! +<b>${fmtNum(r?.coins ?? 0)}</b> 🪙` +
+        (r?.gems ? ` +<b>${r.gems}</b> 💎` : '') +
+        (r?.item ? ` · 🎁 상점 아이템 <b>${r.item.name}</b> 획득!` : '') +
+        ` — ${stage + 1 <= 100 ? `${stage + 1}층이 열렸어요` : '모든 층 정복!'}` +
+        (res.settled?.kills
+          ? `<br />자동 수령: 👾 ${fmtNum(res.settled.kills)}마리 → +${fmtNum(res.settled.coins)} 🪙${res.settled.gems ? ` +${res.settled.gems} 💎` : ''}`
+          : '');
+    } else {
+      btShowBanner('💀 패배…', '#ff7a7a');
+      btResult.innerHTML = `💀 <b>${foe.name}</b>에게 패배했어요. 💎 강화로 공격력·체력을 올리거나 낚싯대/도감 보너스를 챙겨 다시 도전! (20초 후 재도전 가능)`;
+    }
+    await new Promise((r) => setTimeout(r, 1400));
+    battleBusy = false;
+    applyBattleState(res.state);
+  }
+
+  btClaim.addEventListener('click', () => void battleClaim());
+  btToggle.addEventListener('click', () => void battleToggle());
+  window.overlay.on('self:battle', () => {
+    // 오버레이 '귀환하기' 버튼/미니게임 카드로 바뀐 상태 반영
+    if (battlePanel.classList.contains('open') && !battleBusy) void refreshBattle();
+  });
+  btChallenge.addEventListener('click', () => void battleChallenge());
+  btStagePrev.addEventListener('click', () => battleState && void battleSetStage(battleState.stage - 1));
+  btStageNext.addEventListener('click', () => battleState && void battleSetStage(battleState.stage + 1));
+
+  window.overlay.on('self:gems', (data) => {
+    if (battleState) {
+      battleState.gems = Number(data) || 0;
+      if (!battleBusy && battlePanel.classList.contains('open')) paintBattle();
+    }
+  });
+  window.overlay.on('self:appearance', (data) => {
+    const d = data as { appearance?: Appearance } | undefined;
+    if (d?.appearance && battleMeFrames) void loadBattleMeAvatar(d.appearance);
+  });
+  window.overlay.on('net:battle-news', (data) => {
+    const d = data as { id: string; nickname: string; tag: string; text: string };
+    if (d.id === chatSelfId) return; // 본인은 원정 패널 결과로 충분
+    addSystemMessage(d.text);
+  });
+
   // ---- ☰ 메뉴 드롭다운 ----
 
   const menuBtn = document.getElementById('menu-btn') as HTMLButtonElement;
@@ -2212,6 +2782,7 @@
     dailyPanel.classList.remove('open');
     achPanel.classList.remove('open');
     mdexPanel.classList.remove('open');
+    battlePanel.classList.remove('open');
     window.clearInterval(stockTimerHandle);
   }
 
@@ -2252,6 +2823,9 @@
         break;
       case 'forge':
         window.overlay.togglePopout('forge');
+        break;
+      case 'battle':
+        window.overlay.togglePopout('battle');
         break;
       case 'note':
         window.overlay.togglePopout('note');
@@ -2408,6 +2982,9 @@
           break;
         case 'note':
           void populateNoteRecipients();
+          break;
+        case 'battle':
+          void openBattlePanel();
           break;
       }
       // 패널 ✕(open 해제) → 창 닫기

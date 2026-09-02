@@ -281,6 +281,7 @@ function connect(): void {
     selfId = data.selfId;
     players.clear();
     for (const p of data.players) players.set(p.id, p);
+    myBattleActive = data.players.find((p) => p.id === selfId)?.battle === true;
     broadcast('net:welcome', { selfId, players: [...players.values()] });
     sendStatus();
     console.log(`[net] welcome as ${selfId}, ${players.size}명 접속중`);
@@ -374,6 +375,16 @@ function connect(): void {
     broadcast('net:player-digging', data);
   });
 
+  socket.on('player-battle', (data) => {
+    const p = players.get(data.id);
+    if (p) p.battle = data.active;
+    if (data.id === selfId) {
+      myBattleActive = data.active;
+      broadcast('self:battle', { active: data.active });
+    }
+    broadcast('net:player-battle', data);
+  });
+
   socket.on('player-title', (data) => {
     const p = players.get(data.id);
     if (p) p.title = data.title || undefined;
@@ -390,6 +401,10 @@ function connect(): void {
 
   socket.on('brag-news', (data) => {
     broadcast('net:brag-news', data);
+  });
+
+  socket.on('battle-news', (data) => {
+    broadcast('net:battle-news', data);
   });
 
   // 주식 시세 (접속 시 + 매 틱) / 전광판 항목
@@ -685,6 +700,7 @@ const POPOUT_PANELS: Record<string, { w: number; h: number }> = {
   slot: { w: 320, h: 420 },
   stock: { w: 380, h: 520 },
   note: { w: 340, h: 480 },
+  battle: { w: 380, h: 640 },
 };
 const popoutWindows = new Map<string, BrowserWindow>();
 
@@ -1077,6 +1093,7 @@ let myGems = 0;
 let myActions: string[] = [];
 let myMinerals: string[] = [];
 let myTitle = '';
+let myBattleActive = false; // 원정 중 (welcome 플레이어 목록 + player-battle + battle ack로 갱신)
 let myStocksMarket: unknown = null; // 최신 시세 스냅샷 (stocks 이벤트)
 
 ipcMain.handle('get-coins', () => myCoins);
@@ -1373,9 +1390,12 @@ ipcMain.handle('minigame-state', () => ({
   runnerRemainSec: Math.max(0, Math.ceil((lastRunnerStart + RUNNER_COOLDOWN_MS - Date.now()) / 1000)),
   fishingActive,
   diggingActive,
+  battleActive: myBattleActive,
 }));
 
 ipcMain.handle('minigame-start', (_e, game: string) => {
+  // 원정 카드: 출발/귀환 토글 (서버 권위 — ack의 state로 확정, player-battle로 오버레이 동기화)
+  if (game === 'battle') return battleIpc('battle-active')(_e, !myBattleActive);
   if (!extrasManifest) {
     return { ok: false, error: '미니게임 에셋이 없어요. tools/import-extras.mjs를 먼저 실행해 주세요.' };
   }
@@ -1485,6 +1505,59 @@ ipcMain.handle('dig-report', (_e, result: { kind?: unknown; itemId?: unknown }) 
     });
   });
 });
+
+// ---- 원정 (방치형 전투) — 판정·정산은 서버, 여기서는 ack의 잔액/도감/아이템을 로컬 스냅샷에 반영 ----
+
+function applyBattleAck(res: any): void {
+  if (!res || typeof res !== 'object') return;
+  let walletChanged = false;
+  if (typeof res.coinsNow === 'number') {
+    myCoins = res.coinsNow;
+    broadcast('self:coins', myCoins);
+  }
+  if (typeof res.gemsNow === 'number') {
+    myGems = res.gemsNow;
+    broadcast('self:gems', myGems);
+  }
+  if (Array.isArray(res.mineralsAll)) {
+    myMinerals = res.mineralsAll;
+    walletChanged = true;
+  }
+  if (Array.isArray(res.items)) {
+    myItems = res.items;
+    walletChanged = true;
+  }
+  if (walletChanged) broadcast('self:wallet', walletSnapshot());
+  if (res.state && typeof res.state.active === 'boolean' && res.state.active !== myBattleActive) {
+    myBattleActive = res.state.active;
+    broadcast('self:battle', { active: myBattleActive });
+  }
+}
+
+function battleIpc(event: string, mapArgs: (...args: unknown[]) => unknown[] = () => []) {
+  return (_e: unknown, ...args: unknown[]) =>
+    new Promise((resolve) => {
+      if (!socket?.connected) {
+        resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+        return;
+      }
+      (socket as any).timeout(15000).emit(event, ...mapArgs(...args), (err: unknown, res: any) => {
+        if (err || !res) {
+          resolve(event === 'battle-state' ? null : { ok: false, error: '응답 시간이 초과됐어요.' });
+          return;
+        }
+        applyBattleAck(res);
+        resolve(res);
+      });
+    });
+}
+
+ipcMain.handle('battle-state', battleIpc('battle-state'));
+ipcMain.handle('battle-claim', battleIpc('battle-claim'));
+ipcMain.handle('battle-upgrade', battleIpc('battle-upgrade', (key) => [String(key ?? '')]));
+ipcMain.handle('battle-stage', battleIpc('battle-stage', (stage) => [Math.floor(Number(stage) || 0)]));
+ipcMain.handle('battle-challenge', battleIpc('battle-challenge'));
+ipcMain.handle('battle-active', battleIpc('battle-active', (active) => [active === true]));
 
 // ---- 도전과제 / 칭호 ----
 

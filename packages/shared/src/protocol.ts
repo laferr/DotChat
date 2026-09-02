@@ -76,6 +76,8 @@ export interface PlayerState {
   pinned?: string;
   /** 착용 중인 도전과제 칭호 (서버 권위 — 지갑에서 첨부) */
   title?: string;
+  /** 원정 중 (서버 권위 — 지갑 battle.active). 오버레이는 공격 모션 반복 + '원정중' 라벨 */
+  battle?: boolean;
 }
 
 export interface MovePayload {
@@ -176,6 +178,7 @@ export const DAILY_QUESTS: DailyQuestDef[] = [
   { id: 'runner', name: '달리기 10초 생존', goal: 10, reward: 3 },
   { id: 'reaction', name: '리액션 이모지 3회 보내기', goal: 3, reward: 2 },
   { id: 'dig', name: '땅파기 3회', goal: 3, reward: 3 },
+  { id: 'battle', name: '원정 전리품 1회 수령', goal: 1, reward: 3 },
 ];
 export const DAILY_QUEST_COUNT = 3; // 하루에 활성화되는 퀘스트 수
 export const DAILY_ALL_BONUS = 5; // 활성 퀘스트 전부 완료 보너스
@@ -186,6 +189,25 @@ export const ATTEND_WEEKLY_BONUS = 5; // 연속 7일마다 추가 보너스
 /** KST 기준 날짜 키 (YYYY-MM-DD) — 자정에 퀘스트/출석 리셋 */
 export function dailyDateKey(now = Date.now()): string {
   return new Date(now + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/** KST 토·일 — 주식 휴장 / 출석 연속 유지 판정 */
+export function isKstWeekend(ts = Date.now()): boolean {
+  const day = new Date(ts + 9 * 3600_000).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+/** 마지막 출석일 이후 빠진 날이 전부 주말(토·일)이면 연속 출석 유지 (금 출석 → 월 접속 = 연속) */
+export function attendStreakKeeps(lastDateKey: string, todayKey: string): boolean {
+  const dayMs = 24 * 3600_000;
+  const last = Date.parse(`${lastDateKey}T00:00:00Z`);
+  const today = Date.parse(`${todayKey}T00:00:00Z`);
+  if (!Number.isFinite(last) || !Number.isFinite(today) || today <= last) return false;
+  for (let t = last + dayMs; t < today; t += dayMs) {
+    const day = new Date(t).getUTCDay(); // 날짜 라벨의 요일 (타임존 무관)
+    if (day !== 0 && day !== 6) return false; // 평일 결석 → 스트릭 리셋
+  }
+  return true;
 }
 
 /** 날짜 키로 결정되는 오늘의 퀘스트 id — 모든 유저가 같은 세트 */
@@ -338,6 +360,20 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'x-relics', cat: '발굴', name: '과거를 캐는 자', desc: '유물 8종 수집', gems: 10, title: '고고학자', stat: 'relicDex', goal: 8 },
   { id: 'x-diamond', cat: '발굴', name: '심봤다!', desc: '다이아몬드 첫 발굴', gems: 10, stat: 'diamondDex', goal: 1 },
   { id: 'x-goldbar', cat: '발굴', name: '노다지', desc: '금괴 첫 발굴', gems: 3, stat: 'goldbar', goal: 1 },
+  // 원정
+  { id: 'b-first', cat: '원정', name: '첫 원정', desc: '원정 전리품 첫 수령', gems: 2, stat: 'battleClaims', goal: 1 },
+  { id: 'b-stage5', cat: '원정', name: '풀숲 너머', desc: '원정 5층 돌파', gems: 2, stat: 'battleMax', goal: 5 },
+  { id: 'b-stage10', cat: '원정', name: '슬라임 킹 격파', desc: '원정 10층 돌파', gems: 5, stat: 'battleMax', goal: 10 },
+  { id: 'b-stage25', cat: '원정', name: '호수를 건너', desc: '원정 25층 돌파', gems: 5, title: '던전 탐험가', stat: 'battleMax', goal: 25 },
+  { id: 'b-stage50', cat: '원정', name: '화룡 사냥꾼', desc: '원정 50층 돌파', gems: 10, title: '용 사냥꾼', stat: 'battleMax', goal: 50 },
+  { id: 'b-stage100', cat: '원정', name: '탑의 정상', desc: '원정 100층 돌파 (봇순이 격파)', gems: 30, title: '탑의 지배자', stat: 'battleMax', goal: 100 },
+  { id: 'b-kills1000', cat: '원정', name: '천 마리째', desc: '몬스터 누적 처치 1,000', gems: 3, stat: 'battleKills', goal: 1000 },
+  { id: 'b-kills10000', cat: '원정', name: '만 마리째', desc: '몬스터 누적 처치 10,000', gems: 10, title: '몬스터 헌터', stat: 'battleKills', goal: 10000 },
+  { id: 'b-lv10', cat: '원정', name: '보석 세공 입문', desc: '보석 강화 합계 10레벨', gems: 3, stat: 'battleLv', goal: 10 },
+  { id: 'b-lv50', cat: '원정', name: '보석 세공 장인', desc: '보석 강화 합계 50레벨', gems: 10, title: '보석 세공사', stat: 'battleLv', goal: 50 },
+  { id: 'b-loot', cat: '원정', name: '전리품 감정', desc: '원정 드랍으로 광물 첫 획득', gems: 2, stat: 'battleMinerals', goal: 1 },
+  { id: 'b-lose', cat: '원정', name: '패배의 교훈', desc: '수문장에게 첫 패배', gems: 2, hidden: true },
+  { id: 'b-afk', cat: '원정', name: '진정한 방치', desc: '전리품 가방이 가득 찬 채로 수령', gems: 3, hidden: true },
   // 히든
   { id: 'h-owl', cat: '히든', name: '올빼미', desc: '새벽 3~5시에 채팅', gems: 3, hidden: true },
   { id: 'h-broke', cat: '히든', name: '빈털터리', desc: '코인 0으로 슬롯 시도', gems: 3, hidden: true },
@@ -507,6 +543,277 @@ export type DigAck = (res: {
   minerals?: string[];
 }) => void;
 
+// ---- 원정 (방치형 전투 — 서버 권위, 시간 기반 정산) ----
+// 캐릭터가 고른 층에서 몬스터를 계속 사냥한다(접속 여부 무관, 가방 상한까지). 전리품은 수령 시 정산.
+// 층마다 수문장이 있고, 처치하면 다음 층이 열린다. 💎로 5가지 능력을 강화하고,
+// 낚싯대 강화·광물도감·낚시도감·도전과제가 보너스로 연계된다.
+
+export type BattleUpgradeKey = 'atk' | 'hp' | 'crit' | 'luck' | 'time';
+export const BATTLE_UPGRADE_KEYS: BattleUpgradeKey[] = ['atk', 'hp', 'crit', 'luck', 'time'];
+export const BATTLE_LV_MAX: Record<BattleUpgradeKey, number> = { atk: 100, hp: 100, crit: 30, luck: 30, time: 3 };
+
+export const BATTLE_MAX_STAGE = 100;
+export const BATTLE_MIN_KILL_MS = 2000; // 아무리 강해도 1마리당 최소 2초
+export const BATTLE_FIGHT_MAX_TICKS = 120; // 수문장전 최대 틱(1틱=1초) — 초과 시 패배
+
+// 내 능력치
+export const BATTLE_BASE_ATK = 10;
+export const BATTLE_ATK_GROWTH = 1.1; // 공격력 Lv당 ×1.10
+export const BATTLE_BASE_HP = 100;
+export const BATTLE_HP_GROWTH = 1.08; // 체력 Lv당 ×1.08
+export const BATTLE_BASE_CRIT = 5; // %
+export const BATTLE_CRIT_PER_LV = 1.5; // %p (Lv30 = 50%)
+export const BATTLE_CRIT_MULT = 1.5;
+export const BATTLE_LUCK_PER_LV = 5; // 드랍률 +% (Lv30 = +150%)
+export const BATTLE_BASE_CAP_HOURS = 4; // 전리품 가방 상한 (원정 시간)
+export const BATTLE_CAP_PER_LV_HOURS = 2; // Lv3 = 10시간
+
+// 다른 콘텐츠 연계 보너스
+export const BATTLE_ROD_ATK_PCT = 2; // 낚싯대 성당 공격 +2% (30성 = +60%)
+export const BATTLE_MINERAL_HP_PCT = 1; // 광물도감 종당 체력 +1% (74종 = +74%)
+export const BATTLE_FISH_LUCK_PCT = 0.25; // 낚시도감 종당 행운 +0.25% (161종 = +40%)
+export const BATTLE_ACH_PCT = 0.5; // 도전과제당 공격·체력 +0.5%
+
+// 몬스터 / 수문장
+export const BATTLE_MONSTER_BASE_HP = 40;
+export const BATTLE_MONSTER_HP_GROWTH = 1.12;
+export const BATTLE_MONSTER_BASE_ATK = 4;
+export const BATTLE_MONSTER_ATK_GROWTH = 1.1;
+
+// 전리품
+export const BATTLE_COIN_BASE = 0.1; // 1층 1마리당 기대 코인
+export const BATTLE_COIN_GROWTH = 1.05; // 층당 ×1.05
+export const BATTLE_GEM_DROP_RATE = 0.0004; // 마리당 💎 조각 (행운 배율 적용)
+export const BATTLE_MINERAL_DROP_RATE = 0.01; // 마리당 광물 (행운 배율 적용) — 광물도감 등재
+export const BATTLE_MINERAL_WEIGHTS: Record<MineralCat, number> = {
+  stone: 45, ore: 25, fossil: 15, crystal: 8, relic: 3, cluster: 2, pearl: 1, gemstone: 0.7, diamond: 0.05,
+};
+export const BATTLE_CLEAR_COIN_PER_STAGE = 5; // 수문장 첫 처치 코인 = 층 × 5
+export const BATTLE_BOSS_GEMS = 3; // 5층 단위 보스 첫 처치 💎
+export const BATTLE_BIG_BOSS_GEMS = 6; // 10층 단위 보스 첫 처치 💎
+export const BATTLE_BIG_BOSS_ITEM_RATE = 0.3; // 10층 단위 보스: 미보유 상점 아이템 확률
+export const BATTLE_CHALLENGE_COOLDOWN_MS = 3000;
+export const BATTLE_LOSE_COOLDOWN_MS = 20_000;
+export const BATTLE_CLAIM_MIN_KILLS = 1;
+
+/** 강화 비용(💎) — lv = 현재 레벨 (lv → lv+1) */
+export function battleUpgradeCost(key: BattleUpgradeKey, lv: number): number {
+  if (key === 'atk' || key === 'hp') return 1 + Math.floor(lv / 4);
+  if (key === 'crit' || key === 'luck') return 2 + Math.floor(lv / 2);
+  return 10 * (lv + 1); // time: 10 / 20 / 30
+}
+
+export function battleMonsterHp(stage: number): number {
+  return Math.round(BATTLE_MONSTER_BASE_HP * Math.pow(BATTLE_MONSTER_HP_GROWTH, stage - 1));
+}
+export function battleMonsterAtk(stage: number): number {
+  return Math.round(BATTLE_MONSTER_BASE_ATK * Math.pow(BATTLE_MONSTER_ATK_GROWTH, stage - 1) * 10) / 10;
+}
+/** 수문장 배율 — 10층 단위 대보스 > 5층 단위 보스 > 일반 수문장 */
+export function battleGuardianMult(stage: number): { hp: number; atk: number } {
+  if (stage % 10 === 0) return { hp: 5, atk: 1.6 };
+  if (stage % 5 === 0) return { hp: 4, atk: 1.5 };
+  return { hp: 3, atk: 1.3 };
+}
+export function battleCoinPerKill(stage: number): number {
+  return BATTLE_COIN_BASE * Math.pow(BATTLE_COIN_GROWTH, stage - 1);
+}
+
+export interface BattleTierDef {
+  /** 시작 층 (10층 단위) */
+  from: number;
+  name: string;
+  /** 일반 몬스터 3종 [이모지, 이름] */
+  mobs: [string, string][];
+  /** 일반 수문장 */
+  guardian: [string, string];
+  /** 5층 보스 */
+  boss: [string, string];
+  /** 10층 대보스 */
+  bigBoss: [string, string];
+}
+
+export const BATTLE_TIERS: BattleTierDef[] = [
+  { from: 1, name: '뒷마당 풀숲', mobs: [['🟢', '슬라임'], ['🐀', '들쥐'], ['🐝', '말벌']], guardian: ['🐗', '멧돼지 대장'], boss: ['🦊', '풀숲 여우'], bigBoss: ['👑', '슬라임 킹'] },
+  { from: 11, name: '버려진 갱도', mobs: [['🦇', '동굴박쥐'], ['👺', '고블린 광부'], ['🕷️', '갱도거미']], guardian: ['🪨', '돌 골렘'], boss: ['⛏️', '고블린 십장'], bigBoss: ['🧌', '광산 감독관'] },
+  { from: 21, name: '안개 호수', mobs: [['🐟', '식인 피라미'], ['🦀', '집게발 게'], ['🐸', '독개구리']], guardian: ['🐙', '호수 문어'], boss: ['🐊', '늪 악어'], bigBoss: ['🐉', '호수의 용'] },
+  { from: 31, name: '폐허 도시', mobs: [['💀', '해골 병사'], ['🧟', '좀비'], ['👻', '유령']], guardian: ['🗿', '석상 기사'], boss: ['⚰️', '무덤지기'], bigBoss: ['🧛', '뱀파이어 영주'] },
+  { from: 41, name: '용암 동굴', mobs: [['🦎', '불도마뱀'], ['🔥', '마그마 슬라임'], ['🦂', '화염 전갈']], guardian: ['🌋', '용암 도롱뇽'], boss: ['👹', '화염 오우거'], bigBoss: ['🐲', '화룡'] },
+  { from: 51, name: '서리 산맥', mobs: [['❄️', '얼음 정령'], ['🐺', '설원 늑대'], ['🦅', '서리 매']], guardian: ['🧊', '빙하 거인'], boss: ['🐻‍❄️', '설산 곰'], bigBoss: ['🐉', '빙룡'] },
+  { from: 61, name: '어둠의 숲', mobs: [['🍄', '독버섯'], ['🌳', '트렌트'], ['🦉', '그림자 올빼미']], guardian: ['🐺', '늑대인간'], boss: ['🕸️', '거미 여왕'], bigBoss: ['🧙', '숲의 마녀'] },
+  { from: 71, name: '하늘 성채', mobs: [['⚡', '번개 새'], ['🪽', '하피'], ['☁️', '구름 정령']], guardian: ['🦁', '그리핀'], boss: ['🗡️', '성채 기사단장'], bigBoss: ['👼', '타락 천사'] },
+  { from: 81, name: '심해 신전', mobs: [['🦈', '상어 전사'], ['🪼', '맹독 해파리'], ['🐚', '조개 골렘']], guardian: ['🐋', '고래 수호자'], boss: ['🧜', '심해 사제'], bigBoss: ['🦑', '크라켄'] },
+  { from: 91, name: '봇순이의 탑', mobs: [['🤖', '봇순이 클론'], ['🎰', '슬롯 골렘'], ['📈', '주식 악마']], guardian: ['🔨', '대장장이 유령'], boss: ['🎣', '월척 괴물'], bigBoss: ['👑', '봇순이'] },
+];
+
+export function battleTierFor(stage: number): BattleTierDef {
+  const idx = Math.max(0, Math.min(BATTLE_TIERS.length - 1, Math.floor((stage - 1) / 10)));
+  return BATTLE_TIERS[idx];
+}
+/** 층의 대표 일반 몬스터 (층 번호로 결정) */
+export function battleMobFor(stage: number): { emoji: string; name: string } {
+  const tier = battleTierFor(stage);
+  const [emoji, name] = tier.mobs[(stage - 1) % tier.mobs.length];
+  return { emoji, name };
+}
+export function battleGuardianFor(stage: number): { emoji: string; name: string; hp: number; atk: number; kind: 'guardian' | 'boss' | 'big' } {
+  const tier = battleTierFor(stage);
+  const kind = stage % 10 === 0 ? 'big' : stage % 5 === 0 ? 'boss' : 'guardian';
+  const [emoji, name] = kind === 'big' ? tier.bigBoss : kind === 'boss' ? tier.boss : tier.guardian;
+  const mult = battleGuardianMult(stage);
+  return {
+    emoji,
+    name,
+    hp: Math.round(battleMonsterHp(stage) * mult.hp),
+    atk: Math.round(battleMonsterAtk(stage) * mult.atk * 10) / 10,
+    kind,
+  };
+}
+/** 수문장 첫 처치 보상 */
+export function battleClearReward(stage: number): { coins: number; gems: number } {
+  return {
+    coins: stage * BATTLE_CLEAR_COIN_PER_STAGE,
+    gems: stage % 10 === 0 ? BATTLE_BIG_BOSS_GEMS : stage % 5 === 0 ? BATTLE_BOSS_GEMS : 0,
+  };
+}
+
+export interface BattleStatsInput {
+  lv: Record<BattleUpgradeKey, number>;
+  rodStars: number;
+  mineralDex: number;
+  fishDex: number;
+  achCount: number;
+}
+export interface BattleStats {
+  atk: number;
+  hp: number;
+  /** 치명타 % */
+  crit: number;
+  /** 드랍률 보너스 % */
+  luck: number;
+  /** 기대 DPS (치명타 반영) */
+  dps: number;
+  /** 가방 상한 (ms) */
+  capMs: number;
+  bonus: { rodAtkPct: number; mineralHpPct: number; fishLuckPct: number; achPct: number };
+}
+export function battleStats(input: BattleStatsInput): BattleStats {
+  const rodAtkPct = input.rodStars * BATTLE_ROD_ATK_PCT;
+  const mineralHpPct = input.mineralDex * BATTLE_MINERAL_HP_PCT;
+  const fishLuckPct = input.fishDex * BATTLE_FISH_LUCK_PCT;
+  const achPct = input.achCount * BATTLE_ACH_PCT;
+  const atk = Math.round(
+    BATTLE_BASE_ATK * Math.pow(BATTLE_ATK_GROWTH, input.lv.atk) * (1 + rodAtkPct / 100) * (1 + achPct / 100),
+  );
+  const hp = Math.round(
+    BATTLE_BASE_HP * Math.pow(BATTLE_HP_GROWTH, input.lv.hp) * (1 + mineralHpPct / 100) * (1 + achPct / 100),
+  );
+  const crit = Math.min(75, BATTLE_BASE_CRIT + input.lv.crit * BATTLE_CRIT_PER_LV);
+  const luck = Math.round((input.lv.luck * BATTLE_LUCK_PER_LV + fishLuckPct) * 100) / 100;
+  const dps = atk * (1 + (crit / 100) * (BATTLE_CRIT_MULT - 1));
+  const capMs = (BATTLE_BASE_CAP_HOURS + input.lv.time * BATTLE_CAP_PER_LV_HOURS) * 3600_000;
+  return { atk, hp, crit, luck, dps, capMs, bonus: { rodAtkPct, mineralHpPct, fishLuckPct, achPct } };
+}
+
+/** 층의 1마리 처치 시간(ms) */
+export function battleKillMs(stage: number, dps: number): number {
+  return Math.max(BATTLE_MIN_KILL_MS, Math.ceil((battleMonsterHp(stage) / dps) * 1000));
+}
+/** 그 층에서 버틸 수 있는가 — 1마리 잡는 동안 받는 피해 < 체력 (사냥 사이 완전 회복) */
+export function battleCanFarm(stage: number, stats: BattleStats): boolean {
+  const killSec = battleKillMs(stage, stats.dps) / 1000;
+  return battleMonsterAtk(stage) * killSec < stats.hp;
+}
+
+/** 수문장전 시뮬레이션 (1틱=1초, 내가 먼저 공격) — log: [내 HP, 상대 HP, 준 피해, 치명타 1/0] */
+export function battleSimulate(
+  stats: BattleStats,
+  foe: { hp: number; atk: number },
+  rand: () => number = Math.random,
+): { win: boolean; log: [number, number, number, number][] } {
+  let me = stats.hp;
+  let foeHp = foe.hp;
+  const log: [number, number, number, number][] = [];
+  for (let t = 0; t < BATTLE_FIGHT_MAX_TICKS; t++) {
+    const crit = rand() * 100 < stats.crit ? 1 : 0;
+    const dmg = Math.round(stats.atk * (crit ? BATTLE_CRIT_MULT : 1));
+    foeHp = Math.max(0, foeHp - dmg);
+    if (foeHp <= 0) {
+      log.push([me, 0, dmg, crit]);
+      return { win: true, log };
+    }
+    me = Math.max(0, Math.round((me - foe.atk) * 10) / 10);
+    log.push([me, foeHp, dmg, crit]);
+    if (me <= 0) return { win: false, log };
+  }
+  return { win: false, log };
+}
+
+/** 클라이언트에 보내는 원정 상태 */
+export interface BattleStatePayload {
+  /** 원정 진행 중 (출발~귀환). 꺼져 있으면 가방이 차지 않는다 — 앱을 꺼도 귀환 전까지는 계속 */
+  active: boolean;
+  /** 선택한 원정 층 */
+  stage: number;
+  /** 실제 사냥 층 (체력 부족 시 버틸 수 있는 층으로 후퇴) */
+  effStage: number;
+  /** 최고 돌파 층 (수문장 처치) — 다음 도전 = maxStage + 1 */
+  maxStage: number;
+  lv: Record<BattleUpgradeKey, number>;
+  /** 다음 강화 비용 (MAX면 null) */
+  costs: Record<BattleUpgradeKey, number | null>;
+  stats: BattleStats;
+  tier: string;
+  mob: { emoji: string; name: string; hp: number; atk: number };
+  guardian: { stage: number; emoji: string; name: string; hp: number; atk: number; kind: 'guardian' | 'boss' | 'big'; reward: { coins: number; gems: number } } | null;
+  killMs: number;
+  coinPerKill: number;
+  since: number;
+  now: number;
+  /** 지금까지 쌓인 예상 전리품 (드랍 제외) */
+  pending: { kills: number; coins: number; elapsedMs: number; capped: boolean };
+  /** 누적 처치 */
+  kills: number;
+  challengeAt: number;
+  top: { name: string; maxStage: number }[];
+  coins: number;
+  gems: number;
+}
+
+export interface BattleClaimResult {
+  ok: boolean;
+  error?: string;
+  kills?: number;
+  coins?: number;
+  gems?: number;
+  /** 드랍 광물 (id별 개수, 첫 발견 여부) */
+  minerals?: { id: string; name: string; count: number; isNew: boolean }[];
+  /** 첫 발견 광물 보너스 (코인/젬은 coins/gems에 포함됨) */
+  newMinerals?: number;
+  elapsedMs?: number;
+  capped?: boolean;
+  coinsNow?: number;
+  gemsNow?: number;
+  mineralsAll?: string[];
+  state?: BattleStatePayload;
+}
+
+export interface BattleChallengeResult {
+  ok: boolean;
+  error?: string;
+  win?: boolean;
+  stage?: number;
+  foe?: { emoji: string; name: string; hp: number; atk: number };
+  log?: [number, number, number, number][];
+  reward?: { coins: number; gems: number; item?: { id: string; name: string } };
+  /** 최전선 자동 전진 시 먼저 정산된 전리품 */
+  settled?: { kills: number; coins: number; gems: number };
+  items?: string[];
+  coinsNow?: number;
+  gemsNow?: number;
+  state?: BattleStatePayload;
+}
+
 export interface ClientToServerEvents {
   hello: (data: { nickname: string; tag: string; appearance: Appearance; pinned?: string }) => void;
   move: (data: MovePayload) => void;
@@ -612,6 +919,18 @@ export interface ClientToServerEvents {
   'set-title': (title: string, ack: (res: { ok: boolean; error?: string; title?: string }) => void) => void;
   /** 리액션 이모지 전송 */
   reaction: (index: number) => void;
+  /** 원정 상태 조회 (첫 조회 시 자동 시작) */
+  'battle-state': (ack: (res: BattleStatePayload | null) => void) => void;
+  /** 원정 전리품 수령 — 경과 시간 기반 정산 (코인/💎/광물 드랍) */
+  'battle-claim': (ack: (res: BattleClaimResult) => void) => void;
+  /** 💎 강화 1레벨 (쌓인 전리품은 자동 수령 후 적용) */
+  'battle-upgrade': (key: BattleUpgradeKey, ack: (res: BattleClaimResult) => void) => void;
+  /** 원정 층 변경 (1 ~ maxStage+1, 쌓인 전리품은 자동 수령) */
+  'battle-stage': (stage: number, ack: (res: BattleClaimResult) => void) => void;
+  /** 다음 층 수문장 도전 (판정 서버, 승리 시 maxStage+1 · 첫 처치 보상) */
+  'battle-challenge': (ack: (res: BattleChallengeResult) => void) => void;
+  /** 원정 출발(true)/귀환(false) — 귀환 시 쌓인 전리품 자동 수령. 전체에 player-battle 브로드캐스트 */
+  'battle-active': (active: boolean, ack: (res: BattleClaimResult) => void) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */
   image: (
     payload: { data: ArrayBuffer; mime: string; thumb: string; w: number; h: number },
@@ -697,6 +1016,10 @@ export interface ServerToClientEvents {
   'dig-news': (data: { id: string; nickname: string; tag: string; name: string }) => void;
   /** 누군가의 땅파기 상태 (애니메이션 동기화) */
   'player-digging': (data: { id: string; phase: DigPhase; itemId?: string }) => void;
+  /** 원정 소식 전체 알림 (5층 단위 보스 격파, 원정 다이아 드랍) */
+  'battle-news': (data: { id: string; nickname: string; tag: string; text: string }) => void;
+  /** 누군가의 원정 출발/귀환 (오버레이 모션·라벨 동기화) */
+  'player-battle': (data: { id: string; active: boolean }) => void;
   /** 누군가의 칭호 변경 */
   'player-title': (data: { id: string; title: string }) => void;
 }
@@ -933,17 +1256,17 @@ export const ENHANCE_TABLE: EnhanceStage[] = [
 export const ENHANCE_MAX = 30;
 /** 같은 성에서 연속 실패 누적 시 다음 시도 성공 보장 (천장) */
 export const ENHANCE_PITY = 10;
-/** 주말(KST 토·일) 하락 확률 감소 배율 */
-export const ENHANCE_WEEKEND_DROP_MULT = 0.7;
+/** 샤이닝 스타포스 — 금요일(KST) 하락 확률 감소 배율 (주말 → 금요일로 이전) */
+export const ENHANCE_FRIDAY_DROP_MULT = 0.7;
 
 /** 하락 시 바닥 (체크포인트 15/20/25성 밑으로는 안 떨어짐) */
 export function enhanceFloor(stage: number): number {
   return stage >= 26 ? 25 : stage >= 21 ? 20 : 15;
 }
 
-export function isEnhanceWeekend(ts = Date.now()): boolean {
-  const day = new Date(ts + 9 * 3600_000).getUTCDay(); // KST
-  return day === 0 || day === 6;
+/** 샤이닝 스타포스 요일 (KST 금요일) */
+export function isEnhanceFriday(ts = Date.now()): boolean {
+  return new Date(ts + 9 * 3600_000).getUTCDay() === 5; // KST
 }
 
 // 강화 단계별 낚시 성능 — 10성 = 종전 기본 낚싯대 성능, 그 밑은 페널티 (클라 적용, overlay.ts)

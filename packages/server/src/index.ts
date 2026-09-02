@@ -15,9 +15,11 @@ import {
   ENHANCE_MAX,
   ENHANCE_PITY,
   ENHANCE_TABLE,
-  ENHANCE_WEEKEND_DROP_MULT,
+  ENHANCE_FRIDAY_DROP_MULT,
   enhanceFloor,
-  isEnhanceWeekend,
+  isEnhanceFriday,
+  isKstWeekend,
+  attendStreakKeeps,
   FISH_BOX_COIN_MAX,
   FISH_BOX_COIN_MIN,
   FISH_BOX_ID,
@@ -111,6 +113,33 @@ import {
   DigKind,
   DIG_PHASES,
   DigPhase,
+  MineralCat,
+  BATTLE_MAX_STAGE,
+  BATTLE_UPGRADE_KEYS,
+  BATTLE_LV_MAX,
+  BATTLE_MINERAL_WEIGHTS,
+  BATTLE_GEM_DROP_RATE,
+  BATTLE_MINERAL_DROP_RATE,
+  BATTLE_BIG_BOSS_ITEM_RATE,
+  BATTLE_CHALLENGE_COOLDOWN_MS,
+  BATTLE_LOSE_COOLDOWN_MS,
+  BATTLE_CLAIM_MIN_KILLS,
+  BattleUpgradeKey,
+  BattleStats,
+  BattleStatePayload,
+  BattleClaimResult,
+  battleUpgradeCost,
+  battleStats,
+  battleKillMs,
+  battleCanFarm,
+  battleCoinPerKill,
+  battleMonsterHp,
+  battleMonsterAtk,
+  battleTierFor,
+  battleMobFor,
+  battleGuardianFor,
+  battleClearReward,
+  battleSimulate,
 } from '@dotchat/shared';
 
 const port = Number(process.env.PORT ?? DEFAULT_PORT);
@@ -198,6 +227,16 @@ interface Wallet {
   stats?: Record<string, number>;
   /** 착용 중인 칭호 (달성 업적의 title만 허용) */
   title?: string;
+  /** 원정 (방치형 전투) — 층/최고층/💎 강화/정산 기준 시각/도전 쿨타임 */
+  battle?: {
+    /** 출발~귀환 사이 true — 이때만 가방이 찬다 */
+    active: boolean;
+    stage: number;
+    maxStage: number;
+    lv: Record<BattleUpgradeKey, number>;
+    since: number;
+    challengeAt: number;
+  };
 }
 
 let wallets: Record<string, Wallet> = {};
@@ -242,6 +281,23 @@ function loadWallets(): void {
                   )
                 : undefined,
             title: typeof (w as any).title === 'string' && (w as any).title ? (w as any).title : undefined,
+            battle: (() => {
+              const b = (w as any).battle;
+              if (!b || typeof b !== 'object') return undefined;
+              const lv = {} as Record<BattleUpgradeKey, number>;
+              for (const lk of BATTLE_UPGRADE_KEYS) {
+                lv[lk] = Math.max(0, Math.min(BATTLE_LV_MAX[lk], Math.floor(Number(b.lv?.[lk]) || 0)));
+              }
+              const maxStage = Math.max(0, Math.min(BATTLE_MAX_STAGE, Math.floor(Number(b.maxStage) || 0)));
+              return {
+                active: b.active === true,
+                stage: Math.max(1, Math.min(maxStage + 1, BATTLE_MAX_STAGE, Math.floor(Number(b.stage) || 1))),
+                maxStage,
+                lv,
+                since: Math.max(0, Math.floor(Number(b.since) || Date.now())),
+                challengeAt: Math.max(0, Math.floor(Number(b.challengeAt) || 0)),
+              };
+            })(),
           };
         }
       }
@@ -400,9 +456,26 @@ const STOCK_NEWS_DOWN = [
   '{name}, 대규모 리콜 사태...',
 ];
 
+// 주말(KST 토·일) 휴장 — 테스트용 env DOTCHAT_FAKE_WEEKEND=1
+const marketWeekend = (ts = Date.now()) => process.env.DOTCHAT_FAKE_WEEKEND === '1' || isKstWeekend(ts);
+let marketClosedNotice = false;
+
 function runStockTick(): void {
   const now = Date.now();
   nextTickTs = now + STOCK_TICK_MS;
+  // 주말 휴장: 시세 동결 (뉴스/상폐/재상장 없음) — 휴장/개장 전환 시 전광판 안내 1회
+  if (marketWeekend(now)) {
+    if (!marketClosedNotice) {
+      marketClosedNotice = true;
+      publishTicker('news', '💤 주말 휴장 — 주식장은 월요일 아침에 다시 열립니다');
+    }
+    io.emit('stocks', stocksSnapshot());
+    return;
+  }
+  if (marketClosedNotice) {
+    marketClosedNotice = false;
+    publishTicker('news', '🔔 휴장 종료 — 주식장이 다시 열렸습니다!');
+  }
   const newsItems: string[] = [];
 
   for (const def of STOCKS) {
@@ -574,6 +647,8 @@ function achMetrics(w: Wallet): Record<string, number> {
     relicDex: minerals.filter((m) => m.cat === 'relic').length,
     diamondDex: minerals.filter((m) => m.cat === 'diamond').length,
     goldbar: (w.minerals ?? []).includes(DIG_GOLDBAR_ID) ? 1 : 0,
+    battleMax: w.battle?.maxStage ?? 0,
+    battleLv: w.battle ? BATTLE_UPGRADE_KEYS.reduce((sum, k) => sum + (w.battle!.lv[k] ?? 0), 0) : 0,
   };
 }
 
@@ -662,8 +737,8 @@ function ensureDaily(key: string): string | null {
   if (!wallet) return null;
   const today = dailyDateKey();
   if (wallet.daily?.date === today) return null;
-  const yesterday = dailyDateKey(Date.now() - 24 * 3600 * 1000);
-  const streak = wallet.daily?.date === yesterday ? wallet.daily.streak + 1 : 1;
+  // 주말(토·일)만 건너뛴 결석은 연속 출석 유지 — 금요일 출석 후 월요일 접속도 연속
+  const streak = wallet.daily && attendStreakKeeps(wallet.daily.date, today) ? wallet.daily.streak + 1 : 1;
   wallet.daily = { date: today, streak, counts: {}, claimed: [], allBonus: false };
   const coin = Math.min(ATTEND_BASE_COIN + (streak - 1), ATTEND_MAX_COIN);
   let news = `📅 출석 ${streak}일차! +${coin} 🪙`;
@@ -849,6 +924,218 @@ const lastBragAt = new Map<string, number>(); // 지갑 키 기준
 const lastTickerAdAt = new Map<string, number>(); // 지갑 키 기준
 const lastDigAt = new Map<string, number>();
 
+// ---- 원정 (방치형 전투 — 시간 기반 정산, 서버 권위) ----
+// 캐릭터는 고른 층에서 계속 사냥한다(접속 여부 무관). 전리품은 수령 시 경과 시간으로 정산 (가방 상한까지).
+// 테스트용 env DOTCHAT_BATTLE_SPEED=N — 경과 시간 N배속 (기본 1)
+
+const BATTLE_SPEED = Math.max(1, Number(process.env.DOTCHAT_BATTLE_SPEED ?? 1) || 1);
+const MINERALS_BY_CAT = new Map<MineralCat, MineralDef[]>();
+for (const m of MINERALS) MINERALS_BY_CAT.set(m.cat, [...(MINERALS_BY_CAT.get(m.cat) ?? []), m]);
+
+/** 확률적 반올림 — 소수부만큼의 확률로 올림 (기대값 보존) */
+function probRound(x: number): number {
+  const f = Math.floor(x);
+  return f + (Math.random() < x - f ? 1 : 0);
+}
+
+type BattleData = NonNullable<Wallet['battle']>;
+
+/** 지갑의 원정 상태 (없으면 1층에서 지금 시작) */
+function battleOf(wallet: Wallet, now = Date.now()): BattleData {
+  if (!wallet.battle) {
+    wallet.battle = {
+      active: false,
+      stage: 1,
+      maxStage: 0,
+      lv: { atk: 0, hp: 0, crit: 0, luck: 0, time: 0 },
+      since: now,
+      challengeAt: 0,
+    };
+  }
+  return wallet.battle;
+}
+
+/** 내 능력치 — 💎 강화 + 낚싯대/광물도감/낚시도감/도전과제 연계 보너스 */
+function battleStatsOf(wallet: Wallet): BattleStats {
+  const b = battleOf(wallet);
+  return battleStats({
+    lv: b.lv,
+    rodStars: wallet.rodStars ?? 0,
+    mineralDex: (wallet.minerals ?? []).length,
+    fishDex: wallet.fish.filter((f) => ALL_FISH_IDS.has(f)).length,
+    achCount: (wallet.ach ?? []).length,
+  });
+}
+
+/** 선택 층에서 못 버티면 버틸 수 있는 가장 높은 층으로 후퇴 */
+function battleEffStage(stage: number, stats: BattleStats): number {
+  for (let s = stage; s >= 1; s--) if (battleCanFarm(s, stats)) return s;
+  return 1;
+}
+
+interface BattlePending {
+  stats: BattleStats;
+  effStage: number;
+  killMs: number;
+  elapsedMs: number;
+  capped: boolean;
+  kills: number;
+  /** 다음 마리 진행분 (수령 후 since에 반영) */
+  remainderMs: number;
+}
+
+function battlePending(wallet: Wallet, now: number): BattlePending {
+  const b = battleOf(wallet, now);
+  const stats = battleStatsOf(wallet);
+  const effStage = battleEffStage(b.stage, stats);
+  const killMs = battleKillMs(effStage, stats.dps);
+  const rawMs = b.active ? Math.max(0, now - b.since) * BATTLE_SPEED : 0;
+  const capped = rawMs >= stats.capMs;
+  const elapsedMs = Math.min(rawMs, stats.capMs);
+  const kills = Math.floor(elapsedMs / killMs);
+  return { stats, effStage, killMs, elapsedMs, capped, kills, remainderMs: capped ? 0 : elapsedMs - kills * killMs };
+}
+
+function battleTop(): { name: string; maxStage: number }[] {
+  return Object.entries(wallets)
+    .filter(([, w]) => (w.battle?.maxStage ?? 0) > 0)
+    .map(([name, w]) => ({ name, maxStage: w.battle!.maxStage }))
+    .sort((a, b) => b.maxStage - a.maxStage)
+    .slice(0, 5);
+}
+
+function battleStateFor(key: string, now = Date.now()): BattleStatePayload {
+  const wallet = wallets[key];
+  const b = battleOf(wallet, now);
+  const pend = battlePending(wallet, now);
+  const next = b.maxStage + 1;
+  const guardian =
+    next <= BATTLE_MAX_STAGE ? { stage: next, ...battleGuardianFor(next), reward: battleClearReward(next) } : null;
+  const costs = {} as Record<BattleUpgradeKey, number | null>;
+  for (const k of BATTLE_UPGRADE_KEYS) costs[k] = b.lv[k] >= BATTLE_LV_MAX[k] ? null : battleUpgradeCost(k, b.lv[k]);
+  const cpk = battleCoinPerKill(pend.effStage);
+  return {
+    active: b.active,
+    stage: b.stage,
+    effStage: pend.effStage,
+    maxStage: b.maxStage,
+    lv: { ...b.lv },
+    costs,
+    stats: pend.stats,
+    tier: battleTierFor(pend.effStage).name,
+    mob: { ...battleMobFor(pend.effStage), hp: battleMonsterHp(pend.effStage), atk: battleMonsterAtk(pend.effStage) },
+    guardian,
+    killMs: pend.killMs / BATTLE_SPEED,
+    coinPerKill: cpk,
+    since: b.since,
+    now,
+    pending: { kills: pend.kills, coins: Math.floor(pend.kills * cpk), elapsedMs: pend.elapsedMs, capped: pend.capped },
+    kills: wallet.stats?.battleKills ?? 0,
+    challengeAt: b.challengeAt ?? 0,
+    top: battleTop(),
+    coins: wallet.coins,
+    gems: wallet.gems ?? 0,
+  };
+}
+
+/** 원정 드랍 광물 — 카테고리 가중치 → 카테고리 내 균등 */
+function rollBattleMineral(): MineralDef {
+  const cats = Object.entries(BATTLE_MINERAL_WEIGHTS) as [MineralCat, number][];
+  const total = cats.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  let cat: MineralCat = 'stone';
+  for (const [c, w] of cats) {
+    r -= w;
+    if (r < 0) {
+      cat = c;
+      break;
+    }
+  }
+  const pool = MINERALS_BY_CAT.get(cat) ?? MINERALS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * 전리품 정산 — 쌓인 처치 수만큼 코인/💎/광물 지급, since 갱신.
+ * 처치가 없으면 null (강화/층 변경 전 자동 수령에서는 조용히 넘어감)
+ */
+function battleSettle(socketId: string, key: string, now: number): BattleClaimResult | null {
+  const wallet = wallets[key];
+  const player = players.get(socketId);
+  if (!wallet || !player) return null;
+  const b = battleOf(wallet, now);
+  const pend = battlePending(wallet, now);
+  if (pend.kills < BATTLE_CLAIM_MIN_KILLS) return null;
+  const cpk = battleCoinPerKill(pend.effStage);
+  let coins = probRound(pend.kills * cpk);
+  let gems = 0;
+  const luckMult = 1 + pend.stats.luck / 100;
+  const gemRate = BATTLE_GEM_DROP_RATE * luckMult;
+  const mineralRate = BATTLE_MINERAL_DROP_RATE * luckMult;
+  const drops = new Map<string, number>();
+  for (let i = 0; i < pend.kills; i++) {
+    const r = Math.random();
+    if (r < gemRate) gems++;
+    else if (r < gemRate + mineralRate) {
+      const m = rollBattleMineral();
+      drops.set(m.id, (drops.get(m.id) ?? 0) + 1);
+    }
+  }
+  // 광물 → 광물도감 등재 (첫 발견은 땅파기와 같은 보너스 코인/젬)
+  wallet.minerals = wallet.minerals ?? [];
+  const minerals: { id: string; name: string; count: number; isNew: boolean }[] = [];
+  let newMinerals = 0;
+  let dropTotal = 0;
+  for (const [id, count] of drops) {
+    const m = MINERAL_BY_ID.get(id)!;
+    const isNew = !wallet.minerals.includes(id);
+    dropTotal += count;
+    if (isNew) {
+      wallet.minerals.push(id);
+      newMinerals++;
+      coins += DIG_FIRST_COIN[m.cat];
+      gems += DIG_GEM_FIRST[m.cat] ?? 0;
+      if (m.cat === 'diamond') {
+        const text = `💎 ${player.nickname}#${player.tag}님이 원정 전리품에서 ${m.name}을(를) 발견했습니다!`;
+        io.emit('battle-news', { id: socketId, nickname: player.nickname, tag: player.tag, text });
+        publishTicker('news', text);
+      }
+    }
+    minerals.push({ id, name: m.name, count, isNew });
+  }
+  minerals.sort((a, b) => Number(b.isNew) - Number(a.isNew) || b.count - a.count);
+  wallet.coins += coins;
+  wallet.gems = (wallet.gems ?? 0) + gems;
+  earnCoins(key, coins);
+  bumpStat(key, 'battleKills', pend.kills);
+  bumpStat(key, 'battleClaims');
+  if (dropTotal > 0) bumpStat(key, 'battleMinerals', dropTotal);
+  b.since = now - pend.remainderMs / BATTLE_SPEED;
+  saveWallets();
+  const sock = io.sockets.sockets.get(socketId);
+  sock?.emit('coins', wallet.coins);
+  if (gems > 0) sock?.emit('gems', wallet.gems);
+  questProgress(socketId, 'battle');
+  if (pend.capped) grantAch(key, 'b-afk');
+  checkAch(key);
+  console.log(
+    `[battle] ${key}: ${pend.effStage}층 ${pend.kills}마리 (${Math.round(pend.elapsedMs / 60000)}분${pend.capped ? ', 가방 가득' : ''}) → +${coins}🪙${gems ? ` +${gems}💎` : ''}${dropTotal ? ` 광물 ${dropTotal}개(신규 ${newMinerals})` : ''}`,
+  );
+  return {
+    ok: true,
+    kills: pend.kills,
+    coins,
+    gems,
+    minerals,
+    newMinerals,
+    elapsedMs: pend.elapsedMs,
+    capped: pend.capped,
+    coinsNow: wallet.coins,
+    gemsNow: wallet.gems,
+    mineralsAll: [...wallet.minerals],
+  };
+}
+
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
 io.on('connection', (socket) => {
@@ -880,6 +1167,11 @@ io.on('connection', (socket) => {
     }
     stripUnownedCosmetics(player.appearance, key);
     if (wallets[key].title) player.title = wallets[key].title;
+    if (!wallets[key].battle) {
+      battleOf(wallets[key]); // 원정 상태 초기화 (출발은 사용자가 — 출발 뒤엔 앱을 꺼도 귀환 전까지 진행)
+      saveWallets();
+    }
+    if (wallets[key].battle?.active) player.battle = true;
     players.set(socket.id, player);
     socket.emit('welcome', {
       selfId: socket.id,
@@ -902,6 +1194,11 @@ io.on('connection', (socket) => {
       title: wallets[key].title ?? '',
     });
     socket.emit('stocks', stocksSnapshot());
+    if (attendNews) {
+      // 출석 정산 직후 잔액 개별 통지 (지갑 스냅샷과 중복이지만 기존 계약 유지 — verify-daily 등)
+      socket.emit('coins', wallets[key].coins);
+      socket.emit('gems', wallets[key].gems ?? 0);
+    }
     socket.emit('daily', dailyStateFor(key, attendNews));
     // 접속 시각 히든 업적 (KST) + 기존 스탯 소급 정산 (전체 알림은 억제)
     {
@@ -1178,7 +1475,7 @@ io.on('connection', (socket) => {
       result = 'success'; // 천장: 연속 실패 누적 → 보장 성공
       guaranteed = true;
     } else {
-      const dropPct = stage.drop * (isEnhanceWeekend(now) ? ENHANCE_WEEKEND_DROP_MULT : 1);
+      const dropPct = stage.drop * (isEnhanceFriday(now) ? ENHANCE_FRIDAY_DROP_MULT : 1);
       const roll = Math.random() * 100;
       result = roll < stage.succ ? 'success' : roll < stage.succ + dropPct ? 'drop' : 'keep';
     }
@@ -1333,6 +1630,10 @@ io.on('connection', (socket) => {
     const player = players.get(socket.id);
     if (!player) {
       reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return null;
+    }
+    if (marketWeekend()) {
+      reply({ ok: false, error: '주말엔 주식장이 쉬어요. 월요일에 다시 만나요!' });
       return null;
     }
     const def = STOCKS.find((d) => d.id === String(stockId));
@@ -1649,6 +1950,203 @@ io.on('connection', (socket) => {
         `[dig] ${key}: ${kind} → ${itemGrant ? `아이템 '${itemGrant.name}'` : `+${delta}코인${gemsDelta ? ` +${gemsDelta}젬` : ''}`}`,
       );
     }
+  });
+
+  // ---- 원정 (방치형 전투) ----
+
+  socket.on('battle-state', (ack) => {
+    if (typeof ack !== 'function') return;
+    const player = players.get(socket.id);
+    if (!player || !wallets[walletKey(player)]) {
+      ack(null);
+      return;
+    }
+    ack(battleStateFor(walletKey(player)));
+  });
+
+  socket.on('battle-claim', (ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const res = battleSettle(socket.id, key, Date.now());
+    if (!res) {
+      reply({ ok: false, error: '아직 처치한 몬스터가 없어요. 조금만 기다려 주세요!' });
+      return;
+    }
+    reply({ ...res, state: battleStateFor(key) });
+  });
+
+  socket.on('battle-upgrade', (keyRaw, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const stat = String(keyRaw) as BattleUpgradeKey;
+    if (!BATTLE_UPGRADE_KEYS.includes(stat)) {
+      reply({ ok: false, error: '알 수 없는 능력치예요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = wallets[key];
+    const b = battleOf(wallet);
+    if (b.lv[stat] >= BATTLE_LV_MAX[stat]) {
+      reply({ ok: false, error: '이미 최대 레벨이에요.' });
+      return;
+    }
+    const cost = battleUpgradeCost(stat, b.lv[stat]);
+    if ((wallet.gems ?? 0) < cost) {
+      reply({ ok: false, error: `젬이 부족해요. (${wallet.gems ?? 0}/${cost} 💎)` });
+      return;
+    }
+    // 능력치가 바뀌면 처치 속도가 달라지므로 쌓인 전리품은 먼저 정산
+    const settled = battleSettle(socket.id, key, Date.now());
+    wallet.gems = (wallet.gems ?? 0) - cost;
+    b.lv[stat] += 1;
+    saveWallets();
+    socket.emit('gems', wallet.gems);
+    checkAch(key);
+    reply({ ...(settled ?? { ok: true }), gemsNow: wallet.gems, coinsNow: wallet.coins, state: battleStateFor(key) });
+    console.log(`[battle] ${key}: ${stat} Lv${b.lv[stat]} 강화 (-${cost}💎, 잔여 ${wallet.gems})`);
+  });
+
+  socket.on('battle-stage', (stageRaw, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = wallets[key];
+    const b = battleOf(wallet);
+    const stage = Math.floor(Number(stageRaw));
+    const top = Math.min(BATTLE_MAX_STAGE, b.maxStage + 1);
+    if (!Number.isFinite(stage) || stage < 1 || stage > top) {
+      reply({ ok: false, error: `1층 ~ ${top}층까지만 갈 수 있어요. (수문장을 처치하면 다음 층이 열려요)` });
+      return;
+    }
+    if (stage === b.stage) {
+      reply({ ok: true, state: battleStateFor(key) });
+      return;
+    }
+    const settled = battleSettle(socket.id, key, Date.now());
+    b.stage = stage;
+    saveWallets();
+    reply({ ...(settled ?? { ok: true }), state: battleStateFor(key) });
+  });
+
+  socket.on('battle-active', (activeRaw, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = wallets[key];
+    const b = battleOf(wallet);
+    const active = activeRaw === true;
+    if (active === b.active) {
+      reply({ ok: true, state: battleStateFor(key) });
+      return;
+    }
+    const now = Date.now();
+    let settled: BattleClaimResult | null = null;
+    if (active) {
+      b.active = true;
+      b.since = now;
+    } else {
+      settled = battleSettle(socket.id, key, now); // 귀환: 쌓인 전리품 자동 수령
+      b.active = false;
+    }
+    player.battle = active;
+    saveWallets();
+    io.emit('player-battle', { id: socket.id, active });
+    reply({ ...(settled ?? { ok: true }), state: battleStateFor(key) });
+    console.log(`[battle] ${key}: ${active ? `${b.stage}층 원정 출발` : '귀환'}`);
+  });
+
+  socket.on('battle-challenge', (ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = wallets[key];
+    const b = battleOf(wallet);
+    const now = Date.now();
+    const next = b.maxStage + 1;
+    if (next > BATTLE_MAX_STAGE) {
+      reply({ ok: false, error: '모든 층을 정복했어요! 🏆' });
+      return;
+    }
+    if (now < (b.challengeAt ?? 0)) {
+      reply({ ok: false, error: `아직 회복 중이에요. (${Math.ceil((b.challengeAt - now) / 1000)}초)` });
+      return;
+    }
+    const stats = battleStatsOf(wallet);
+    const foe = battleGuardianFor(next);
+    const sim = battleSimulate(stats, foe);
+    let reward: { coins: number; gems: number; item?: { id: string; name: string } } | undefined;
+    let settled: BattleClaimResult | null = null;
+    if (sim.win) {
+      // 최전선(next)에서 사냥 중이었으면 새로 열린 층으로 자동 전진 — 처치 속도가 바뀌므로 먼저 정산
+      if (b.stage === next && next < BATTLE_MAX_STAGE) {
+        settled = battleSettle(socket.id, key, now);
+        b.stage = next + 1;
+      }
+      b.maxStage = next;
+      b.challengeAt = now + BATTLE_CHALLENGE_COOLDOWN_MS;
+      reward = battleClearReward(next);
+      if (foe.kind === 'big' && Math.random() < BATTLE_BIG_BOSS_ITEM_RATE) {
+        const unowned = SHOP_ITEMS.filter((i) => !wallet.items.includes(i.id));
+        if (unowned.length > 0) {
+          const won = unowned[Math.floor(Math.random() * unowned.length)];
+          wallet.items.push(won.id);
+          reward.item = { id: won.id, name: won.name };
+        }
+      }
+      wallet.coins += reward.coins;
+      wallet.gems = (wallet.gems ?? 0) + reward.gems;
+      earnCoins(key, reward.coins);
+      saveWallets();
+      socket.emit('coins', wallet.coins);
+      if (reward.gems > 0) socket.emit('gems', wallet.gems);
+      if (foe.kind !== 'guardian') {
+        const label = foe.kind === 'big' ? '대보스' : '보스';
+        const text = `⚔️ ${player.nickname}#${player.tag}님이 원정 ${next}층 ${label} '${foe.name}'을(를) 격파했습니다!`;
+        io.emit('battle-news', { id: socket.id, nickname: player.nickname, tag: player.tag, text });
+        if (foe.kind === 'big') publishTicker('news', text);
+      }
+      checkAch(key);
+      console.log(`[battle] ${key}: ${next}층 수문장 '${foe.name}' 격파 (+${reward.coins}🪙${reward.gems ? ` +${reward.gems}💎` : ''}${reward.item ? ` 아이템 '${reward.item.name}'` : ''})`);
+    } else {
+      b.challengeAt = now + BATTLE_LOSE_COOLDOWN_MS;
+      saveWallets();
+      grantAch(key, 'b-lose');
+      console.log(`[battle] ${key}: ${next}층 수문장 '${foe.name}'에게 패배 (${sim.log.length}틱)`);
+    }
+    reply({
+      ok: true,
+      win: sim.win,
+      stage: next,
+      foe: { emoji: foe.emoji, name: foe.name, hp: foe.hp, atk: foe.atk },
+      log: sim.log,
+      ...(reward ? { reward } : {}),
+      ...(settled ? { settled: { kills: settled.kills ?? 0, coins: settled.coins ?? 0, gems: settled.gems ?? 0 } } : {}),
+      ...(reward?.item ? { items: [...wallet.items] } : {}),
+      coinsNow: wallet.coins,
+      gemsNow: wallet.gems ?? 0,
+      state: battleStateFor(key),
+    });
   });
 
   // ---- 도전과제 상태 / 칭호 착용 ----

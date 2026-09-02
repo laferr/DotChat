@@ -39,6 +39,9 @@ const NET_CHANNELS = new Set([
   'net:dig-news',
   'net:player-digging',
   'net:player-title',
+  'net:battle-news',
+  'net:player-battle',
+  'self:battle',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -105,6 +108,12 @@ contextBridge.exposeInMainWorld('overlay', {
   reportDig: (result: { kind: string; itemId?: string }): Promise<unknown> =>
     ipcRenderer.invoke('dig-report', result),
   getAchState: (): Promise<unknown> => ipcRenderer.invoke('ach-state'),
+  battleState: (): Promise<unknown> => ipcRenderer.invoke('battle-state'),
+  battleClaim: (): Promise<unknown> => ipcRenderer.invoke('battle-claim'),
+  battleUpgrade: (key: string): Promise<unknown> => ipcRenderer.invoke('battle-upgrade', key),
+  battleStage: (stage: number): Promise<unknown> => ipcRenderer.invoke('battle-stage', stage),
+  battleChallenge: (): Promise<unknown> => ipcRenderer.invoke('battle-challenge'),
+  battleActive: (active: boolean): Promise<unknown> => ipcRenderer.invoke('battle-active', active),
   setTitle: (title: string): Promise<unknown> => ipcRenderer.invoke('set-title', title),
   buyRandom: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy-random', itemId),
   enhance: (): Promise<unknown> => ipcRenderer.invoke('enhance'),
