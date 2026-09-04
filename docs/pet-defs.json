@@ -1,0 +1,4977 @@
+{
+  "fx": {
+    "coinMin": [
+      "분당 골드 +{v}",
+      "서버 분당 코인 틱 (소수는 확률 반올림 probRound)",
+      3
+    ],
+    "gemHour": [
+      "시간당 💎 +{v}",
+      "분당 틱에서 v/60 누적 → 1 넘을 때마다 💎 지급 (지갑 petGemAcc)",
+      2
+    ],
+    "nightCoin": [
+      "밤(KST 22~06시) 분당 골드 +{v}",
+      "분당 틱 + KST 시각 판정",
+      2
+    ],
+    "nightFish": [
+      "밤(KST 22~06시) 낚시 골드 +{v}%",
+      "fish 정산 delta 배율",
+      40
+    ],
+    "nightGem": [
+      "밤(KST 22~06시) 시간당 💎 +{v}",
+      "gemHour와 동일 누적기, 밤에만",
+      1
+    ],
+    "morningCoin": [
+      "아침(KST 06~10시) 분당 골드 +{v}",
+      "분당 틱 + KST 시각 판정",
+      2
+    ],
+    "stockProfit": [
+      "주식 매도 실현수익 +{v}%",
+      "stock-sell: pl>0 일 때 pl×v% 추가 지급 (매도가 아닌 실현수익 기준 → 사고팔기 반복 악용 불가)",
+      40
+    ],
+    "stockDelist": [
+      "상장폐지 시 보유가치의 {v}% 보상",
+      "runStockTick 상폐 처리에서 avg×qty×v% 지급",
+      50
+    ],
+    "stockBonus": [
+      "주식 매수 시 {v}% 확률로 1주 덤",
+      "stock-buy 정산 후 확률 판정 (평단가는 덤 포함 재계산)",
+      15
+    ],
+    "fishCoin": [
+      "낚시 골드 +{v}%",
+      "fish 정산 delta 배율 (상자류 제외)",
+      50
+    ],
+    "fishNew": [
+      "첫 어획 골드 +{v}%",
+      "fish 정산 isNew 보너스 배율",
+      150
+    ],
+    "fishRepeat": [
+      "반복 어획 골드 +{v}",
+      "fish 정산 !isNew 가산",
+      2
+    ],
+    "fishCd": [
+      "입질 대기 시간 −{v}%",
+      "클라 overlay 낚시 타이머 배율 + 서버 FISH_MIN_INTERVAL_MS 동일 배율",
+      40
+    ],
+    "fishTrophy": [
+      "월척 확률 +{v}%p",
+      "클라 rollFishCatch 월척 판정 가산",
+      1
+    ],
+    "fishTrophyCoin": [
+      "월척 보너스 골드 +{v}",
+      "fish 정산 FISH_TROPHY_COIN 가산",
+      15
+    ],
+    "fishChest": [
+      "낚시 상자류 확률 +{v}% (상대)",
+      "클라 rollFishCatch box/treasure 가중치 배율",
+      100
+    ],
+    "fishDouble": [
+      "더블캐치 확률 +{v}%p",
+      "fish 정산 ROD_DOUBLE 판정과 합산 (낚싯대 20성 미만도 발동)",
+      20
+    ],
+    "digCoin": [
+      "발굴 골드 +{v}%",
+      "dig 정산 delta 배율",
+      50
+    ],
+    "digCd": [
+      "발굴 쿨타임 −{v}%",
+      "클라 삽질 루프 길이 배율 + 서버 DIG_MIN_INTERVAL_MS 동일 배율",
+      40
+    ],
+    "digGem": [
+      "젬조각·보석·다이아 확률 +{v}% (상대)",
+      "클라 rollDig 가중치 배율 (꽝에서 차감)",
+      100
+    ],
+    "digChest": [
+      "발굴 상자 확률 +{v}% (상대)",
+      "클라 rollDig 상자 가중치 배율",
+      100
+    ],
+    "digMiss": [
+      "꽝이어도 골드 +{v} 보장",
+      "dig 정산 kind=miss 시 지급",
+      2
+    ],
+    "runCoin": [
+      "달리기 골드 +{v}%",
+      "runner-score delta 배율 (상한 적용 전)",
+      60
+    ],
+    "runCap": [
+      "달리기 최대 골드 +{v}",
+      "runner-score RUNNER_COIN_MAX 가산",
+      20
+    ],
+    "runCd": [
+      "러너 쿨타임 −{v}%",
+      "클라 main 쿨타임 + 서버 lastRunnerAt 판정 동일 배율",
+      60
+    ],
+    "runShield": [
+      "러너 트랩 보호막 {v}회",
+      "클라 overlay 러너: 충돌 시 보호막 소모",
+      3
+    ],
+    "slotWin": [
+      "슬롯 당첨금 +{v}%",
+      "slot 정산 delta 배율 (파츠 당첨 제외)",
+      30
+    ],
+    "slotFree": [
+      "슬롯 무료 스핀 확률 {v}%",
+      "slot: 판정 전 확률 → 비용 0",
+      20
+    ],
+    "slotRetry": [
+      "슬롯 꽝 시 {v}% 확률로 1회 재굴림",
+      "slot: miss 결과에 한해 재판정 1회",
+      30
+    ],
+    "dailyGemChance": [
+      "일일퀘스트 완료 시 {v}% 확률로 💎 +1",
+      "questProgress 보상 지급 시 판정",
+      100
+    ],
+    "dailyAll": [
+      "일퀘 올클리어 보너스 💎 +{v}",
+      "questProgress allBonus 가산",
+      5
+    ],
+    "attendCoin": [
+      "출석 골드 +{v}%",
+      "ensureDaily 출석 코인 배율",
+      150
+    ],
+    "attendCap": [
+      "연속 출석 골드 상한 +{v}",
+      "ensureDaily ATTEND_MAX_COIN 가산",
+      10
+    ],
+    "attendWeek": [
+      "연속 7일 보너스 💎 +{v}",
+      "ensureDaily ATTEND_WEEKLY_BONUS 가산",
+      8
+    ],
+    "enhCost": [
+      "강화 비용 −{v}%",
+      "enhance 비용 배율 (최소 1)",
+      30
+    ],
+    "enhDrop": [
+      "강화 하락 확률 −{v}% (상대)",
+      "enhance 하락 확률 배율 (주말 감소와 곱)",
+      40
+    ],
+    "enhPity": [
+      "강화 천장 −{v}회",
+      "enhance ENHANCE_PITY 감산 (최소 5)",
+      3
+    ],
+    "batAtk": [
+      "원정 공격력 +{v}%",
+      "battleStatsOf 공격 배율",
+      50
+    ],
+    "batHp": [
+      "원정 체력 +{v}%",
+      "battleStatsOf 체력 배율",
+      50
+    ],
+    "batCrit": [
+      "원정 치명타 +{v}%p",
+      "battleStatsOf 치명타 가산",
+      15
+    ],
+    "batCritMult": [
+      "원정 치명타 배율 +{v}",
+      "battleStatsOf BATTLE_CRIT_MULT 가산",
+      0.3
+    ],
+    "batLuck": [
+      "원정 행운(드랍률) +{v}%",
+      "battleStatsOf 행운 배율",
+      60
+    ],
+    "batCap": [
+      "원정 가방 상한 +{v}시간",
+      "battleStatsOf capMs 가산",
+      6
+    ],
+    "batCoin": [
+      "원정 전리품 골드 +{v}%",
+      "battleSettle 코인 배율",
+      40
+    ],
+    "batGem": [
+      "원정 💎 드랍률 +{v}%",
+      "battleSettle BATTLE_GEM_DROP_RATE 배율",
+      100
+    ],
+    "batMineral": [
+      "원정 광물 드랍률 +{v}%",
+      "battleSettle BATTLE_MINERAL_DROP_RATE 배율",
+      60
+    ],
+    "batSpeed": [
+      "원정 처치 속도 +{v}%",
+      "killMs 배율 (BATTLE_MIN_KILL_MS 하한 유지)",
+      30
+    ],
+    "batBoss": [
+      "수문장·보스전 공격 +{v}%",
+      "battle-challenge 시뮬 공격 배율",
+      50
+    ],
+    "batBossCoin": [
+      "수문장 첫 처치 골드 +{v}%",
+      "battle-challenge 보상 코인 배율",
+      50
+    ],
+    "batBossGem": [
+      "5·10층 보스 첫 처치 💎 +{v}",
+      "battle-challenge 보상 젬 가산",
+      3
+    ],
+    "batTicks": [
+      "수문장전 제한 시간 +{v}틱",
+      "BATTLE_FIGHT_MAX_TICKS 가산",
+      60
+    ],
+    "batLoseCd": [
+      "도전 실패 쿨타임 −{v}%",
+      "BATTLE_LOSE_COOLDOWN_MS 배율",
+      75
+    ],
+    "tierFrost": [
+      "서리 산맥(51~60층) 공격 +{v}%",
+      "battleStatsOf: 현재 층 티어 판정",
+      40
+    ],
+    "giftCd": [
+      "선물상자 등장 주기 −{v}%",
+      "클라 로컬 스폰 타이머 배율 (giftIntervalSec)",
+      40
+    ],
+    "giftDouble": [
+      "선물상자 파츠 2개 확률 {v}%",
+      "클라 claim-gift 판정",
+      40
+    ],
+    "exSell": [
+      "젬→골드 환전 +{v}골드/💎",
+      "exchange gem-to-gold 단가 가산 (서버가 매수단가−20 이하로 클램프)",
+      40
+    ],
+    "exBuy": [
+      "골드→젬 환전 −{v}골드/💎",
+      "exchange gold-to-gem 단가 감산",
+      40
+    ],
+    "noteCd": [
+      "쪽지 쿨타임 −{v}%",
+      "note-send 쿨타임 배율",
+      60
+    ],
+    "noteCost": [
+      "쪽지 비용 −{v}골드",
+      "note-send 비용 감산 (최소 1)",
+      4
+    ],
+    "adCost": [
+      "전광판 광고비 −{v}%",
+      "ticker-send TICKER_AD_COST 배율",
+      50
+    ],
+    "adCd": [
+      "광고 쿨타임 −{v}%",
+      "ticker-send 쿨타임 배율",
+      60
+    ],
+    "bragCd": [
+      "자랑하기 쿨타임 −{v}%",
+      "brag 쿨타임 배율",
+      75
+    ],
+    "randCost": [
+      "랜덤 파츠 뽑기 비용 −{v}%",
+      "buy-random 가격 배율",
+      30
+    ],
+    "satiety": [
+      "장착 펫 포만도 감소 속도 −{v}%",
+      "petTick 감소율 배율 (모든 장착 펫에 적용)",
+      50
+    ],
+    "foodPrice": [
+      "상점 펫 먹이 가격 −{v}%",
+      "buy-pet-item food 가격 배율",
+      50
+    ]
+  },
+  "gacha": {
+    "rate5": 0.6,
+    "rate4": 10
+  },
+  "pets": [
+    {
+      "id": "wildfire",
+      "name": "도깨비불",
+      "star": 5,
+      "sprite": "5성/WildfireIdle.png (+WildfireFly.png)",
+      "theme": "젬 정령",
+      "s1": [
+        [
+          "gemHour",
+          [
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1.5
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "giftCd",
+          [
+            5,
+            8,
+            11
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "exSell",
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "exBuy",
+          40
+        ]
+      ],
+      "flavor": "푸른 불꽃의 정령. 곁에 두면 젬이 조금씩 모인다. 10돌이면 환전소가 우대 창구가 된다.",
+      "levels": [
+        {
+          "gemHour": 0.5
+        },
+        {
+          "gemHour": 0.6
+        },
+        {
+          "gemHour": 0.6,
+          "giftCd": 5
+        },
+        {
+          "gemHour": 0.7,
+          "giftCd": 5
+        },
+        {
+          "gemHour": 0.7,
+          "giftCd": 8
+        },
+        {
+          "gemHour": 0.7,
+          "giftCd": 8,
+          "exSell": 20
+        },
+        {
+          "gemHour": 0.8,
+          "giftCd": 8,
+          "exSell": 20
+        },
+        {
+          "gemHour": 0.8,
+          "giftCd": 8,
+          "exSell": 30
+        },
+        {
+          "gemHour": 0.8,
+          "giftCd": 11,
+          "exSell": 30
+        },
+        {
+          "gemHour": 0.9,
+          "giftCd": 11,
+          "exSell": 30
+        },
+        {
+          "gemHour": 1.5,
+          "giftCd": 11,
+          "exSell": 40,
+          "exBuy": 40
+        }
+      ]
+    },
+    {
+      "id": "moonwolf",
+      "name": "달그림자 늑대",
+      "star": 5,
+      "sprite": "5성/Wolf.png",
+      "theme": "원정 전투",
+      "s1": [
+        [
+          "batAtk",
+          [
+            10,
+            13,
+            16,
+            19,
+            22,
+            30
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batCrit",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batCap",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batCoin",
+          25
+        ],
+        [
+          "batGem",
+          50
+        ]
+      ],
+      "flavor": "보랏빛 털의 전투형 늑대. 원정 공격력의 최상위 카드.",
+      "levels": [
+        {
+          "batAtk": 10
+        },
+        {
+          "batAtk": 13
+        },
+        {
+          "batAtk": 13,
+          "batCrit": 1
+        },
+        {
+          "batAtk": 16,
+          "batCrit": 1
+        },
+        {
+          "batAtk": 16,
+          "batCrit": 2
+        },
+        {
+          "batAtk": 16,
+          "batCrit": 2,
+          "batCap": 2
+        },
+        {
+          "batAtk": 19,
+          "batCrit": 2,
+          "batCap": 2
+        },
+        {
+          "batAtk": 19,
+          "batCrit": 2,
+          "batCap": 3
+        },
+        {
+          "batAtk": 19,
+          "batCrit": 3,
+          "batCap": 3
+        },
+        {
+          "batAtk": 22,
+          "batCrit": 3,
+          "batCap": 3
+        },
+        {
+          "batAtk": 30,
+          "batCrit": 3,
+          "batCap": 4,
+          "batCoin": 25,
+          "batGem": 50
+        }
+      ]
+    },
+    {
+      "id": "fireskull",
+      "name": "불꽃 해골",
+      "star": 5,
+      "sprite": "5성/fire_skull.png",
+      "theme": "슬롯·도박",
+      "s1": [
+        [
+          "slotWin",
+          [
+            10,
+            13,
+            16,
+            19,
+            22,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "slotFree",
+          [
+            2,
+            3.5,
+            5
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "enhDrop",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "slotRetry",
+          20
+        ]
+      ],
+      "flavor": "도박에 미친 해골. 슬롯 당첨금과 무료 스핀, 강화 하락 방어까지.",
+      "levels": [
+        {
+          "slotWin": 10
+        },
+        {
+          "slotWin": 13
+        },
+        {
+          "slotWin": 13,
+          "slotFree": 2
+        },
+        {
+          "slotWin": 16,
+          "slotFree": 2
+        },
+        {
+          "slotWin": 16,
+          "slotFree": 3.5
+        },
+        {
+          "slotWin": 16,
+          "slotFree": 3.5,
+          "enhDrop": 10
+        },
+        {
+          "slotWin": 19,
+          "slotFree": 3.5,
+          "enhDrop": 10
+        },
+        {
+          "slotWin": 19,
+          "slotFree": 3.5,
+          "enhDrop": 15
+        },
+        {
+          "slotWin": 19,
+          "slotFree": 5,
+          "enhDrop": 15
+        },
+        {
+          "slotWin": 22,
+          "slotFree": 5,
+          "enhDrop": 15
+        },
+        {
+          "slotWin": 25,
+          "slotFree": 5,
+          "enhDrop": 20,
+          "slotRetry": 20
+        }
+      ]
+    },
+    {
+      "id": "slime",
+      "name": "에메랄드 슬라임",
+      "star": 5,
+      "sprite": "5성/slime.png",
+      "theme": "낚시·발굴 속도",
+      "s1": [
+        [
+          "fishCd",
+          [
+            10,
+            13,
+            16,
+            19,
+            22,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "digCd",
+          [
+            3,
+            6,
+            9
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "digCoin",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "fishDouble",
+          10
+        ]
+      ],
+      "flavor": "찐득한 슬라임이 입질을 앞당기고 삽질을 빠르게 한다. 10돌 더블캐치 10%.",
+      "levels": [
+        {
+          "fishCd": 10
+        },
+        {
+          "fishCd": 13
+        },
+        {
+          "fishCd": 13,
+          "digCd": 3
+        },
+        {
+          "fishCd": 16,
+          "digCd": 3
+        },
+        {
+          "fishCd": 16,
+          "digCd": 6
+        },
+        {
+          "fishCd": 16,
+          "digCd": 6,
+          "digCoin": 10
+        },
+        {
+          "fishCd": 19,
+          "digCd": 6,
+          "digCoin": 10
+        },
+        {
+          "fishCd": 19,
+          "digCd": 6,
+          "digCoin": 15
+        },
+        {
+          "fishCd": 19,
+          "digCd": 9,
+          "digCoin": 15
+        },
+        {
+          "fishCd": 22,
+          "digCd": 9,
+          "digCoin": 15
+        },
+        {
+          "fishCd": 25,
+          "digCd": 9,
+          "digCoin": 20,
+          "fishDouble": 10
+        }
+      ]
+    },
+    {
+      "id": "cat-gray",
+      "name": "잿빛 고양이",
+      "star": 5,
+      "sprite": "5성/cat 1.png",
+      "theme": "주식·자산",
+      "s1": [
+        [
+          "stockProfit",
+          [
+            10,
+            14,
+            18,
+            22,
+            26,
+            30
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "adCost",
+          [
+            5,
+            10,
+            15
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "attendCoin",
+          [
+            50,
+            75,
+            100
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "coinMin",
+          1
+        ],
+        [
+          "stockDelist",
+          30
+        ]
+      ],
+      "flavor": "냉정한 투자 고양이. 실현수익을 불리고 상폐 손실을 메워준다.",
+      "levels": [
+        {
+          "stockProfit": 10
+        },
+        {
+          "stockProfit": 14
+        },
+        {
+          "stockProfit": 14,
+          "adCost": 5
+        },
+        {
+          "stockProfit": 18,
+          "adCost": 5
+        },
+        {
+          "stockProfit": 18,
+          "adCost": 10
+        },
+        {
+          "stockProfit": 18,
+          "adCost": 10,
+          "attendCoin": 50
+        },
+        {
+          "stockProfit": 22,
+          "adCost": 10,
+          "attendCoin": 50
+        },
+        {
+          "stockProfit": 22,
+          "adCost": 10,
+          "attendCoin": 75
+        },
+        {
+          "stockProfit": 22,
+          "adCost": 15,
+          "attendCoin": 75
+        },
+        {
+          "stockProfit": 26,
+          "adCost": 15,
+          "attendCoin": 75
+        },
+        {
+          "stockProfit": 30,
+          "adCost": 15,
+          "attendCoin": 100,
+          "coinMin": 1,
+          "stockDelist": 30
+        }
+      ]
+    },
+    {
+      "id": "cat-orange",
+      "name": "호박 고양이",
+      "star": 5,
+      "sprite": "5성/cat 1.6.png",
+      "theme": "일퀘·출석",
+      "s1": [
+        [
+          "dailyGemChance",
+          [
+            30,
+            40,
+            50,
+            60,
+            70,
+            100
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "attendCoin",
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "dailyAll",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "attendWeek",
+          3
+        ]
+      ],
+      "flavor": "부지런한 주황 고양이. 일일퀘스트마다 젬을 덤으로 챙긴다. 10돌은 퀘스트당 +1 확정.",
+      "levels": [
+        {
+          "dailyGemChance": 30
+        },
+        {
+          "dailyGemChance": 40
+        },
+        {
+          "dailyGemChance": 40,
+          "attendCoin": 20
+        },
+        {
+          "dailyGemChance": 50,
+          "attendCoin": 20
+        },
+        {
+          "dailyGemChance": 50,
+          "attendCoin": 30
+        },
+        {
+          "dailyGemChance": 50,
+          "attendCoin": 30,
+          "dailyAll": 1
+        },
+        {
+          "dailyGemChance": 60,
+          "attendCoin": 30,
+          "dailyAll": 1
+        },
+        {
+          "dailyGemChance": 60,
+          "attendCoin": 30,
+          "dailyAll": 2
+        },
+        {
+          "dailyGemChance": 60,
+          "attendCoin": 40,
+          "dailyAll": 2
+        },
+        {
+          "dailyGemChance": 70,
+          "attendCoin": 40,
+          "dailyAll": 2
+        },
+        {
+          "dailyGemChance": 100,
+          "attendCoin": 40,
+          "dailyAll": 3,
+          "attendWeek": 3
+        }
+      ]
+    },
+    {
+      "id": "cat-white",
+      "name": "백설 고양이",
+      "star": 5,
+      "sprite": "5성/cat 1.9.png",
+      "theme": "달리기·전천후",
+      "s1": [
+        [
+          "runCoin",
+          [
+            20,
+            25,
+            30,
+            35,
+            40,
+            60
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "coinMin",
+          [
+            0.2,
+            0.3,
+            0.4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "runCd",
+          [
+            20,
+            30,
+            50
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "runCap",
+          10
+        ],
+        [
+          "fishCoin",
+          10
+        ]
+      ],
+      "flavor": "눈처럼 빠른 흰 고양이. 러너 보상과 쿨타임 전문.",
+      "levels": [
+        {
+          "runCoin": 20
+        },
+        {
+          "runCoin": 25
+        },
+        {
+          "runCoin": 25,
+          "coinMin": 0.2
+        },
+        {
+          "runCoin": 30,
+          "coinMin": 0.2
+        },
+        {
+          "runCoin": 30,
+          "coinMin": 0.3
+        },
+        {
+          "runCoin": 30,
+          "coinMin": 0.3,
+          "runCd": 20
+        },
+        {
+          "runCoin": 35,
+          "coinMin": 0.3,
+          "runCd": 20
+        },
+        {
+          "runCoin": 35,
+          "coinMin": 0.3,
+          "runCd": 30
+        },
+        {
+          "runCoin": 35,
+          "coinMin": 0.4,
+          "runCd": 30
+        },
+        {
+          "runCoin": 40,
+          "coinMin": 0.4,
+          "runCd": 30
+        },
+        {
+          "runCoin": 60,
+          "coinMin": 0.4,
+          "runCd": 50,
+          "runCap": 10,
+          "fishCoin": 10
+        }
+      ]
+    },
+    {
+      "id": "CubicAraraAzul",
+      "name": "파랑앵무",
+      "star": 4,
+      "sprite": "4성/CubicAraraAzul.png",
+      "theme": "소셜(쪽지·광고)",
+      "s1": [
+        [
+          "noteCd",
+          [
+            20,
+            25,
+            30,
+            35,
+            40,
+            60
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "coinMin",
+          [
+            0.1,
+            0.15,
+            0.2
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "adCost",
+          [
+            10,
+            15,
+            25
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "noteCost",
+          3
+        ]
+      ],
+      "flavor": "수다스러운 앵무새. 쪽지를 자주 보낼 수 있게 해준다.",
+      "levels": [
+        {
+          "noteCd": 20
+        },
+        {
+          "noteCd": 25
+        },
+        {
+          "noteCd": 25,
+          "coinMin": 0.1
+        },
+        {
+          "noteCd": 30,
+          "coinMin": 0.1
+        },
+        {
+          "noteCd": 30,
+          "coinMin": 0.15
+        },
+        {
+          "noteCd": 30,
+          "coinMin": 0.15,
+          "adCost": 10
+        },
+        {
+          "noteCd": 35,
+          "coinMin": 0.15,
+          "adCost": 10
+        },
+        {
+          "noteCd": 35,
+          "coinMin": 0.15,
+          "adCost": 15
+        },
+        {
+          "noteCd": 35,
+          "coinMin": 0.2,
+          "adCost": 15
+        },
+        {
+          "noteCd": 40,
+          "coinMin": 0.2,
+          "adCost": 15
+        },
+        {
+          "noteCd": 60,
+          "coinMin": 0.2,
+          "adCost": 25,
+          "noteCost": 3
+        }
+      ]
+    },
+    {
+      "id": "CubicBat",
+      "name": "박쥐",
+      "star": 4,
+      "sprite": "4성/CubicBat.png",
+      "theme": "야행성 골드",
+      "s1": [
+        [
+          "nightCoin",
+          [
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1.5
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batCrit",
+          [
+            0.5,
+            1,
+            1.5
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "nightFish",
+          [
+            10,
+            15,
+            25
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "nightGem",
+          0.5
+        ]
+      ],
+      "flavor": "밤(22~06시)에만 힘을 내는 박쥐. 야간 접속 유저용.",
+      "levels": [
+        {
+          "nightCoin": 0.5
+        },
+        {
+          "nightCoin": 0.6
+        },
+        {
+          "nightCoin": 0.6,
+          "batCrit": 0.5
+        },
+        {
+          "nightCoin": 0.7,
+          "batCrit": 0.5
+        },
+        {
+          "nightCoin": 0.7,
+          "batCrit": 1
+        },
+        {
+          "nightCoin": 0.7,
+          "batCrit": 1,
+          "nightFish": 10
+        },
+        {
+          "nightCoin": 0.8,
+          "batCrit": 1,
+          "nightFish": 10
+        },
+        {
+          "nightCoin": 0.8,
+          "batCrit": 1,
+          "nightFish": 15
+        },
+        {
+          "nightCoin": 0.8,
+          "batCrit": 1.5,
+          "nightFish": 15
+        },
+        {
+          "nightCoin": 0.9,
+          "batCrit": 1.5,
+          "nightFish": 15
+        },
+        {
+          "nightCoin": 1.5,
+          "batCrit": 1.5,
+          "nightFish": 25,
+          "nightGem": 0.5
+        }
+      ]
+    },
+    {
+      "id": "CubicBull",
+      "name": "황소",
+      "star": 4,
+      "sprite": "4성/CubicBull.png",
+      "theme": "주식(불장)",
+      "s1": [
+        [
+          "stockProfit",
+          [
+            5,
+            6,
+            7,
+            8,
+            9,
+            15
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "coinMin",
+          [
+            0.1,
+            0.15,
+            0.2
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "adCost",
+          [
+            10,
+            15,
+            25
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "stockDelist",
+          15
+        ]
+      ],
+      "flavor": "상승장의 상징. 매도 실현수익을 불려준다.",
+      "levels": [
+        {
+          "stockProfit": 5
+        },
+        {
+          "stockProfit": 6
+        },
+        {
+          "stockProfit": 6,
+          "coinMin": 0.1
+        },
+        {
+          "stockProfit": 7,
+          "coinMin": 0.1
+        },
+        {
+          "stockProfit": 7,
+          "coinMin": 0.15
+        },
+        {
+          "stockProfit": 7,
+          "coinMin": 0.15,
+          "adCost": 10
+        },
+        {
+          "stockProfit": 8,
+          "coinMin": 0.15,
+          "adCost": 10
+        },
+        {
+          "stockProfit": 8,
+          "coinMin": 0.15,
+          "adCost": 15
+        },
+        {
+          "stockProfit": 8,
+          "coinMin": 0.2,
+          "adCost": 15
+        },
+        {
+          "stockProfit": 9,
+          "coinMin": 0.2,
+          "adCost": 15
+        },
+        {
+          "stockProfit": 15,
+          "coinMin": 0.2,
+          "adCost": 25,
+          "stockDelist": 15
+        }
+      ]
+    },
+    {
+      "id": "CubicBunny",
+      "name": "토끼",
+      "star": 4,
+      "sprite": "4성/CubicBunny.png",
+      "theme": "달리기",
+      "s1": [
+        [
+          "runCoin",
+          [
+            10,
+            12,
+            14,
+            16,
+            18,
+            30
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "runCap",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "runCd",
+          [
+            20,
+            25,
+            35
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "runShield",
+          1
+        ]
+      ],
+      "flavor": "깡충깡충. 러너 보상과 쿨타임, 10돌엔 트랩 보호막.",
+      "levels": [
+        {
+          "runCoin": 10
+        },
+        {
+          "runCoin": 12
+        },
+        {
+          "runCoin": 12,
+          "runCap": 2
+        },
+        {
+          "runCoin": 14,
+          "runCap": 2
+        },
+        {
+          "runCoin": 14,
+          "runCap": 3
+        },
+        {
+          "runCoin": 14,
+          "runCap": 3,
+          "runCd": 20
+        },
+        {
+          "runCoin": 16,
+          "runCap": 3,
+          "runCd": 20
+        },
+        {
+          "runCoin": 16,
+          "runCap": 3,
+          "runCd": 25
+        },
+        {
+          "runCoin": 16,
+          "runCap": 4,
+          "runCd": 25
+        },
+        {
+          "runCoin": 18,
+          "runCap": 4,
+          "runCd": 25
+        },
+        {
+          "runCoin": 30,
+          "runCap": 4,
+          "runCd": 35,
+          "runShield": 1
+        }
+      ]
+    },
+    {
+      "id": "CubicCat",
+      "name": "고양이",
+      "star": 4,
+      "sprite": "4성/CubicCat.png",
+      "theme": "선물상자·호기심",
+      "s1": [
+        [
+          "giftCd",
+          [
+            10,
+            12,
+            14,
+            16,
+            18,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "coinMin",
+          [
+            0.1,
+            0.15,
+            0.2
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "fishChest",
+          [
+            30,
+            40,
+            60
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "fishTrophy",
+          0.2
+        ]
+      ],
+      "flavor": "호기심 많은 고양이. 선물상자가 더 자주 오고 낚시에서 상자를 잘 건진다.",
+      "levels": [
+        {
+          "giftCd": 10
+        },
+        {
+          "giftCd": 12
+        },
+        {
+          "giftCd": 12,
+          "coinMin": 0.1
+        },
+        {
+          "giftCd": 14,
+          "coinMin": 0.1
+        },
+        {
+          "giftCd": 14,
+          "coinMin": 0.15
+        },
+        {
+          "giftCd": 14,
+          "coinMin": 0.15,
+          "fishChest": 30
+        },
+        {
+          "giftCd": 16,
+          "coinMin": 0.15,
+          "fishChest": 30
+        },
+        {
+          "giftCd": 16,
+          "coinMin": 0.15,
+          "fishChest": 40
+        },
+        {
+          "giftCd": 16,
+          "coinMin": 0.2,
+          "fishChest": 40
+        },
+        {
+          "giftCd": 18,
+          "coinMin": 0.2,
+          "fishChest": 40
+        },
+        {
+          "giftCd": 25,
+          "coinMin": 0.2,
+          "fishChest": 60,
+          "fishTrophy": 0.2
+        }
+      ]
+    },
+    {
+      "id": "CubicChameleon",
+      "name": "카멜레온",
+      "star": 4,
+      "sprite": "4성/CubicChameleon.png",
+      "theme": "변신·뽑기 할인",
+      "s1": [
+        [
+          "randCost",
+          [
+            10,
+            12,
+            14,
+            16,
+            18,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "adCost",
+          [
+            5,
+            8,
+            10
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "enhCost",
+          [
+            5,
+            7,
+            10
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "giftDouble",
+          15
+        ]
+      ],
+      "flavor": "외형 놀이 전문. 랜덤 파츠 뽑기와 강화 비용을 깎는다.",
+      "levels": [
+        {
+          "randCost": 10
+        },
+        {
+          "randCost": 12
+        },
+        {
+          "randCost": 12,
+          "adCost": 5
+        },
+        {
+          "randCost": 14,
+          "adCost": 5
+        },
+        {
+          "randCost": 14,
+          "adCost": 8
+        },
+        {
+          "randCost": 14,
+          "adCost": 8,
+          "enhCost": 5
+        },
+        {
+          "randCost": 16,
+          "adCost": 8,
+          "enhCost": 5
+        },
+        {
+          "randCost": 16,
+          "adCost": 8,
+          "enhCost": 7
+        },
+        {
+          "randCost": 16,
+          "adCost": 10,
+          "enhCost": 7
+        },
+        {
+          "randCost": 18,
+          "adCost": 10,
+          "enhCost": 7
+        },
+        {
+          "randCost": 25,
+          "adCost": 10,
+          "enhCost": 10,
+          "giftDouble": 15
+        }
+      ]
+    },
+    {
+      "id": "CubicChicken",
+      "name": "닭",
+      "star": 4,
+      "sprite": "4성/CubicChicken.png",
+      "theme": "출석·아침",
+      "s1": [
+        [
+          "attendCoin",
+          [
+            30,
+            35,
+            40,
+            45,
+            50,
+            80
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "coinMin",
+          [
+            0.1,
+            0.15,
+            0.2
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "morningCoin",
+          [
+            0.5,
+            0.75,
+            1
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "attendWeek",
+          2
+        ]
+      ],
+      "flavor": "아침을 깨우는 닭. 출석 골드와 아침 접속 보너스.",
+      "levels": [
+        {
+          "attendCoin": 30
+        },
+        {
+          "attendCoin": 35
+        },
+        {
+          "attendCoin": 35,
+          "coinMin": 0.1
+        },
+        {
+          "attendCoin": 40,
+          "coinMin": 0.1
+        },
+        {
+          "attendCoin": 40,
+          "coinMin": 0.15
+        },
+        {
+          "attendCoin": 40,
+          "coinMin": 0.15,
+          "morningCoin": 0.5
+        },
+        {
+          "attendCoin": 45,
+          "coinMin": 0.15,
+          "morningCoin": 0.5
+        },
+        {
+          "attendCoin": 45,
+          "coinMin": 0.15,
+          "morningCoin": 0.75
+        },
+        {
+          "attendCoin": 45,
+          "coinMin": 0.2,
+          "morningCoin": 0.75
+        },
+        {
+          "attendCoin": 50,
+          "coinMin": 0.2,
+          "morningCoin": 0.75
+        },
+        {
+          "attendCoin": 80,
+          "coinMin": 0.2,
+          "morningCoin": 1,
+          "attendWeek": 2
+        }
+      ]
+    },
+    {
+      "id": "CubicCow",
+      "name": "젖소",
+      "star": 4,
+      "sprite": "4성/CubicCow.png",
+      "theme": "골드 패시브",
+      "s1": [
+        [
+          "coinMin",
+          [
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            1
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "fishCoin",
+          [
+            3,
+            4,
+            5
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "attendCoin",
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "satiety",
+          20
+        ]
+      ],
+      "flavor": "느긋하게 골드를 짜내는 젖소. 10돌이면 분당 +1 골드.",
+      "levels": [
+        {
+          "coinMin": 0.3
+        },
+        {
+          "coinMin": 0.35
+        },
+        {
+          "coinMin": 0.35,
+          "fishCoin": 3
+        },
+        {
+          "coinMin": 0.4,
+          "fishCoin": 3
+        },
+        {
+          "coinMin": 0.4,
+          "fishCoin": 4
+        },
+        {
+          "coinMin": 0.4,
+          "fishCoin": 4,
+          "attendCoin": 20
+        },
+        {
+          "coinMin": 0.45,
+          "fishCoin": 4,
+          "attendCoin": 20
+        },
+        {
+          "coinMin": 0.45,
+          "fishCoin": 4,
+          "attendCoin": 30
+        },
+        {
+          "coinMin": 0.45,
+          "fishCoin": 5,
+          "attendCoin": 30
+        },
+        {
+          "coinMin": 0.5,
+          "fishCoin": 5,
+          "attendCoin": 30
+        },
+        {
+          "coinMin": 1,
+          "fishCoin": 5,
+          "attendCoin": 40,
+          "satiety": 20
+        }
+      ]
+    },
+    {
+      "id": "CubicDolphin",
+      "name": "돌고래",
+      "star": 4,
+      "sprite": "4성/CubicDolphin.png",
+      "theme": "낚시 골드",
+      "s1": [
+        [
+          "fishCoin",
+          [
+            8,
+            10,
+            12,
+            14,
+            16,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "fishCd",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "fishTrophy",
+          [
+            0.1,
+            0.15,
+            0.2
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "fishDouble",
+          3
+        ]
+      ],
+      "flavor": "낚시꾼의 친구. 낚시 골드와 월척 확률.",
+      "levels": [
+        {
+          "fishCoin": 8
+        },
+        {
+          "fishCoin": 10
+        },
+        {
+          "fishCoin": 10,
+          "fishCd": 2
+        },
+        {
+          "fishCoin": 12,
+          "fishCd": 2
+        },
+        {
+          "fishCoin": 12,
+          "fishCd": 3
+        },
+        {
+          "fishCoin": 12,
+          "fishCd": 3,
+          "fishTrophy": 0.1
+        },
+        {
+          "fishCoin": 14,
+          "fishCd": 3,
+          "fishTrophy": 0.1
+        },
+        {
+          "fishCoin": 14,
+          "fishCd": 3,
+          "fishTrophy": 0.15
+        },
+        {
+          "fishCoin": 14,
+          "fishCd": 4,
+          "fishTrophy": 0.15
+        },
+        {
+          "fishCoin": 16,
+          "fishCd": 4,
+          "fishTrophy": 0.15
+        },
+        {
+          "fishCoin": 25,
+          "fishCd": 4,
+          "fishTrophy": 0.2,
+          "fishDouble": 3
+        }
+      ]
+    },
+    {
+      "id": "CubicDuck",
+      "name": "오리",
+      "star": 4,
+      "sprite": "4성/CubicDuck.png",
+      "theme": "낚시 속도",
+      "s1": [
+        [
+          "fishCd",
+          [
+            6,
+            8,
+            10,
+            12,
+            14,
+            20
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "fishCoin",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "fishChest",
+          [
+            25,
+            35,
+            50
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "fishRepeat",
+          1
+        ]
+      ],
+      "flavor": "물 위의 오리가 입질을 재촉한다.",
+      "levels": [
+        {
+          "fishCd": 6
+        },
+        {
+          "fishCd": 8
+        },
+        {
+          "fishCd": 8,
+          "fishCoin": 2
+        },
+        {
+          "fishCd": 10,
+          "fishCoin": 2
+        },
+        {
+          "fishCd": 10,
+          "fishCoin": 3
+        },
+        {
+          "fishCd": 10,
+          "fishCoin": 3,
+          "fishChest": 25
+        },
+        {
+          "fishCd": 12,
+          "fishCoin": 3,
+          "fishChest": 25
+        },
+        {
+          "fishCd": 12,
+          "fishCoin": 3,
+          "fishChest": 35
+        },
+        {
+          "fishCd": 12,
+          "fishCoin": 4,
+          "fishChest": 35
+        },
+        {
+          "fishCd": 14,
+          "fishCoin": 4,
+          "fishChest": 35
+        },
+        {
+          "fishCd": 20,
+          "fishCoin": 4,
+          "fishChest": 50,
+          "fishRepeat": 1
+        }
+      ]
+    },
+    {
+      "id": "CubicElephant",
+      "name": "코끼리",
+      "star": 4,
+      "sprite": "4성/CubicElephant.png",
+      "theme": "원정 체력",
+      "s1": [
+        [
+          "batHp",
+          [
+            8,
+            10,
+            12,
+            14,
+            16,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batCap",
+          [
+            0.5,
+            0.75,
+            1
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batCoin",
+          [
+            5,
+            8,
+            12
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batTicks",
+          30
+        ]
+      ],
+      "flavor": "든든한 체력 탱커. 가방도 조금 커진다.",
+      "levels": [
+        {
+          "batHp": 8
+        },
+        {
+          "batHp": 10
+        },
+        {
+          "batHp": 10,
+          "batCap": 0.5
+        },
+        {
+          "batHp": 12,
+          "batCap": 0.5
+        },
+        {
+          "batHp": 12,
+          "batCap": 0.75
+        },
+        {
+          "batHp": 12,
+          "batCap": 0.75,
+          "batCoin": 5
+        },
+        {
+          "batHp": 14,
+          "batCap": 0.75,
+          "batCoin": 5
+        },
+        {
+          "batHp": 14,
+          "batCap": 0.75,
+          "batCoin": 8
+        },
+        {
+          "batHp": 14,
+          "batCap": 1,
+          "batCoin": 8
+        },
+        {
+          "batHp": 16,
+          "batCap": 1,
+          "batCoin": 8
+        },
+        {
+          "batHp": 25,
+          "batCap": 1,
+          "batCoin": 12,
+          "batTicks": 30
+        }
+      ]
+    },
+    {
+      "id": "CubicFish",
+      "name": "물고기",
+      "star": 4,
+      "sprite": "4성/CubicFish.png",
+      "theme": "낚시 도감",
+      "s1": [
+        [
+          "fishNew",
+          [
+            50,
+            60,
+            70,
+            80,
+            90,
+            150
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "fishCoin",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "fishTrophyCoin",
+          [
+            5,
+            8,
+            12
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "fishRepeat",
+          1
+        ]
+      ],
+      "flavor": "도감 채우기 전문. 첫 어획 보상이 커진다.",
+      "levels": [
+        {
+          "fishNew": 50
+        },
+        {
+          "fishNew": 60
+        },
+        {
+          "fishNew": 60,
+          "fishCoin": 2
+        },
+        {
+          "fishNew": 70,
+          "fishCoin": 2
+        },
+        {
+          "fishNew": 70,
+          "fishCoin": 3
+        },
+        {
+          "fishNew": 70,
+          "fishCoin": 3,
+          "fishTrophyCoin": 5
+        },
+        {
+          "fishNew": 80,
+          "fishCoin": 3,
+          "fishTrophyCoin": 5
+        },
+        {
+          "fishNew": 80,
+          "fishCoin": 3,
+          "fishTrophyCoin": 8
+        },
+        {
+          "fishNew": 80,
+          "fishCoin": 4,
+          "fishTrophyCoin": 8
+        },
+        {
+          "fishNew": 90,
+          "fishCoin": 4,
+          "fishTrophyCoin": 8
+        },
+        {
+          "fishNew": 150,
+          "fishCoin": 4,
+          "fishTrophyCoin": 12,
+          "fishRepeat": 1
+        }
+      ]
+    },
+    {
+      "id": "CubicFlamingo",
+      "name": "플라밍고",
+      "star": 4,
+      "sprite": "4성/CubicFlamingo.png",
+      "theme": "전광판 광고",
+      "s1": [
+        [
+          "adCost",
+          [
+            20,
+            25,
+            30,
+            35,
+            40,
+            50
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "noteCd",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "adCd",
+          [
+            30,
+            40,
+            50
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "coinMin",
+          0.5
+        ]
+      ],
+      "flavor": "화려한 것을 좋아한다. 전광판 광고비·쿨타임 할인.",
+      "levels": [
+        {
+          "adCost": 20
+        },
+        {
+          "adCost": 25
+        },
+        {
+          "adCost": 25,
+          "noteCd": 10
+        },
+        {
+          "adCost": 30,
+          "noteCd": 10
+        },
+        {
+          "adCost": 30,
+          "noteCd": 15
+        },
+        {
+          "adCost": 30,
+          "noteCd": 15,
+          "adCd": 30
+        },
+        {
+          "adCost": 35,
+          "noteCd": 15,
+          "adCd": 30
+        },
+        {
+          "adCost": 35,
+          "noteCd": 15,
+          "adCd": 40
+        },
+        {
+          "adCost": 35,
+          "noteCd": 20,
+          "adCd": 40
+        },
+        {
+          "adCost": 40,
+          "noteCd": 20,
+          "adCd": 40
+        },
+        {
+          "adCost": 50,
+          "noteCd": 20,
+          "adCd": 50,
+          "coinMin": 0.5
+        }
+      ]
+    },
+    {
+      "id": "CubicFox",
+      "name": "여우",
+      "star": 4,
+      "sprite": "4성/CubicFox.png",
+      "theme": "슬롯(교활)",
+      "s1": [
+        [
+          "slotFree",
+          [
+            3,
+            4,
+            5,
+            6,
+            7,
+            10
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "slotWin",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "slotRetry",
+          [
+            10,
+            12,
+            15
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "slotWin",
+          8
+        ]
+      ],
+      "flavor": "교활한 여우. 슬롯 무료 스핀과 꽝 재굴림.",
+      "levels": [
+        {
+          "slotFree": 3
+        },
+        {
+          "slotFree": 4
+        },
+        {
+          "slotFree": 4,
+          "slotWin": 2
+        },
+        {
+          "slotFree": 5,
+          "slotWin": 2
+        },
+        {
+          "slotFree": 5,
+          "slotWin": 3
+        },
+        {
+          "slotFree": 5,
+          "slotWin": 3,
+          "slotRetry": 10
+        },
+        {
+          "slotFree": 6,
+          "slotWin": 3,
+          "slotRetry": 10
+        },
+        {
+          "slotFree": 6,
+          "slotWin": 3,
+          "slotRetry": 12
+        },
+        {
+          "slotFree": 6,
+          "slotWin": 4,
+          "slotRetry": 12
+        },
+        {
+          "slotFree": 7,
+          "slotWin": 4,
+          "slotRetry": 12
+        },
+        {
+          "slotFree": 10,
+          "slotWin": 12,
+          "slotRetry": 15
+        }
+      ]
+    },
+    {
+      "id": "CubicFrog",
+      "name": "개구리",
+      "star": 4,
+      "sprite": "4성/CubicFrog.png",
+      "theme": "발굴 골드",
+      "s1": [
+        [
+          "digCoin",
+          [
+            8,
+            10,
+            12,
+            14,
+            16,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "digCd",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "digGem",
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "digMiss",
+          1
+        ]
+      ],
+      "flavor": "땅속 사정에 밝은 개구리. 발굴 골드와 보석 확률.",
+      "levels": [
+        {
+          "digCoin": 8
+        },
+        {
+          "digCoin": 10
+        },
+        {
+          "digCoin": 10,
+          "digCd": 2
+        },
+        {
+          "digCoin": 12,
+          "digCd": 2
+        },
+        {
+          "digCoin": 12,
+          "digCd": 3
+        },
+        {
+          "digCoin": 12,
+          "digCd": 3,
+          "digGem": 20
+        },
+        {
+          "digCoin": 14,
+          "digCd": 3,
+          "digGem": 20
+        },
+        {
+          "digCoin": 14,
+          "digCd": 3,
+          "digGem": 30
+        },
+        {
+          "digCoin": 14,
+          "digCd": 4,
+          "digGem": 30
+        },
+        {
+          "digCoin": 16,
+          "digCd": 4,
+          "digGem": 30
+        },
+        {
+          "digCoin": 25,
+          "digCd": 4,
+          "digGem": 40,
+          "digMiss": 1
+        }
+      ]
+    },
+    {
+      "id": "CubicGiraffe",
+      "name": "기린",
+      "star": 4,
+      "sprite": "4성/CubicGiraffe.png",
+      "theme": "원정 행운",
+      "s1": [
+        [
+          "batLuck",
+          [
+            10,
+            12,
+            14,
+            16,
+            18,
+            30
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batAtk",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batMineral",
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batGem",
+          30
+        ]
+      ],
+      "flavor": "높은 곳에서 전리품을 먼저 본다. 원정 드랍률 특화.",
+      "levels": [
+        {
+          "batLuck": 10
+        },
+        {
+          "batLuck": 12
+        },
+        {
+          "batLuck": 12,
+          "batAtk": 1
+        },
+        {
+          "batLuck": 14,
+          "batAtk": 1
+        },
+        {
+          "batLuck": 14,
+          "batAtk": 2
+        },
+        {
+          "batLuck": 14,
+          "batAtk": 2,
+          "batMineral": 20
+        },
+        {
+          "batLuck": 16,
+          "batAtk": 2,
+          "batMineral": 20
+        },
+        {
+          "batLuck": 16,
+          "batAtk": 2,
+          "batMineral": 30
+        },
+        {
+          "batLuck": 16,
+          "batAtk": 3,
+          "batMineral": 30
+        },
+        {
+          "batLuck": 18,
+          "batAtk": 3,
+          "batMineral": 30
+        },
+        {
+          "batLuck": 30,
+          "batAtk": 3,
+          "batMineral": 40,
+          "batGem": 30
+        }
+      ]
+    },
+    {
+      "id": "CubicGrizzly",
+      "name": "회색곰",
+      "star": 4,
+      "sprite": "4성/CubicGrizzly.png",
+      "theme": "원정 공격",
+      "s1": [
+        [
+          "batAtk",
+          [
+            6,
+            7,
+            8,
+            9,
+            10,
+            16
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batHp",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batCrit",
+          [
+            3,
+            4,
+            5
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batCritMult",
+          0.1
+        ]
+      ],
+      "flavor": "묵직한 한 방. 원정 공격력과 치명타.",
+      "levels": [
+        {
+          "batAtk": 6
+        },
+        {
+          "batAtk": 7
+        },
+        {
+          "batAtk": 7,
+          "batHp": 1
+        },
+        {
+          "batAtk": 8,
+          "batHp": 1
+        },
+        {
+          "batAtk": 8,
+          "batHp": 2
+        },
+        {
+          "batAtk": 8,
+          "batHp": 2,
+          "batCrit": 3
+        },
+        {
+          "batAtk": 9,
+          "batHp": 2,
+          "batCrit": 3
+        },
+        {
+          "batAtk": 9,
+          "batHp": 2,
+          "batCrit": 4
+        },
+        {
+          "batAtk": 9,
+          "batHp": 3,
+          "batCrit": 4
+        },
+        {
+          "batAtk": 10,
+          "batHp": 3,
+          "batCrit": 4
+        },
+        {
+          "batAtk": 16,
+          "batHp": 3,
+          "batCrit": 5,
+          "batCritMult": 0.1
+        }
+      ]
+    },
+    {
+      "id": "CubicHorse",
+      "name": "말",
+      "star": 4,
+      "sprite": "4성/CubicHorse.png",
+      "theme": "달리기 상한",
+      "s1": [
+        [
+          "runCap",
+          [
+            5,
+            6,
+            7,
+            8,
+            9,
+            15
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "runCoin",
+          [
+            5,
+            8,
+            10
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "runCd",
+          [
+            25,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "giftCd",
+          10
+        ]
+      ],
+      "flavor": "오래 달리는 말. 러너 최대 골드를 올린다.",
+      "levels": [
+        {
+          "runCap": 5
+        },
+        {
+          "runCap": 6
+        },
+        {
+          "runCap": 6,
+          "runCoin": 5
+        },
+        {
+          "runCap": 7,
+          "runCoin": 5
+        },
+        {
+          "runCap": 7,
+          "runCoin": 8
+        },
+        {
+          "runCap": 7,
+          "runCoin": 8,
+          "runCd": 25
+        },
+        {
+          "runCap": 8,
+          "runCoin": 8,
+          "runCd": 25
+        },
+        {
+          "runCap": 8,
+          "runCoin": 8,
+          "runCd": 30
+        },
+        {
+          "runCap": 8,
+          "runCoin": 10,
+          "runCd": 30
+        },
+        {
+          "runCap": 9,
+          "runCoin": 10,
+          "runCd": 30
+        },
+        {
+          "runCap": 15,
+          "runCoin": 10,
+          "runCd": 40,
+          "giftCd": 10
+        }
+      ]
+    },
+    {
+      "id": "CubicJaguatirica",
+      "name": "오셀롯",
+      "star": 4,
+      "sprite": "4성/CubicJaguatirica.png",
+      "theme": "원정 치명타",
+      "s1": [
+        [
+          "batCrit",
+          [
+            2,
+            2.5,
+            3,
+            3.5,
+            4,
+            6
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batAtk",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batSpeed",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "nightCoin",
+          0.5
+        ]
+      ],
+      "flavor": "야행성 사냥꾼. 치명타와 처치 속도.",
+      "levels": [
+        {
+          "batCrit": 2
+        },
+        {
+          "batCrit": 2.5
+        },
+        {
+          "batCrit": 2.5,
+          "batAtk": 1
+        },
+        {
+          "batCrit": 3,
+          "batAtk": 1
+        },
+        {
+          "batCrit": 3,
+          "batAtk": 2
+        },
+        {
+          "batCrit": 3,
+          "batAtk": 2,
+          "batSpeed": 10
+        },
+        {
+          "batCrit": 3.5,
+          "batAtk": 2,
+          "batSpeed": 10
+        },
+        {
+          "batCrit": 3.5,
+          "batAtk": 2,
+          "batSpeed": 15
+        },
+        {
+          "batCrit": 3.5,
+          "batAtk": 3,
+          "batSpeed": 15
+        },
+        {
+          "batCrit": 4,
+          "batAtk": 3,
+          "batSpeed": 15
+        },
+        {
+          "batCrit": 6,
+          "batAtk": 3,
+          "batSpeed": 20,
+          "nightCoin": 0.5
+        }
+      ]
+    },
+    {
+      "id": "CubicLion",
+      "name": "사자",
+      "star": 4,
+      "sprite": "4성/CubicLion.png",
+      "theme": "원정 보스전",
+      "s1": [
+        [
+          "batBoss",
+          [
+            10,
+            12,
+            14,
+            16,
+            18,
+            30
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batHp",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batBossCoin",
+          [
+            25,
+            35,
+            50
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batLoseCd",
+          50
+        ]
+      ],
+      "flavor": "수문장 앞에서 포효한다. 보스전 전용 공격력.",
+      "levels": [
+        {
+          "batBoss": 10
+        },
+        {
+          "batBoss": 12
+        },
+        {
+          "batBoss": 12,
+          "batHp": 1
+        },
+        {
+          "batBoss": 14,
+          "batHp": 1
+        },
+        {
+          "batBoss": 14,
+          "batHp": 2
+        },
+        {
+          "batBoss": 14,
+          "batHp": 2,
+          "batBossCoin": 25
+        },
+        {
+          "batBoss": 16,
+          "batHp": 2,
+          "batBossCoin": 25
+        },
+        {
+          "batBoss": 16,
+          "batHp": 2,
+          "batBossCoin": 35
+        },
+        {
+          "batBoss": 16,
+          "batHp": 3,
+          "batBossCoin": 35
+        },
+        {
+          "batBoss": 18,
+          "batHp": 3,
+          "batBossCoin": 35
+        },
+        {
+          "batBoss": 30,
+          "batHp": 3,
+          "batBossCoin": 50,
+          "batLoseCd": 50
+        }
+      ]
+    },
+    {
+      "id": "CubicLoboGuara",
+      "name": "갈기늑대",
+      "star": 4,
+      "sprite": "4성/CubicLoboGuara.png",
+      "theme": "원정 젬 드랍",
+      "s1": [
+        [
+          "batGem",
+          [
+            20,
+            25,
+            30,
+            35,
+            40,
+            60
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batLuck",
+          [
+            2,
+            4,
+            6
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batMineral",
+          [
+            15,
+            25,
+            35
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batBossGem",
+          1
+        ]
+      ],
+      "flavor": "반짝이는 것을 물어오는 늑대. 원정 젬 드랍 특화.",
+      "levels": [
+        {
+          "batGem": 20
+        },
+        {
+          "batGem": 25
+        },
+        {
+          "batGem": 25,
+          "batLuck": 2
+        },
+        {
+          "batGem": 30,
+          "batLuck": 2
+        },
+        {
+          "batGem": 30,
+          "batLuck": 4
+        },
+        {
+          "batGem": 30,
+          "batLuck": 4,
+          "batMineral": 15
+        },
+        {
+          "batGem": 35,
+          "batLuck": 4,
+          "batMineral": 15
+        },
+        {
+          "batGem": 35,
+          "batLuck": 4,
+          "batMineral": 25
+        },
+        {
+          "batGem": 35,
+          "batLuck": 6,
+          "batMineral": 25
+        },
+        {
+          "batGem": 40,
+          "batLuck": 6,
+          "batMineral": 25
+        },
+        {
+          "batGem": 60,
+          "batLuck": 6,
+          "batMineral": 35,
+          "batBossGem": 1
+        }
+      ]
+    },
+    {
+      "id": "CubicMicoLeaoDourado",
+      "name": "황금타마린",
+      "star": 4,
+      "sprite": "4성/CubicMicoLeaoDourado.png",
+      "theme": "골드·환전",
+      "s1": [
+        [
+          "coinMin",
+          [
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            1.2
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "slotWin",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "exSell",
+          [
+            10,
+            20,
+            30
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "exBuy",
+          20
+        ]
+      ],
+      "flavor": "황금빛 원숭이. 분당 골드와 환전 우대.",
+      "levels": [
+        {
+          "coinMin": 0.4
+        },
+        {
+          "coinMin": 0.45
+        },
+        {
+          "coinMin": 0.45,
+          "slotWin": 2
+        },
+        {
+          "coinMin": 0.5,
+          "slotWin": 2
+        },
+        {
+          "coinMin": 0.5,
+          "slotWin": 3
+        },
+        {
+          "coinMin": 0.5,
+          "slotWin": 3,
+          "exSell": 10
+        },
+        {
+          "coinMin": 0.55,
+          "slotWin": 3,
+          "exSell": 10
+        },
+        {
+          "coinMin": 0.55,
+          "slotWin": 3,
+          "exSell": 20
+        },
+        {
+          "coinMin": 0.55,
+          "slotWin": 4,
+          "exSell": 20
+        },
+        {
+          "coinMin": 0.6,
+          "slotWin": 4,
+          "exSell": 20
+        },
+        {
+          "coinMin": 1.2,
+          "slotWin": 4,
+          "exSell": 30,
+          "exBuy": 20
+        }
+      ]
+    },
+    {
+      "id": "CubicMonkey",
+      "name": "원숭이",
+      "star": 4,
+      "sprite": "4성/CubicMonkey.png",
+      "theme": "선물상자",
+      "s1": [
+        [
+          "giftCd",
+          [
+            8,
+            10,
+            12,
+            14,
+            16,
+            22
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "runCoin",
+          [
+            3,
+            5,
+            7
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "giftDouble",
+          [
+            10,
+            15,
+            25
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "randCost",
+          15
+        ]
+      ],
+      "flavor": "장난꾸러기. 선물상자를 더 자주, 가끔 두 개씩.",
+      "levels": [
+        {
+          "giftCd": 8
+        },
+        {
+          "giftCd": 10
+        },
+        {
+          "giftCd": 10,
+          "runCoin": 3
+        },
+        {
+          "giftCd": 12,
+          "runCoin": 3
+        },
+        {
+          "giftCd": 12,
+          "runCoin": 5
+        },
+        {
+          "giftCd": 12,
+          "runCoin": 5,
+          "giftDouble": 10
+        },
+        {
+          "giftCd": 14,
+          "runCoin": 5,
+          "giftDouble": 10
+        },
+        {
+          "giftCd": 14,
+          "runCoin": 5,
+          "giftDouble": 15
+        },
+        {
+          "giftCd": 14,
+          "runCoin": 7,
+          "giftDouble": 15
+        },
+        {
+          "giftCd": 16,
+          "runCoin": 7,
+          "giftDouble": 15
+        },
+        {
+          "giftCd": 22,
+          "runCoin": 7,
+          "giftDouble": 25,
+          "randCost": 15
+        }
+      ]
+    },
+    {
+      "id": "CubicMoose",
+      "name": "무스",
+      "star": 4,
+      "sprite": "4성/CubicMoose.png",
+      "theme": "원정 가방",
+      "s1": [
+        [
+          "batCap",
+          [
+            1,
+            1.25,
+            1.5,
+            1.75,
+            2,
+            3
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batHp",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batCoin",
+          [
+            8,
+            12,
+            15
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batTicks",
+          20
+        ]
+      ],
+      "flavor": "큰 뿔에 전리품을 잔뜩 건다. 가방 상한 특화 (방치 유저용).",
+      "levels": [
+        {
+          "batCap": 1
+        },
+        {
+          "batCap": 1.25
+        },
+        {
+          "batCap": 1.25,
+          "batHp": 2
+        },
+        {
+          "batCap": 1.5,
+          "batHp": 2
+        },
+        {
+          "batCap": 1.5,
+          "batHp": 3
+        },
+        {
+          "batCap": 1.5,
+          "batHp": 3,
+          "batCoin": 8
+        },
+        {
+          "batCap": 1.75,
+          "batHp": 3,
+          "batCoin": 8
+        },
+        {
+          "batCap": 1.75,
+          "batHp": 3,
+          "batCoin": 12
+        },
+        {
+          "batCap": 1.75,
+          "batHp": 4,
+          "batCoin": 12
+        },
+        {
+          "batCap": 2,
+          "batHp": 4,
+          "batCoin": 12
+        },
+        {
+          "batCap": 3,
+          "batHp": 4,
+          "batCoin": 15,
+          "batTicks": 20
+        }
+      ]
+    },
+    {
+      "id": "CubicOwl",
+      "name": "부엉이",
+      "star": 4,
+      "sprite": "4성/CubicOwl.png",
+      "theme": "일퀘 젬",
+      "s1": [
+        [
+          "dailyGemChance",
+          [
+            15,
+            20,
+            25,
+            30,
+            35,
+            50
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "nightCoin",
+          [
+            0.2,
+            0.3,
+            0.4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "dailyAll",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "attendWeek",
+          2
+        ]
+      ],
+      "flavor": "지혜로운 부엉이. 일일퀘스트 젬 보너스.",
+      "levels": [
+        {
+          "dailyGemChance": 15
+        },
+        {
+          "dailyGemChance": 20
+        },
+        {
+          "dailyGemChance": 20,
+          "nightCoin": 0.2
+        },
+        {
+          "dailyGemChance": 25,
+          "nightCoin": 0.2
+        },
+        {
+          "dailyGemChance": 25,
+          "nightCoin": 0.3
+        },
+        {
+          "dailyGemChance": 25,
+          "nightCoin": 0.3,
+          "dailyAll": 1
+        },
+        {
+          "dailyGemChance": 30,
+          "nightCoin": 0.3,
+          "dailyAll": 1
+        },
+        {
+          "dailyGemChance": 30,
+          "nightCoin": 0.3,
+          "dailyAll": 2
+        },
+        {
+          "dailyGemChance": 30,
+          "nightCoin": 0.4,
+          "dailyAll": 2
+        },
+        {
+          "dailyGemChance": 35,
+          "nightCoin": 0.4,
+          "dailyAll": 2
+        },
+        {
+          "dailyGemChance": 50,
+          "nightCoin": 0.4,
+          "dailyAll": 3,
+          "attendWeek": 2
+        }
+      ]
+    },
+    {
+      "id": "CubicPanda",
+      "name": "판다",
+      "star": 4,
+      "sprite": "4성/CubicPanda.png",
+      "theme": "강화 비용",
+      "s1": [
+        [
+          "enhCost",
+          [
+            8,
+            10,
+            12,
+            14,
+            16,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "coinMin",
+          [
+            0.1,
+            0.15,
+            0.2
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "enhDrop",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "satiety",
+          25
+        ]
+      ],
+      "flavor": "느긋한 판다. 대장간 비용과 하락 확률을 낮춘다. 배도 덜 고프다.",
+      "levels": [
+        {
+          "enhCost": 8
+        },
+        {
+          "enhCost": 10
+        },
+        {
+          "enhCost": 10,
+          "coinMin": 0.1
+        },
+        {
+          "enhCost": 12,
+          "coinMin": 0.1
+        },
+        {
+          "enhCost": 12,
+          "coinMin": 0.15
+        },
+        {
+          "enhCost": 12,
+          "coinMin": 0.15,
+          "enhDrop": 10
+        },
+        {
+          "enhCost": 14,
+          "coinMin": 0.15,
+          "enhDrop": 10
+        },
+        {
+          "enhCost": 14,
+          "coinMin": 0.15,
+          "enhDrop": 15
+        },
+        {
+          "enhCost": 14,
+          "coinMin": 0.2,
+          "enhDrop": 15
+        },
+        {
+          "enhCost": 16,
+          "coinMin": 0.2,
+          "enhDrop": 15
+        },
+        {
+          "enhCost": 25,
+          "coinMin": 0.2,
+          "enhDrop": 20,
+          "satiety": 25
+        }
+      ]
+    },
+    {
+      "id": "CubicPenguin",
+      "name": "펭귄",
+      "star": 4,
+      "sprite": "4성/CubicPenguin.png",
+      "theme": "얼음낚시",
+      "s1": [
+        [
+          "fishCoin",
+          [
+            6,
+            8,
+            10,
+            12,
+            14,
+            20
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "fishCd",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "fishChest",
+          [
+            20,
+            30,
+            45
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "fishRepeat",
+          1
+        ]
+      ],
+      "flavor": "얼음 구멍 낚시의 달인.",
+      "levels": [
+        {
+          "fishCoin": 6
+        },
+        {
+          "fishCoin": 8
+        },
+        {
+          "fishCoin": 8,
+          "fishCd": 2
+        },
+        {
+          "fishCoin": 10,
+          "fishCd": 2
+        },
+        {
+          "fishCoin": 10,
+          "fishCd": 3
+        },
+        {
+          "fishCoin": 10,
+          "fishCd": 3,
+          "fishChest": 20
+        },
+        {
+          "fishCoin": 12,
+          "fishCd": 3,
+          "fishChest": 20
+        },
+        {
+          "fishCoin": 12,
+          "fishCd": 3,
+          "fishChest": 30
+        },
+        {
+          "fishCoin": 12,
+          "fishCd": 4,
+          "fishChest": 30
+        },
+        {
+          "fishCoin": 14,
+          "fishCd": 4,
+          "fishChest": 30
+        },
+        {
+          "fishCoin": 20,
+          "fishCd": 4,
+          "fishChest": 45,
+          "fishRepeat": 1
+        }
+      ]
+    },
+    {
+      "id": "CubicPig",
+      "name": "돼지",
+      "star": 4,
+      "sprite": "4성/CubicPig.png",
+      "theme": "저금통·출석",
+      "s1": [
+        [
+          "attendCoin",
+          [
+            50,
+            60,
+            70,
+            80,
+            90,
+            120
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "coinMin",
+          [
+            0.1,
+            0.15,
+            0.2
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "slotWin",
+          [
+            5,
+            8,
+            12
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "foodPrice",
+          25
+        ]
+      ],
+      "flavor": "저금통 돼지. 출석 골드가 크게 늘고 먹이도 싸게 산다.",
+      "levels": [
+        {
+          "attendCoin": 50
+        },
+        {
+          "attendCoin": 60
+        },
+        {
+          "attendCoin": 60,
+          "coinMin": 0.1
+        },
+        {
+          "attendCoin": 70,
+          "coinMin": 0.1
+        },
+        {
+          "attendCoin": 70,
+          "coinMin": 0.15
+        },
+        {
+          "attendCoin": 70,
+          "coinMin": 0.15,
+          "slotWin": 5
+        },
+        {
+          "attendCoin": 80,
+          "coinMin": 0.15,
+          "slotWin": 5
+        },
+        {
+          "attendCoin": 80,
+          "coinMin": 0.15,
+          "slotWin": 8
+        },
+        {
+          "attendCoin": 80,
+          "coinMin": 0.2,
+          "slotWin": 8
+        },
+        {
+          "attendCoin": 90,
+          "coinMin": 0.2,
+          "slotWin": 8
+        },
+        {
+          "attendCoin": 120,
+          "coinMin": 0.2,
+          "slotWin": 12,
+          "foodPrice": 25
+        }
+      ]
+    },
+    {
+      "id": "CubicPolar",
+      "name": "북극곰",
+      "star": 4,
+      "sprite": "4성/CubicPolar.png",
+      "theme": "원정 체력(서리)",
+      "s1": [
+        [
+          "batHp",
+          [
+            10,
+            12,
+            14,
+            16,
+            18,
+            28
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batAtk",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "tierFrost",
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batTicks",
+          30
+        ]
+      ],
+      "flavor": "서리 산맥의 주인. 51~60층에서 특히 강하다.",
+      "levels": [
+        {
+          "batHp": 10
+        },
+        {
+          "batHp": 12
+        },
+        {
+          "batHp": 12,
+          "batAtk": 1
+        },
+        {
+          "batHp": 14,
+          "batAtk": 1
+        },
+        {
+          "batHp": 14,
+          "batAtk": 2
+        },
+        {
+          "batHp": 14,
+          "batAtk": 2,
+          "tierFrost": 20
+        },
+        {
+          "batHp": 16,
+          "batAtk": 2,
+          "tierFrost": 20
+        },
+        {
+          "batHp": 16,
+          "batAtk": 2,
+          "tierFrost": 30
+        },
+        {
+          "batHp": 16,
+          "batAtk": 3,
+          "tierFrost": 30
+        },
+        {
+          "batHp": 18,
+          "batAtk": 3,
+          "tierFrost": 30
+        },
+        {
+          "batHp": 28,
+          "batAtk": 3,
+          "tierFrost": 40,
+          "batTicks": 30
+        }
+      ]
+    },
+    {
+      "id": "CubicRacoon",
+      "name": "너구리",
+      "star": 4,
+      "sprite": "4성/CubicRacoon.png",
+      "theme": "발굴 속도",
+      "s1": [
+        [
+          "digCd",
+          [
+            8,
+            10,
+            12,
+            14,
+            16,
+            22
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "digCoin",
+          [
+            3,
+            5,
+            7
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "digChest",
+          [
+            30,
+            45,
+            60
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "digGem",
+          30
+        ]
+      ],
+      "flavor": "뒤지기 전문가. 삽질이 빨라지고 상자를 잘 찾는다.",
+      "levels": [
+        {
+          "digCd": 8
+        },
+        {
+          "digCd": 10
+        },
+        {
+          "digCd": 10,
+          "digCoin": 3
+        },
+        {
+          "digCd": 12,
+          "digCoin": 3
+        },
+        {
+          "digCd": 12,
+          "digCoin": 5
+        },
+        {
+          "digCd": 12,
+          "digCoin": 5,
+          "digChest": 30
+        },
+        {
+          "digCd": 14,
+          "digCoin": 5,
+          "digChest": 30
+        },
+        {
+          "digCd": 14,
+          "digCoin": 5,
+          "digChest": 45
+        },
+        {
+          "digCd": 14,
+          "digCoin": 7,
+          "digChest": 45
+        },
+        {
+          "digCd": 16,
+          "digCoin": 7,
+          "digChest": 45
+        },
+        {
+          "digCd": 22,
+          "digCoin": 7,
+          "digChest": 60,
+          "digGem": 30
+        }
+      ]
+    },
+    {
+      "id": "CubicRat",
+      "name": "쥐",
+      "star": 4,
+      "sprite": "4성/CubicRat.png",
+      "theme": "발굴 젬조각",
+      "s1": [
+        [
+          "digGem",
+          [
+            30,
+            40,
+            50,
+            60,
+            70,
+            100
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "digCoin",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "digCd",
+          [
+            5,
+            8,
+            10
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "digMiss",
+          2
+        ]
+      ],
+      "flavor": "작은 틈의 반짝임을 놓치지 않는다. 젬조각·보석·다이아 확률.",
+      "levels": [
+        {
+          "digGem": 30
+        },
+        {
+          "digGem": 40
+        },
+        {
+          "digGem": 40,
+          "digCoin": 2
+        },
+        {
+          "digGem": 50,
+          "digCoin": 2
+        },
+        {
+          "digGem": 50,
+          "digCoin": 3
+        },
+        {
+          "digGem": 50,
+          "digCoin": 3,
+          "digCd": 5
+        },
+        {
+          "digGem": 60,
+          "digCoin": 3,
+          "digCd": 5
+        },
+        {
+          "digGem": 60,
+          "digCoin": 3,
+          "digCd": 8
+        },
+        {
+          "digGem": 60,
+          "digCoin": 4,
+          "digCd": 8
+        },
+        {
+          "digGem": 70,
+          "digCoin": 4,
+          "digCd": 8
+        },
+        {
+          "digGem": 100,
+          "digCoin": 4,
+          "digCd": 10,
+          "digMiss": 2
+        }
+      ]
+    },
+    {
+      "id": "CubicRhino",
+      "name": "코뿔소",
+      "star": 4,
+      "sprite": "4성/CubicRhino.png",
+      "theme": "원정 돌진",
+      "s1": [
+        [
+          "batAtk",
+          [
+            8,
+            9,
+            10,
+            11,
+            12,
+            20
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batHp",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batLoseCd",
+          [
+            50,
+            60,
+            75
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batSpeed",
+          15
+        ]
+      ],
+      "flavor": "실패해도 바로 다시 들이받는다. 도전 쿨타임 감소.",
+      "levels": [
+        {
+          "batAtk": 8
+        },
+        {
+          "batAtk": 9
+        },
+        {
+          "batAtk": 9,
+          "batHp": 2
+        },
+        {
+          "batAtk": 10,
+          "batHp": 2
+        },
+        {
+          "batAtk": 10,
+          "batHp": 3
+        },
+        {
+          "batAtk": 10,
+          "batHp": 3,
+          "batLoseCd": 50
+        },
+        {
+          "batAtk": 11,
+          "batHp": 3,
+          "batLoseCd": 50
+        },
+        {
+          "batAtk": 11,
+          "batHp": 3,
+          "batLoseCd": 60
+        },
+        {
+          "batAtk": 11,
+          "batHp": 4,
+          "batLoseCd": 60
+        },
+        {
+          "batAtk": 12,
+          "batHp": 4,
+          "batLoseCd": 60
+        },
+        {
+          "batAtk": 20,
+          "batHp": 4,
+          "batLoseCd": 75,
+          "batSpeed": 15
+        }
+      ]
+    },
+    {
+      "id": "CubicSheep",
+      "name": "양",
+      "star": 4,
+      "sprite": "4성/CubicSheep.png",
+      "theme": "골드·포만도",
+      "s1": [
+        [
+          "coinMin",
+          [
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.8
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "noteCd",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "satiety",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "foodPrice",
+          20
+        ]
+      ],
+      "flavor": "온순한 양. 분당 골드와 먹이 절약.",
+      "levels": [
+        {
+          "coinMin": 0.25
+        },
+        {
+          "coinMin": 0.3
+        },
+        {
+          "coinMin": 0.3,
+          "noteCd": 10
+        },
+        {
+          "coinMin": 0.35,
+          "noteCd": 10
+        },
+        {
+          "coinMin": 0.35,
+          "noteCd": 15
+        },
+        {
+          "coinMin": 0.35,
+          "noteCd": 15,
+          "satiety": 10
+        },
+        {
+          "coinMin": 0.4,
+          "noteCd": 15,
+          "satiety": 10
+        },
+        {
+          "coinMin": 0.4,
+          "noteCd": 15,
+          "satiety": 15
+        },
+        {
+          "coinMin": 0.4,
+          "noteCd": 20,
+          "satiety": 15
+        },
+        {
+          "coinMin": 0.45,
+          "noteCd": 20,
+          "satiety": 15
+        },
+        {
+          "coinMin": 0.8,
+          "noteCd": 20,
+          "satiety": 20,
+          "foodPrice": 20
+        }
+      ]
+    },
+    {
+      "id": "CubicShiba",
+      "name": "시바견",
+      "star": 4,
+      "sprite": "4성/CubicShiba.png",
+      "theme": "충성·출석",
+      "s1": [
+        [
+          "attendCoin",
+          [
+            40,
+            45,
+            50,
+            55,
+            60,
+            90
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "attendCap",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "attendWeek",
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "dailyAll",
+          2
+        ]
+      ],
+      "flavor": "매일 문 앞에서 기다린다. 연속 출석 보상 특화.",
+      "levels": [
+        {
+          "attendCoin": 40
+        },
+        {
+          "attendCoin": 45
+        },
+        {
+          "attendCoin": 45,
+          "attendCap": 1
+        },
+        {
+          "attendCoin": 50,
+          "attendCap": 1
+        },
+        {
+          "attendCoin": 50,
+          "attendCap": 2
+        },
+        {
+          "attendCoin": 50,
+          "attendCap": 2,
+          "attendWeek": 1
+        },
+        {
+          "attendCoin": 55,
+          "attendCap": 2,
+          "attendWeek": 1
+        },
+        {
+          "attendCoin": 55,
+          "attendCap": 2,
+          "attendWeek": 2
+        },
+        {
+          "attendCoin": 55,
+          "attendCap": 3,
+          "attendWeek": 2
+        },
+        {
+          "attendCoin": 60,
+          "attendCap": 3,
+          "attendWeek": 2
+        },
+        {
+          "attendCoin": 90,
+          "attendCap": 3,
+          "attendWeek": 3,
+          "dailyAll": 2
+        }
+      ]
+    },
+    {
+      "id": "CubicSnake",
+      "name": "뱀",
+      "star": 4,
+      "sprite": "4성/CubicSnake.png",
+      "theme": "주식(변동성)",
+      "s1": [
+        [
+          "stockProfit",
+          [
+            4,
+            5,
+            6,
+            7,
+            8,
+            12
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "adCost",
+          [
+            5,
+            8,
+            10
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "stockDelist",
+          [
+            10,
+            15,
+            25
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "stockBonus",
+          5
+        ]
+      ],
+      "flavor": "변동성을 즐기는 뱀. 상폐 보상과 매수 덤.",
+      "levels": [
+        {
+          "stockProfit": 4
+        },
+        {
+          "stockProfit": 5
+        },
+        {
+          "stockProfit": 5,
+          "adCost": 5
+        },
+        {
+          "stockProfit": 6,
+          "adCost": 5
+        },
+        {
+          "stockProfit": 6,
+          "adCost": 8
+        },
+        {
+          "stockProfit": 6,
+          "adCost": 8,
+          "stockDelist": 10
+        },
+        {
+          "stockProfit": 7,
+          "adCost": 8,
+          "stockDelist": 10
+        },
+        {
+          "stockProfit": 7,
+          "adCost": 8,
+          "stockDelist": 15
+        },
+        {
+          "stockProfit": 7,
+          "adCost": 10,
+          "stockDelist": 15
+        },
+        {
+          "stockProfit": 8,
+          "adCost": 10,
+          "stockDelist": 15
+        },
+        {
+          "stockProfit": 12,
+          "adCost": 10,
+          "stockDelist": 25,
+          "stockBonus": 5
+        }
+      ]
+    },
+    {
+      "id": "CubicToucan",
+      "name": "투칸",
+      "star": 4,
+      "sprite": "4성/CubicToucan.png",
+      "theme": "광고·자랑",
+      "s1": [
+        [
+          "adCost",
+          [
+            15,
+            20,
+            25,
+            30,
+            35,
+            45
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "noteCd",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "bragCd",
+          [
+            50,
+            60,
+            75
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "adCd",
+          50
+        ]
+      ],
+      "flavor": "큰 부리로 떠든다. 광고와 자랑하기 쿨타임.",
+      "levels": [
+        {
+          "adCost": 15
+        },
+        {
+          "adCost": 20
+        },
+        {
+          "adCost": 20,
+          "noteCd": 10
+        },
+        {
+          "adCost": 25,
+          "noteCd": 10
+        },
+        {
+          "adCost": 25,
+          "noteCd": 15
+        },
+        {
+          "adCost": 25,
+          "noteCd": 15,
+          "bragCd": 50
+        },
+        {
+          "adCost": 30,
+          "noteCd": 15,
+          "bragCd": 50
+        },
+        {
+          "adCost": 30,
+          "noteCd": 15,
+          "bragCd": 60
+        },
+        {
+          "adCost": 30,
+          "noteCd": 20,
+          "bragCd": 60
+        },
+        {
+          "adCost": 35,
+          "noteCd": 20,
+          "bragCd": 60
+        },
+        {
+          "adCost": 45,
+          "noteCd": 20,
+          "bragCd": 75,
+          "adCd": 50
+        }
+      ]
+    },
+    {
+      "id": "CubicTurtle",
+      "name": "거북",
+      "star": 4,
+      "sprite": "4성/CubicTurtle.png",
+      "theme": "강화 안정",
+      "s1": [
+        [
+          "enhDrop",
+          [
+            8,
+            10,
+            12,
+            14,
+            16,
+            25
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "enhCost",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "satiety",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "enhPity",
+          1
+        ]
+      ],
+      "flavor": "느리지만 확실하게. 강화 하락 방어와 천장 단축.",
+      "levels": [
+        {
+          "enhDrop": 8
+        },
+        {
+          "enhDrop": 10
+        },
+        {
+          "enhDrop": 10,
+          "enhCost": 2
+        },
+        {
+          "enhDrop": 12,
+          "enhCost": 2
+        },
+        {
+          "enhDrop": 12,
+          "enhCost": 3
+        },
+        {
+          "enhDrop": 12,
+          "enhCost": 3,
+          "satiety": 10
+        },
+        {
+          "enhDrop": 14,
+          "enhCost": 3,
+          "satiety": 10
+        },
+        {
+          "enhDrop": 14,
+          "enhCost": 3,
+          "satiety": 15
+        },
+        {
+          "enhDrop": 14,
+          "enhCost": 4,
+          "satiety": 15
+        },
+        {
+          "enhDrop": 16,
+          "enhCost": 4,
+          "satiety": 15
+        },
+        {
+          "enhDrop": 25,
+          "enhCost": 4,
+          "satiety": 20,
+          "enhPity": 1
+        }
+      ]
+    },
+    {
+      "id": "CubicUnicorn",
+      "name": "유니콘",
+      "star": 4,
+      "sprite": "4성/CubicUnicorn.png",
+      "theme": "젬 패시브",
+      "s1": [
+        [
+          "gemHour",
+          [
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.6
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "giftCd",
+          [
+            5,
+            8,
+            10
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "exSell",
+          [
+            20,
+            30,
+            40
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "exBuy",
+          30
+        ]
+      ],
+      "flavor": "4성 유일의 젬 패시브. 도깨비불의 축소판.",
+      "levels": [
+        {
+          "gemHour": 0.2
+        },
+        {
+          "gemHour": 0.25
+        },
+        {
+          "gemHour": 0.25,
+          "giftCd": 5
+        },
+        {
+          "gemHour": 0.3,
+          "giftCd": 5
+        },
+        {
+          "gemHour": 0.3,
+          "giftCd": 8
+        },
+        {
+          "gemHour": 0.3,
+          "giftCd": 8,
+          "exSell": 20
+        },
+        {
+          "gemHour": 0.35,
+          "giftCd": 8,
+          "exSell": 20
+        },
+        {
+          "gemHour": 0.35,
+          "giftCd": 8,
+          "exSell": 30
+        },
+        {
+          "gemHour": 0.35,
+          "giftCd": 10,
+          "exSell": 30
+        },
+        {
+          "gemHour": 0.4,
+          "giftCd": 10,
+          "exSell": 30
+        },
+        {
+          "gemHour": 0.6,
+          "giftCd": 10,
+          "exSell": 40,
+          "exBuy": 30
+        }
+      ]
+    },
+    {
+      "id": "CubicWolf",
+      "name": "늑대",
+      "star": 4,
+      "sprite": "4성/CubicWolf.png",
+      "theme": "원정 균형",
+      "s1": [
+        [
+          "batAtk",
+          [
+            5,
+            6,
+            7,
+            8,
+            9,
+            12
+          ]
+        ],
+        [
+          "batHp",
+          [
+            5,
+            6,
+            7,
+            8,
+            9,
+            12
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "batLuck",
+          [
+            2,
+            4,
+            6
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "batSpeed",
+          [
+            10,
+            15,
+            20
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "batCrit",
+          3
+        ]
+      ],
+      "flavor": "무리 사냥꾼. 공격·체력을 고르게 올린다.",
+      "levels": [
+        {
+          "batAtk": 5,
+          "batHp": 5
+        },
+        {
+          "batAtk": 6,
+          "batHp": 6
+        },
+        {
+          "batAtk": 6,
+          "batHp": 6,
+          "batLuck": 2
+        },
+        {
+          "batAtk": 7,
+          "batHp": 7,
+          "batLuck": 2
+        },
+        {
+          "batAtk": 7,
+          "batHp": 7,
+          "batLuck": 4
+        },
+        {
+          "batAtk": 7,
+          "batHp": 7,
+          "batLuck": 4,
+          "batSpeed": 10
+        },
+        {
+          "batAtk": 8,
+          "batHp": 8,
+          "batLuck": 4,
+          "batSpeed": 10
+        },
+        {
+          "batAtk": 8,
+          "batHp": 8,
+          "batLuck": 4,
+          "batSpeed": 15
+        },
+        {
+          "batAtk": 8,
+          "batHp": 8,
+          "batLuck": 6,
+          "batSpeed": 15
+        },
+        {
+          "batAtk": 9,
+          "batHp": 9,
+          "batLuck": 6,
+          "batSpeed": 15
+        },
+        {
+          "batAtk": 12,
+          "batHp": 12,
+          "batLuck": 6,
+          "batSpeed": 20,
+          "batCrit": 3
+        }
+      ]
+    },
+    {
+      "id": "CubicZebra",
+      "name": "얼룩말",
+      "star": 4,
+      "sprite": "4성/CubicZebra.png",
+      "theme": "달리기 골드",
+      "s1": [
+        [
+          "runCoin",
+          [
+            15,
+            17,
+            19,
+            21,
+            23,
+            35
+          ]
+        ]
+      ],
+      "minor": [
+        [
+          "runCap",
+          [
+            2,
+            3,
+            4
+          ]
+        ]
+      ],
+      "s2": [
+        [
+          "runCd",
+          [
+            15,
+            25,
+            35
+          ]
+        ]
+      ],
+      "s3": [
+        [
+          "runShield",
+          2
+        ]
+      ],
+      "flavor": "줄무늬 스프린터. 러너 골드와 보호막 2회.",
+      "levels": [
+        {
+          "runCoin": 15
+        },
+        {
+          "runCoin": 17
+        },
+        {
+          "runCoin": 17,
+          "runCap": 2
+        },
+        {
+          "runCoin": 19,
+          "runCap": 2
+        },
+        {
+          "runCoin": 19,
+          "runCap": 3
+        },
+        {
+          "runCoin": 19,
+          "runCap": 3,
+          "runCd": 15
+        },
+        {
+          "runCoin": 21,
+          "runCap": 3,
+          "runCd": 15
+        },
+        {
+          "runCoin": 21,
+          "runCap": 3,
+          "runCd": 25
+        },
+        {
+          "runCoin": 21,
+          "runCap": 4,
+          "runCd": 25
+        },
+        {
+          "runCoin": 23,
+          "runCap": 4,
+          "runCd": 25
+        },
+        {
+          "runCoin": 35,
+          "runCap": 4,
+          "runCd": 35,
+          "runShield": 2
+        }
+      ]
+    }
+  ]
+}

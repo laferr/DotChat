@@ -14,6 +14,8 @@ interface NetPlayer {
   title?: string;
   /** 원정 중 (공격 모션 반복 + '원정중' 라벨) */
   battle?: boolean;
+  /** 🐾 장착 펫 id (첫 슬롯) */
+  pet?: string;
 }
 
 interface NetChatMessage {
@@ -54,6 +56,35 @@ interface ExtrasManifest {
   minerals?: string[];
   reaction: { cell: number; cols: number; rows: number };
   effects?: EffectDef[];
+  /** 🐾 펫 스프라이트 (pets/<id>.png — 0행 idle, 1행 이동, 셀 cellW×cellH) */
+  pets?: Record<string, PetSheetDef>;
+  /** 🐾 뽑기 연출/아이템 아이콘 */
+  petUi?: PetUiDef;
+}
+interface PetSheetDef {
+  cellW: number;
+  cellH: number;
+  idle: number;
+  walk: number;
+  float?: boolean;
+  /** 표시 배율 보정 (32px 셀 등) */
+  scale?: number;
+  /** 시트가 기본으로 왼쪽을 봄 (Cubic 4성 등) — 오른쪽 이동 시 미러 */
+  faceLeft?: boolean;
+  /** 왼쪽 걷기 전용 행(2행) 프레임 수 — 있으면 미러 대신 사용 */
+  walkLeft?: number;
+  /** 셀 바닥 여백(px) — 발이 바닥선에 닿도록 보정 */
+  foot?: number;
+}
+interface PetUiDef {
+  food: string;
+  card: string;
+  scroll: string;
+  /** 등급별 이펙트 시트 (3/4/5) */
+  fx: Record<string, string>;
+  fxCell: number;
+  fxCols: number;
+  fxCount: number;
 }
 
 interface GiftClaimResult {
@@ -124,12 +155,30 @@ interface OverlayApi {
   claimGift(): Promise<GiftClaimResult>;
   getCoins(): Promise<number>;
   playSlot(): Promise<unknown>;
-  getWallet(): Promise<{ coins: number; items: string[]; rodStars?: number; rodFails?: number }>;
+  getWallet(): Promise<{
+    coins: number;
+    items: string[];
+    rodStars?: number;
+    rodFails?: number;
+    petFx?: Record<string, number>;
+    pet?: string | null;
+  }>;
   buyItem(itemId: string): Promise<unknown>;
   getRanking(): Promise<unknown[]>;
   getRankingCached(): Promise<unknown>;
   getDailyState(): Promise<unknown>;
   buyAction(actionId: string): Promise<unknown>;
+  exchange(
+    dir: string,
+    qty: number,
+  ): Promise<{ ok: boolean; error?: string; coins?: number; gems?: number; qty?: number; buyRate?: number; sellRate?: number }>;
+  petState(): Promise<unknown>;
+  petGacha(count: number): Promise<unknown>;
+  petEquip(ids: string[]): Promise<unknown>;
+  petFeed(petId: string): Promise<unknown>;
+  petLevel(petId: string): Promise<unknown>;
+  petAutofeed(cfg: { on: boolean; pct: number }): Promise<unknown>;
+  buyPetItem(kind: string, qty: number): Promise<unknown>;
   togglePopout(panel: string): void;
   closePopout(panel: string): void;
   resizePopout(panel: string, height: number): void;
@@ -335,6 +384,8 @@ interface Actor {
   title: string;
   /** 원정 중 — 제자리에서 공격 모션 반복 + 머리 위 '⚔️ 원정중' (낚시·땅파기·러너가 우선) */
   battle: boolean;
+  /** 🐾 장착 펫 (캐릭터 뒤를 따라다님) */
+  pet: PetFollower | null;
 }
 
 // 액션 재생 정의: loop = 반복, hold = 마지막 프레임 유지
@@ -410,6 +461,7 @@ function makeActor(nickname: string, appearance: Appearance, x: number): Actor {
     digging: null,
     title: '',
     battle: false,
+    pet: null,
   };
   setAppearance(actor, appearance);
   return actor;
@@ -536,6 +588,7 @@ function addRemote(p: NetPlayer): void {
   actor.pinned = p.pinned ?? '';
   actor.title = p.title ?? '';
   actor.battle = p.battle === true;
+  if (p.pet) setActorPet(actor, p.pet);
   remotes.set(p.id, actor);
 }
 
@@ -837,6 +890,7 @@ function drawAura(actor: Actor, time: number): void {
 function drawActor(actor: Actor, now: number): void {
   const frame = currentFrame(actor);
   if (!frame) return;
+  drawPet(actor, now); // 펫은 캐릭터 뒤 레이어 (지나칠 때 자연스럽게 겹침)
   drawAura(actor, now);
   const size = PH_CELL * viewScale;
   const top = cellTop(actor);
@@ -1054,7 +1108,7 @@ function spawnGift(): void {
 function updateGift(dt: number): void {
   if (!gift.present) {
     giftTimer += dt;
-    if (giftTimer >= giftIntervalSec) {
+    if (giftTimer >= giftIntervalSec * Math.max(0.3, 1 - (myPetFx.giftCd ?? 0) / 100)) { // 🐾 등장 주기 −%
       giftTimer = 0;
       spawnGift();
     }
@@ -1099,6 +1153,120 @@ async function claimGift(): Promise<void> {
     showBubble(me, `🎁 '${result.label}' 획득! (${result.ownedCount}/${result.total})`);
   } else {
     showBubble(me, '이미 모든 파츠를 다 모았어요!');
+  }
+  // 🐾 펫: 선물상자에서 파츠 2개 확률
+  if (result.isNew && (myPetFx.giftDouble ?? 0) > 0 && Math.random() * 100 < (myPetFx.giftDouble ?? 0)) {
+    const more = await window.overlay.claimGift();
+    if (more.isNew && more.label) setTimeout(() => showBubble(me, `🐾 펫이 하나 더 찾았어요! '${more.label}' 획득!`), 2500);
+  }
+}
+
+// ---- 🐾 펫 (장착 펫이 캐릭터 뒤를 걸어서 따라다님 — 본인/원격 공용) ----
+
+interface PetFollower {
+  id: string;
+  /** 중심 px */
+  x: number;
+  dir: -1 | 1;
+  moving: boolean;
+  animClock: number;
+  /** 부유형 위상 */
+  bob: number;
+  /** 최초 배치 완료 (첫 프레임만 목표점에 바로 놓음) */
+  placed: boolean;
+}
+const PET_GAP = 14; // 캐릭터 중심에서 뒤로 (배율 전, ART_W/2 추가)
+const PET_SPEED_MULT = 1.3; // 캐릭터 최고 걷기 속도 대비 펫 최고 속도
+const petSheets = new Map<string, HTMLImageElement | null>();
+/** 장착 펫 효과 중 클라 로컬 롤/타이머용 (지갑 petFx — self:wallet / self:pet) */
+let myPetFx: Record<string, number> = {};
+const petDigCut = () => Math.max(0.2, 1 - (myPetFx.digCd ?? 0) / 100);
+
+function loadPetSheet(id: string): void {
+  if (petSheets.has(id) || !extras?.pets?.[id]) return;
+  petSheets.set(id, null);
+  void loadExtraImage(`pets/${id}.png`).then((img) => petSheets.set(id, img));
+}
+function setActorPet(actor: Actor, id: string | null | undefined): void {
+  if (!id) {
+    actor.pet = null;
+    return;
+  }
+  if (actor.pet?.id === id) return;
+  loadPetSheet(id);
+  actor.pet = { id, x: actor.x, dir: actor.dir, moving: false, animClock: 0, bob: Math.random() * Math.PI * 2, placed: false };
+}
+/** 목표점(캐릭터 뒤)으로 걸어서 접근 — 캐릭터가 돌아서면 반대편 목표점까지 지나쳐 걸어간다 (순간이동 없음) */
+function updatePet(actor: Actor, dt: number): void {
+  const pet = actor.pet;
+  if (!pet) return;
+  pet.animClock += dt;
+  const def = extras?.pets?.[pet.id];
+  const gap = (ART_W / 2 + PET_GAP) * viewScale;
+  const target = actor.x - actor.dir * gap;
+  if (!pet.placed) {
+    pet.x = target;
+    pet.dir = actor.dir;
+    pet.placed = true;
+  }
+  const diff = target - pet.x;
+  // 부드러운 추종: 거리의 일정 비율(초당 5배)로 접근하되 캐릭터 최고 걷기 속도 ×1.3을 넘지 않음 — 캐릭터가 걸으면 일정한 간격으로 뒤따름
+  const maxStep = WALK_SPEED_MAX * PET_SPEED_MULT * viewScale * dt;
+  const step = Math.max(-maxStep, Math.min(maxStep, diff * Math.min(1, dt * 5)));
+  pet.x += step;
+  // 실제 속도(px/s) 기준 히스테리시스: 12px/s 넘으면 걷기, 4px/s 아래로 떨어지면 정지 (느린 걸음에서 프레임이 튀지 않게)
+  const v = dt > 0 ? Math.abs(step) / dt : 0;
+  if (!pet.moving && v > 12 * viewScale) pet.moving = true;
+  else if (pet.moving && v < 4 * viewScale) pet.moving = false;
+  if (pet.moving) {
+    if (Math.abs(step) > 0.05) pet.dir = step > 0 ? 1 : -1;
+  } else {
+    pet.dir = actor.dir;
+  }
+  if (def?.float) pet.bob += dt * 2.6;
+}
+function drawPet(actor: Actor, _now: number): void {
+  const pet = actor.pet;
+  if (!pet) return;
+  const def = extras?.pets?.[pet.id];
+  const img = petSheets.get(pet.id);
+  if (!def || !img) {
+    if (def) loadPetSheet(pet.id);
+    return;
+  }
+  const s = viewScale * (def.scale ?? 1);
+  let frames = pet.moving ? def.walk : def.idle;
+  let row = pet.moving ? 1 : 0;
+  // 시트 기본 방향(오른쪽 / faceLeft=왼쪽)과 실제 방향이 다르면 미러 — 왼쪽 걷기 전용 행이 있으면 그 행을 그대로
+  let flip = (pet.dir === -1) !== (def.faceLeft === true);
+  if (pet.moving && pet.dir === -1 && def.walkLeft) {
+    frames = def.walkLeft;
+    row = 2;
+    flip = false;
+  }
+  const fi = frames > 0 ? Math.floor(pet.animClock * (pet.moving ? 6 : 4)) % frames : 0;
+  const w = def.cellW * s;
+  const h = def.cellH * s;
+  const left = Math.round(pet.x - w / 2);
+  const foot = (def.foot ?? 0) * s; // 셀 바닥 여백만큼 내려서 발이 바닥선(viewH)에 닿게
+  let top = viewH - h + foot;
+  if (def.float) top = viewH - h + foot - 16 * viewScale + Math.sin(pet.bob) * 3 * viewScale;
+  // 발밑 그림자
+  stageCtx.save();
+  stageCtx.globalAlpha = def.float ? 0.1 : 0.16;
+  stageCtx.fillStyle = '#000';
+  stageCtx.beginPath();
+  stageCtx.ellipse(pet.x, viewH - 2, def.cellW * s * 0.32, 2, 0, 0, Math.PI * 2);
+  stageCtx.fill();
+  stageCtx.restore();
+  if (flip) {
+    stageCtx.save();
+    stageCtx.translate(left + w, Math.round(top));
+    stageCtx.scale(-1, 1);
+    stageCtx.drawImage(img, fi * def.cellW, row * def.cellH, def.cellW, def.cellH, 0, 0, w, h);
+    stageCtx.restore();
+  } else {
+    stageCtx.drawImage(img, fi * def.cellW, row * def.cellH, def.cellW, def.cellH, left, Math.round(top), w, h);
   }
 }
 
@@ -1168,7 +1336,7 @@ function loadFishImage(id: string): void {
 // 어획물 롤 — 상자 0.5% / 보물상자 0.2% 고정 (25성+ 낚싯대는 2배), 나머지는 전체 물고기 균등
 function rollFishCatch(): string {
   const fish2 = extras?.fish2 ?? [];
-  const luck = myRodStars >= 25 ? 2 : 1;
+  const luck = (myRodStars >= 25 ? 2 : 1) * (1 + (myPetFx.fishChest ?? 0) / 100); // 🐾 상자류 +% (상대)
   const roll = Math.random() * 100;
   if (roll < 0.2 * luck && fish2.includes('treasure_chest')) return 'treasure_chest';
   if (roll < (0.2 + 0.5) * luck && fish2.includes('box')) return 'box';
@@ -1191,6 +1359,8 @@ async function initExtras(): Promise<void> {
     jobs.push(loadExtraImage(extras.dig.file).then((img) => (digStrip = img)));
   }
   await Promise.all(jobs);
+  // 매니페스트보다 먼저 장착된 펫 시트 로드
+  for (const a of [me, ...remotes.values()]) if (a.pet) loadPetSheet(a.pet.id);
 }
 
 // ---- 낚시 ----
@@ -1217,7 +1387,7 @@ function setSelfFishingPhase(phase: string, fishId?: string, trophy?: boolean): 
   if (phase === 'waiting') {
     const penalty = Math.max(0, 10 - myRodStars) * 0.5;
     const bonus = Math.max(0, myRodStars - 10) * 0.15;
-    me.fishing.waitDur = Math.max(3, 10 + Math.random() * 5 + penalty - bonus);
+    me.fishing.waitDur = Math.max(3, (10 + Math.random() * 5 + penalty - bonus) * Math.max(0.3, 1 - (myPetFx.fishCd ?? 0) / 100)); // 🐾 입질 −%
   }
   if (phase === 'reeling') me.fishing.reelDur = 1 + Math.random();
   window.overlay.sendFishing({ phase, fishId, trophy });
@@ -1254,7 +1424,7 @@ function updateSelfFishing(now: number): void {
         const trophy =
           fishId !== 'box' &&
           fishId !== 'treasure_chest' &&
-          Math.random() * 100 < myRodStars * 0.02;
+          Math.random() * 100 < myRodStars * 0.02 + (myPetFx.fishTrophy ?? 0); // 🐾 월척 +%p
         loadFishImage(fishId);
         setSelfFishingPhase('caught', fishId, trophy);
         void window.overlay.reportFish(fishId, trophy).then((res) => {
@@ -1439,23 +1609,28 @@ function rollMineral(cat: string): { kind: string; itemId: string } {
 
 // 발굴 롤 — 꽝5 / 돌38 / 광석23 / 화석14 / 크리스털7 / 코인5 / 유물2.5 / 원석2 /
 // 진주1.2 / 상자1.2(나무0.8·붉은0.35·황금0.05) / 보석0.7 / 젬조각0.35 / 다이아0.05 (%)
+// 기본 가중치(%) — 🐾 펫 효과: digGem은 젬조각·보석·다이아, digChest는 상자류 가중치를 상대 배율로 키운다 (합계로 정규화)
+const DIG_ROLL_TABLE: [string, number][] = [
+  ['miss', 5], ['stone', 38], ['ore', 23], ['fossil', 14], ['crystal', 7], ['coin', 5], ['relic', 2.5], ['cluster', 2],
+  ['pearl', 1.2], ['chest-wood', 0.8], ['chest-red', 0.35], ['chest-gold', 0.05], ['gemstone', 0.7], ['gem', 0.35], ['diamond', 0.05],
+];
+const DIG_GEMMY = new Set(['gemstone', 'gem', 'diamond']);
+const DIG_CHESTS = new Set(['chest-wood', 'chest-red', 'chest-gold']);
 function rollDig(): { kind: string; itemId?: string } {
-  const r = Math.random() * 100;
-  if (r < 5) return { kind: 'miss' };
-  if (r < 43) return rollMineral('stone');
-  if (r < 66) return rollMineral('ore');
-  if (r < 80) return rollMineral('fossil');
-  if (r < 87) return rollMineral('crystal');
-  if (r < 92) return { kind: 'coin' };
-  if (r < 94.5) return rollMineral('relic');
-  if (r < 96.5) return rollMineral('cluster');
-  if (r < 97.7) return rollMineral('pearl');
-  if (r < 98.5) return { kind: 'chest-wood' };
-  if (r < 98.85) return { kind: 'chest-red' };
-  if (r < 98.9) return { kind: 'chest-gold' };
-  if (r < 99.6) return rollMineral('gemstone');
-  if (r < 99.95) return { kind: 'gem' };
-  return rollMineral('diamond');
+  const gemMul = 1 + (myPetFx.digGem ?? 0) / 100;
+  const chestMul = 1 + (myPetFx.digChest ?? 0) / 100;
+  const weights = DIG_ROLL_TABLE.map(([k, w]) => [k, DIG_GEMMY.has(k) ? w * gemMul : DIG_CHESTS.has(k) ? w * chestMul : w] as [string, number]);
+  let r = Math.random() * weights.reduce((s, [, w]) => s + w, 0);
+  let kind = 'stone';
+  for (const [k, w] of weights) {
+    r -= w;
+    if (r < 0) {
+      kind = k;
+      break;
+    }
+  }
+  if (kind === 'miss' || kind === 'coin' || kind === 'gem' || DIG_CHESTS.has(kind)) return { kind };
+  return rollMineral(kind);
 }
 
 function setSelfDiggingPhase(phase: string, itemId?: string): void {
@@ -1463,7 +1638,7 @@ function setSelfDiggingPhase(phase: string, itemId?: string): void {
   me.digging.phase = phase;
   me.digging.phaseStart = performance.now();
   me.digging.itemId = itemId ?? null;
-  if (phase === 'digging') me.digging.digDur = 5 + Math.random() * 4;
+  if (phase === 'digging') me.digging.digDur = (5 + Math.random() * 4) * petDigCut(); // 🐾 발굴 쿨타임 −%
   window.overlay.sendDigging({ phase, itemId });
 }
 
@@ -1475,7 +1650,7 @@ function startDigging(): void {
     phaseStart: performance.now(),
     itemId: null,
     dir: me.dir,
-    digDur: 5 + Math.random() * 4,
+    digDur: (5 + Math.random() * 4) * petDigCut(),
   };
   window.overlay.sendDigging({ phase: 'digging' });
 }
@@ -1633,6 +1808,8 @@ const runnerState = {
   obstacles: [] as RunnerObstacle[],
   duckUntil: 0,
   dead: false,
+  /** 🐾 펫 트랩 보호막 남은 횟수 */
+  shield: 0,
 };
 
 function runnerDucking(now: number): boolean {
@@ -1648,6 +1825,7 @@ function startRunner(): void {
   runnerState.obstacles = [];
   runnerState.duckUntil = 0;
   runnerState.dead = false;
+  runnerState.shield = Math.floor(myPetFx.runShield ?? 0);
   me.dir = 1;
   me.x = Math.max(120, viewW * 0.22);
 }
@@ -1712,6 +1890,13 @@ function updateRunner(dt: number, now: number): void {
       oB = viewH;
     }
     if (charR > oL && charL < oR && charBottom > oT && charTop < oB) {
+      if (runnerState.shield > 0) {
+        // 🐾 펫 보호막: 장애물 소멸
+        runnerState.shield--;
+        runnerState.obstacles.splice(i, 1);
+        spawnHearts(obs.x, viewH - 20 * vs);
+        continue;
+      }
       runnerDie();
       return;
     }
@@ -1751,7 +1936,7 @@ function drawRunner(time: number): void {
     }
   }
   // HUD
-  const label = runnerState.dead ? '기록 정산 중...' : `⏱ ${runnerState.t.toFixed(1)}s`;
+  const label = runnerState.dead ? '기록 정산 중...' : `⏱ ${runnerState.t.toFixed(1)}s${runnerState.shield > 0 ? `  🛡️×${runnerState.shield}` : ''}`;
   stageCtx.font = 'bold 13px "Segoe UI", sans-serif';
   stageCtx.strokeStyle = 'rgba(0,0,0,0.75)';
   stageCtx.lineWidth = 3;
@@ -2165,10 +2350,12 @@ function wireNet(): void {
   });
 
   window.overlay.on('self:wallet', (data) => {
-    const d = data as { rodStars?: number; title?: string };
+    const d = data as { rodStars?: number; title?: string; petFx?: Record<string, number>; pet?: string | null };
     myRodStars = Number(d.rodStars) || 0;
     if (me.fishing) me.fishing.rod = myRodStars; // 낚시 중 강화해도 즉시 반영
     if (typeof d.title === 'string') me.title = d.title;
+    if (d.petFx) myPetFx = d.petFx;
+    if ('pet' in d) setActorPet(me, d.pet);
   });
 
   window.overlay.on('self:minigame', (data) => {
@@ -2212,6 +2399,18 @@ function wireNet(): void {
 
   window.overlay.on('self:battle', (data) => {
     me.battle = (data as { active?: boolean })?.active === true;
+  });
+
+  // 🐾 펫: 내 상태(장착/효과) / 누군가의 장착 변경
+  window.overlay.on('self:pet', (data) => {
+    const st = data as { equip?: string[]; fx?: Record<string, number> };
+    if (st.fx) myPetFx = st.fx;
+    setActorPet(me, st.equip?.[0] ?? null);
+  });
+  window.overlay.on('net:player-pet', (data) => {
+    const d = data as { id: string; pet: string | null };
+    const actor = d.id === selfId ? me : remotes.get(d.id);
+    if (actor) setActorPet(actor, d.pet);
   });
 
   window.overlay.on('net:player-title', (data) => {
@@ -2300,6 +2499,8 @@ function tick(time: number): void {
   updateSelfDigging(nowMs);
   updateRunner(dt, nowMs);
   updateRemotes(dt);
+  updatePet(me, dt);
+  for (const actor of remotes.values()) updatePet(actor, dt);
   updateGift(dt);
   updateHearts(dt);
   updateInteractive();
@@ -2349,6 +2550,8 @@ async function init(): Promise<void> {
   me.battle = state.players.find((p) => p.id === selfId)?.battle === true;
   void window.overlay.getWallet().then((w) => {
     myRodStars = Number(w.rodStars) || 0;
+    myPetFx = w.petFx ?? {};
+    setActorPet(me, w.pet ?? null);
   });
 
   heartCanvas = buildHeartCanvas();

@@ -16,17 +16,17 @@ const stub = `
   const stats = { atk: 24, hp: 168, crit: 6.5, luck: 3.5, dps: 24.78, capMs: 4 * 3600000, bonus: { rodAtkPct: 20, mineralHpPct: 12, fishLuckPct: 3.5, achPct: 7 } };
   let stage = 7, maxStage = 6, gems = 9, coins = 1234, active = true;
   let since = now - 2 * 3600000 - 137000;
-  const mobs = { 6: ['🐝', '말벌', 70, 6.4], 7: ['🟢', '슬라임', 79, 7.1], 8: ['🐀', '들쥐', 88, 7.8] };
+  const mobs = { 6: ['🐜', '일개미', 70, 6.4, 'ant-001'], 7: ['🟢', '슬라임', 79, 7.1, 'slime-001'], 8: ['🐀', '들쥐', 88, 7.8, 'rat'] };
   const state = () => {
-    const [emoji, name, hp, atk] = mobs[stage] ?? mobs[7];
+    const [emoji, name, hp, atk, sprite] = mobs[stage] ?? mobs[7];
     const killMs = Math.max(2000, Math.ceil((hp / stats.dps) * 1000));
     const elapsed = Math.min(Date.now() - since, stats.capMs);
     const kills = Math.floor(elapsed / killMs);
     const next = maxStage + 1;
     return {
       active, stage, effStage: stage, maxStage, lv, costs: { atk: 2, hp: 2, crit: 2, luck: 2, time: 10 }, stats,
-      tier: '뒷마당 풀숲', mob: { emoji, name, hp, atk },
-      guardian: { stage: next, emoji: '🐗', name: '멧돼지 대장', hp: 249, atk: 9.9, kind: 'guardian', reward: { coins: next * 5, gems: 0 } },
+      tier: '뒷마당 풀숲', mob: { emoji, name, sprite, hp, atk },
+      guardian: { stage: next, emoji: '🐗', name: '멧돼지 대장', sprite: 'pig', hp: 249, atk: 9.9, kind: 'guardian', reward: { coins: next * 5, gems: 0 } },
       killMs, coinPerKill: 0.134, since, now: Date.now(),
       pending: { kills, coins: Math.floor(kills * 0.134), elapsedMs: elapsed, capped: elapsed >= stats.capMs },
       kills: 3120, challengeAt: 0,
@@ -58,7 +58,14 @@ const stub = `
         return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
       } catch { return null; }
     },
-    loadExtra: async () => null,
+    loadExtra: async (rel) => {
+      try {
+        const r = await fetch('/assets/extras/' + rel);
+        if (!r.ok) return null;
+        const blob = await r.blob();
+        return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+      } catch { return null; }
+    },
     battleState: async () => state(),
     battleActive: async (a) => { active = a; if (a) since = Date.now(); return { ok: true, state: state() }; },
     battleClaim: async () => {
@@ -73,7 +80,7 @@ const stub = `
       const log = []; let me = stats.hp, foe = 249;
       while (foe > 0 && me > 0) { const crit = Math.random() < 0.065; const dmg = Math.round(stats.atk * (crit ? 1.5 : 1)); foe = Math.max(0, foe - dmg); if (foe <= 0) { log.push([me, 0, dmg, crit ? 1 : 0]); break; } me = Math.max(0, Math.round((me - 9.9) * 10) / 10); log.push([me, foe, dmg, crit ? 1 : 0]); }
       const win = foe <= 0; if (win) { maxStage++; coins += maxStage * 5; if (stage === maxStage) stage = maxStage + 1; }
-      return { ok: true, win, stage: maxStage + (win ? 0 : 1), foe: { emoji: '🐗', name: '멧돼지 대장', hp: 249, atk: 9.9 }, log, reward: win ? { coins: maxStage * 5, gems: 0 } : undefined, coinsNow: coins, gemsNow: gems, state: state() };
+      return { ok: true, win, stage: maxStage + (win ? 0 : 1), foe: { emoji: '🐗', name: '멧돼지 대장', sprite: 'pig', hp: 249, atk: 9.9 }, log, reward: win ? { coins: maxStage * 5, gems: 0 } : undefined, coinsNow: coins, gemsNow: gems, state: state() };
     },
   };
   window.overlay = new Proxy(api, { get: (t, k) => (k in t ? t[k] : () => Promise.resolve(null)) });

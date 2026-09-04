@@ -89,6 +89,39 @@ import {
   dailyQuestIdsFor,
   DailyState,
   ACTION_SHOP,
+  EXCHANGE_GOLD_PER_GEM_BUY,
+  EXCHANGE_GOLD_PER_GEM_SELL,
+  EXCHANGE_MAX_QTY,
+  PET_FX,
+  PET_DEFS,
+  PET_SLOT_THRESHOLDS,
+  PET_BY_ID,
+  PET_MAX_DUP,
+  PET_GACHA,
+  petRate5,
+  petRate4,
+  PET_3STAR_POOL,
+  PET_REFUND,
+  isPetFriday,
+  PET_LEVEL_CARDS,
+  PET_MAX_LEVEL,
+  petSatietyMinPerPct,
+  petSatietyMult,
+  PET_AUTOFEED_DEFAULT_PCT,
+  PET_FOOD_PRICE,
+  PET_CARD_PRICE_GEM,
+  PET_ITEM_BUY_MAX,
+  petSlotsFor,
+  petEffectsAt,
+  PetFx,
+  PetFxKey,
+  PetStatePayload,
+  PetPull,
+  PetOwned,
+  PetItemKind,
+  BATTLE_CRIT_MULT,
+  BATTLE_FIGHT_MAX_TICKS,
+  BATTLE_MIN_KILL_MS,
   ACHIEVEMENTS,
   AchievementDef,
   achForTitle,
@@ -227,6 +260,21 @@ interface Wallet {
   stats?: Record<string, number>;
   /** 착용 중인 칭호 (달성 업적의 title만 허용) */
   title?: string;
+  /** 🐾 펫 — 보유(돌파/레벨/포만도)/장착/아이템/자동먹이/뽑기 카운터 */
+  pet?: {
+    owned: Record<string, PetOwned>;
+    equip: string[];
+    food: number;
+    cards: number;
+    autoFeed: { on: boolean; pct: number };
+    pity4: number;
+    pity5: number;
+    total: number;
+    /** 금요일 10연 할인을 쓴 날짜 키 */
+    fridayKey?: string;
+    /** 시간당 💎 누적기 */
+    gemAcc: number;
+  };
   /** 원정 (방치형 전투) — 층/최고층/💎 강화/정산 기준 시각/도전 쿨타임 */
   battle?: {
     /** 출발~귀환 사이 true — 이때만 가방이 찬다 */
@@ -281,6 +329,7 @@ function loadWallets(): void {
                   )
                 : undefined,
             title: typeof (w as any).title === 'string' && (w as any).title ? (w as any).title : undefined,
+            pet: petLoad((w as any).pet),
             battle: (() => {
               const b = (w as any).battle;
               if (!b || typeof b !== 'object') return undefined;
@@ -303,7 +352,12 @@ function loadWallets(): void {
       }
     }
     console.log(`[coins] ${Object.keys(wallets).length}개 지갑 로드`);
-  } catch {
+  } catch (err) {
+    // 파일이 있는데 못 읽으면 빈 지갑으로 시작해 다음 저장에서 전원 지갑을 덮어쓰게 되므로 즉시 중단 (파일이 없을 때만 새로 시작)
+    if (fs.existsSync(COINS_PATH)) {
+      console.error(`[coins] 지갑 파일 로드 실패 — 서버를 중단합니다: ${COINS_PATH}`, err);
+      process.exit(1);
+    }
     wallets = {};
   }
 }
@@ -540,6 +594,9 @@ function runStockTick(): void {
         if (h && h.qty > 0) {
           victims++;
           sharesLost += h.qty;
+          // 🐾 펫: 상폐 보상 (보유가치의 v%)
+          const refund = Math.floor((h.avg * h.qty * fxv(w, 'stockDelist')) / 100);
+          if (refund > 0) w.coins += refund;
           delete w.stocks![def.id];
           victimKeys.push(wk);
         }
@@ -644,6 +701,7 @@ function achMetrics(w: Wallet): Record<string, number> {
     racesOwned: (w.parts ?? []).filter((p) => p.startsWith('race:')).length,
     digDex: minerals.length,
     gemstoneDex: minerals.filter((m) => m.cat === 'gemstone').length,
+    petKinds: Object.keys(w.pet?.owned ?? {}).length,
     relicDex: minerals.filter((m) => m.cat === 'relic').length,
     diamondDex: minerals.filter((m) => m.cat === 'diamond').length,
     goldbar: (w.minerals ?? []).includes(DIG_GOLDBAR_ID) ? 1 : 0,
@@ -740,11 +798,13 @@ function ensureDaily(key: string): string | null {
   // 주말(토·일)만 건너뛴 결석은 연속 출석 유지 — 금요일 출석 후 월요일 접속도 연속
   const streak = wallet.daily && attendStreakKeeps(wallet.daily.date, today) ? wallet.daily.streak + 1 : 1;
   wallet.daily = { date: today, streak, counts: {}, claimed: [], allBonus: false };
-  const coin = Math.min(ATTEND_BASE_COIN + (streak - 1), ATTEND_MAX_COIN);
+  // 🐾 펫: 출석 골드 +%, 연속 상한 +, 7일 보너스 💎 +
+  const coin = probRound(Math.min(ATTEND_BASE_COIN + (streak - 1), ATTEND_MAX_COIN + Math.floor(fxv(wallet, 'attendCap'))) * fxMul(wallet, 'attendCoin'));
   let news = `📅 출석 ${streak}일차! +${coin} 🪙`;
   if (streak % 7 === 0) {
-    wallet.gems = (wallet.gems ?? 0) + ATTEND_WEEKLY_BONUS;
-    news = `📅 출석 ${streak}일차! +${coin} 🪙 · 7일 연속 보너스 +${ATTEND_WEEKLY_BONUS} 💎`;
+    const weekly = ATTEND_WEEKLY_BONUS + Math.floor(fxv(wallet, 'attendWeek'));
+    wallet.gems = (wallet.gems ?? 0) + weekly;
+    news = `📅 출석 ${streak}일차! +${coin} 🪙 · 7일 연속 보너스 +${weekly} 💎`;
   }
   wallet.coins += coin;
   bumpStat(key, 'attendTotal');
@@ -793,13 +853,17 @@ function questProgress(socketId: string, questId: string, amount = 1, absolute =
   let news: string | null = attendNews;
   if (d.counts[questId] >= def.goal) {
     d.claimed.push(questId);
-    wallet.gems = (wallet.gems ?? 0) + def.reward;
-    news = `📋 일일퀘스트 완료: ${def.name} (+${def.reward} 💎)`;
+    // 🐾 펫: 완료 시 확률로 💎 +1, 올클리어 보너스 +
+    const petGem = fxv(wallet, 'dailyGemChance') > 0 && Math.random() * 100 < fxv(wallet, 'dailyGemChance') ? 1 : 0;
+    const reward = def.reward + petGem;
+    wallet.gems = (wallet.gems ?? 0) + reward;
+    news = `📋 일일퀘스트 완료: ${def.name} (+${reward} 💎${petGem ? ' 🐾' : ''})`;
     if (!d.allBonus && active.every((id) => d.claimed.includes(id))) {
       d.allBonus = true;
-      wallet.gems += DAILY_ALL_BONUS;
+      const allBonus = DAILY_ALL_BONUS + Math.floor(fxv(wallet, 'dailyAll'));
+      wallet.gems += allBonus;
       bumpStat(key, 'allClear');
-      news += ` · 🎉 오늘 퀘스트 전부 완료! (+${DAILY_ALL_BONUS} 💎)`;
+      news += ` · 🎉 오늘 퀘스트 전부 완료! (+${allBonus} 💎)`;
     }
     saveWallets();
     io.sockets.sockets.get(socketId)?.emit('gems', wallet.gems ?? 0);
@@ -817,8 +881,30 @@ setInterval(() => {
     if (!credited.has(key)) {
       credited.add(key);
       wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] };
-      wallets[key].coins += COIN_PER_MINUTE;
+      const w = wallets[key];
+      w.coins += COIN_PER_MINUTE;
       earnCoins(key, COIN_PER_MINUTE);
+      // 🐾 펫 패시브: 분당 골드(밤 22~06시·아침 06~10시 보정) + 시간당 💎 누적 + 포만도 감소/자동 먹이
+      if (w.pet && w.pet.equip.length > 0) {
+        petSettle(w);
+        const fx = petFxOf(w);
+        const h = kstHour();
+        const night = h >= 22 || h < 6;
+        const morning = h >= 6 && h < 10;
+        const extra = probRound((fx.coinMin ?? 0) + (night ? (fx.nightCoin ?? 0) : 0) + (morning ? (fx.morningCoin ?? 0) : 0));
+        if (extra > 0) {
+          w.coins += extra;
+          earnCoins(key, extra);
+        }
+        w.pet.gemAcc += ((fx.gemHour ?? 0) + (night ? (fx.nightGem ?? 0) : 0)) / 60;
+        if (w.pet.gemAcc >= 1) {
+          const g = Math.floor(w.pet.gemAcc);
+          w.pet.gemAcc -= g;
+          w.gems = (w.gems ?? 0) + g;
+          io.sockets.sockets.get(socketId)?.emit('gems', w.gems);
+        }
+        io.sockets.sockets.get(socketId)?.emit('pet', petStateFor(key));
+      }
     }
     io.sockets.sockets.get(socketId)?.emit('coins', wallets[key].coins);
   }
@@ -958,13 +1044,25 @@ function battleOf(wallet: Wallet, now = Date.now()): BattleData {
 /** 내 능력치 — 💎 강화 + 낚싯대/광물도감/낚시도감/도전과제 연계 보너스 */
 function battleStatsOf(wallet: Wallet): BattleStats {
   const b = battleOf(wallet);
-  return battleStats({
+  const base = battleStats({
     lv: b.lv,
     rodStars: wallet.rodStars ?? 0,
     mineralDex: (wallet.minerals ?? []).length,
     fishDex: wallet.fish.filter((f) => ALL_FISH_IDS.has(f)).length,
     achCount: (wallet.ach ?? []).length,
   });
+  // 🐾 펫 효과: 공격/체력/치명타/치명타 배율/행운/가방 (+ 서리 산맥 51~60층 공격)
+  const fx = petFxOf(wallet);
+  if (Object.keys(fx).length === 0) return base;
+  const frost = b.stage >= 51 && b.stage <= 60 ? (fx.tierFrost ?? 0) : 0;
+  const atk = Math.round(base.atk * (1 + ((fx.batAtk ?? 0) + frost) / 100));
+  const hp = Math.round(base.hp * (1 + (fx.batHp ?? 0) / 100));
+  const crit = Math.min(75, base.crit + (fx.batCrit ?? 0));
+  const critMult = BATTLE_CRIT_MULT + (fx.batCritMult ?? 0);
+  const luck = Math.round(base.luck * (1 + (fx.batLuck ?? 0) / 100) * 100) / 100;
+  const capMs = base.capMs + (fx.batCap ?? 0) * 3600_000;
+  const dps = atk * (1 + (crit / 100) * (critMult - 1));
+  return { ...base, atk, hp, crit, critMult, luck, capMs, dps };
 }
 
 /** 선택 층에서 못 버티면 버틸 수 있는 가장 높은 층으로 후퇴 */
@@ -988,7 +1086,7 @@ function battlePending(wallet: Wallet, now: number): BattlePending {
   const b = battleOf(wallet, now);
   const stats = battleStatsOf(wallet);
   const effStage = battleEffStage(b.stage, stats);
-  const killMs = battleKillMs(effStage, stats.dps);
+  const killMs = Math.max(BATTLE_MIN_KILL_MS, Math.round(battleKillMs(effStage, stats.dps) / fxMul(wallet, 'batSpeed'))); // 🐾 처치 속도
   const rawMs = b.active ? Math.max(0, now - b.since) * BATTLE_SPEED : 0;
   const capped = rawMs >= stats.capMs;
   const elapsedMs = Math.min(rawMs, stats.capMs);
@@ -1067,11 +1165,11 @@ function battleSettle(socketId: string, key: string, now: number): BattleClaimRe
   const pend = battlePending(wallet, now);
   if (pend.kills < BATTLE_CLAIM_MIN_KILLS) return null;
   const cpk = battleCoinPerKill(pend.effStage);
-  let coins = probRound(pend.kills * cpk);
+  let coins = probRound(pend.kills * cpk * fxMul(wallet, 'batCoin')); // 🐾 전리품 골드
   let gems = 0;
   const luckMult = 1 + pend.stats.luck / 100;
-  const gemRate = BATTLE_GEM_DROP_RATE * luckMult;
-  const mineralRate = BATTLE_MINERAL_DROP_RATE * luckMult;
+  const gemRate = BATTLE_GEM_DROP_RATE * luckMult * fxMul(wallet, 'batGem');
+  const mineralRate = BATTLE_MINERAL_DROP_RATE * luckMult * fxMul(wallet, 'batMineral');
   const drops = new Map<string, number>();
   for (let i = 0; i < pend.kills; i++) {
     const r = Math.random();
@@ -1138,6 +1236,142 @@ function battleSettle(socketId: string, key: string, now: number): BattleClaimRe
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
 
+
+// ---- 🐾 펫 (뽑기·돌파·레벨·포만도·효과 — 서버 권위, 기획 docs/pet-gacha-design.md) ----
+
+const PET_SPEED = Math.max(1, Number(process.env.DOTCHAT_PET_SPEED ?? 1) || 1); // 포만도 감소 배속 (검증용)
+type PetData = NonNullable<Wallet['pet']>;
+
+/** 저장된 pet 객체 정규화 (잘못된 값은 버림) */
+function petLoad(raw: unknown): PetData | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, any>;
+  const owned: Record<string, PetOwned> = {};
+  if (r.owned && typeof r.owned === 'object') {
+    for (const [id, v] of Object.entries(r.owned as Record<string, any>)) {
+      if (!PET_BY_ID.has(id) || !v || typeof v !== 'object') continue;
+      owned[id] = {
+        dup: Math.max(0, Math.min(PET_MAX_DUP, Math.floor(Number(v.dup) || 0))),
+        lv: Math.max(1, Math.min(PET_MAX_LEVEL, Math.floor(Number(v.lv) || 1))),
+        satiety: Math.max(0, Math.min(100, Number(v.satiety) || 0)),
+        tick: Math.max(0, Math.floor(Number(v.tick) || Date.now())),
+      };
+    }
+  }
+  const equip = Array.isArray(r.equip) ? (r.equip as unknown[]).filter((i): i is string => typeof i === 'string' && i in owned) : [];
+  const pct = Math.floor(Number(r.autoFeed?.pct) || PET_AUTOFEED_DEFAULT_PCT);
+  return {
+    owned,
+    equip: [...new Set(equip)].slice(0, PET_SLOT_THRESHOLDS.length),
+    food: Math.max(0, Math.floor(Number(r.food) || 0)),
+    cards: Math.max(0, Math.floor(Number(r.cards) || 0)),
+    autoFeed: { on: r.autoFeed?.on === true, pct: Math.max(10, Math.min(90, pct)) },
+    pity4: Math.max(0, Math.floor(Number(r.pity4) || 0)),
+    pity5: Math.max(0, Math.floor(Number(r.pity5) || 0)),
+    total: Math.max(0, Math.floor(Number(r.total) || 0)),
+    fridayKey: typeof r.fridayKey === 'string' ? r.fridayKey : undefined,
+    gemAcc: Math.max(0, Number(r.gemAcc) || 0),
+  };
+}
+function petOf(wallet: Wallet): PetData {
+  if (!wallet.pet) {
+    wallet.pet = {
+      owned: {},
+      equip: [],
+      food: 0,
+      cards: 0,
+      autoFeed: { on: false, pct: PET_AUTOFEED_DEFAULT_PCT },
+      pity4: 0,
+      pity5: 0,
+      total: 0,
+      gemAcc: 0,
+    };
+  }
+  return wallet.pet;
+}
+const petSlots = (p: PetData): number => petSlotsFor(Object.keys(p.owned).length);
+const kstHour = (now = Date.now()): number => new Date(now + 9 * 3600_000).getUTCHours();
+
+/** 장착 펫 효과 합산 — 돌파 누적값 × 포만도 배율, 키별 상한 */
+function petFxOf(wallet: Wallet | undefined): PetFx {
+  const out: PetFx = {};
+  const p = wallet?.pet;
+  if (!p) return out;
+  for (const id of p.equip) {
+    const o = p.owned[id];
+    const def = PET_BY_ID.get(id);
+    if (!o || !def) continue;
+    const mult = petSatietyMult(o.satiety);
+    for (const [k, v] of Object.entries(petEffectsAt(def, o.dup)) as [PetFxKey, number][]) out[k] = (out[k] ?? 0) + v * mult;
+  }
+  for (const k of Object.keys(out) as PetFxKey[]) out[k] = Math.min(PET_FX[k].cap, Math.round(out[k]! * 100) / 100);
+  return out;
+}
+const fxv = (wallet: Wallet | undefined, key: PetFxKey): number => petFxOf(wallet)[key] ?? 0;
+/** ×(1 + v%) */
+const fxMul = (wallet: Wallet | undefined, key: PetFxKey): number => 1 + fxv(wallet, key) / 100;
+/** ×(1 − v%) */
+const fxCut = (wallet: Wallet | undefined, key: PetFxKey): number => Math.max(0, 1 - fxv(wallet, key) / 100);
+/** 클라 로컬 롤/표시에 필요한 키만 */
+function petClientFx(fx: PetFx): PetFx {
+  const out: PetFx = {};
+  for (const [k, v] of Object.entries(fx) as [PetFxKey, number][]) if (PET_FX[k].client) out[k] = v;
+  return out;
+}
+
+/** 장착 펫 포만도 지연 계산 + 자동 먹이. 변화가 있었으면 true */
+function petSettle(wallet: Wallet, now = Date.now()): boolean {
+  const p = wallet.pet;
+  if (!p || p.equip.length === 0) return false;
+  let changed = false;
+  const slow = fxv(wallet, 'satiety'); // 감소 완화는 계산 전 상태 기준
+  for (const id of p.equip) {
+    const o = p.owned[id];
+    if (!o) continue;
+    const elapsedMin = (Math.max(0, now - o.tick) / 60000) * PET_SPEED;
+    if (elapsedMin > 0) {
+      const dec = (elapsedMin / petSatietyMinPerPct(o.lv)) * (1 - slow / 100);
+      if (dec > 0 && o.satiety > 0) {
+        o.satiety = Math.max(0, o.satiety - dec);
+        changed = true;
+      }
+      o.tick = now;
+    }
+    if (p.autoFeed.on && o.satiety <= p.autoFeed.pct && p.food > 0) {
+      p.food--;
+      o.satiety = 100;
+      o.tick = now;
+      changed = true;
+    }
+  }
+  return changed;
+}
+const petFridayDiscount = (p: PetData, now = Date.now()): boolean => isPetFriday(now) && p.fridayKey !== dailyDateKey(now);
+
+function petStateFor(key: string, now = Date.now()): PetStatePayload {
+  const wallet = wallets[key];
+  const p = petOf(wallet);
+  const owned: Record<string, PetOwned> = {};
+  for (const [id, o] of Object.entries(p.owned)) owned[id] = { ...o, satiety: Math.round(o.satiety * 10) / 10 };
+  return {
+    owned,
+    equip: [...p.equip],
+    slots: petSlots(p),
+    food: p.food,
+    cards: p.cards,
+    autoFeed: { ...p.autoFeed },
+    pity4: p.pity4,
+    pity5: p.pity5,
+    total: p.total,
+    fridayDiscount: petFridayDiscount(p, now),
+    fx: petFxOf(wallet),
+    coins: wallet.coins,
+    gems: wallet.gems ?? 0,
+    now,
+  };
+}
+const lastPetGachaAt = new Map<string, number>();
+
 io.on('connection', (socket) => {
   socket.on('hello', (data) => {
     if (players.has(socket.id)) return;
@@ -1172,6 +1406,10 @@ io.on('connection', (socket) => {
       saveWallets();
     }
     if (wallets[key].battle?.active) player.battle = true;
+    if (wallets[key].pet?.equip.length) {
+      petSettle(wallets[key]); // 오프라인 동안의 포만도 감소 + 자동 먹이 (최대 1회)
+      player.pet = wallets[key].pet!.equip[0];
+    }
     players.set(socket.id, player);
     socket.emit('welcome', {
       selfId: socket.id,
@@ -1192,6 +1430,8 @@ io.on('connection', (socket) => {
       actions: [...(wallets[key].actions ?? [])],
       minerals: [...(wallets[key].minerals ?? [])],
       title: wallets[key].title ?? '',
+      petFx: petClientFx(petFxOf(wallets[key])),
+      pet: wallets[key].pet?.equip[0] ?? null,
     });
     socket.emit('stocks', stocksSnapshot());
     if (attendNews) {
@@ -1279,13 +1519,21 @@ io.on('connection', (socket) => {
       return;
     }
     lastSlotAt.set(socket.id, now);
-    const roll = Math.random() * 100;
-    const row = SLOT_TABLE.find((r) => roll < r.upto)!;
-    wallet.coins = wallet.coins - SLOT_COST + row.delta;
+    // 🐾 펫: 무료 스핀 확률, 꽝 재굴림 1회, 당첨금 +%
+    const pfx = petFxOf(wallet);
+    const free = (pfx.slotFree ?? 0) > 0 && Math.random() * 100 < pfx.slotFree!;
+    let roll = Math.random() * 100;
+    let row = SLOT_TABLE.find((r) => roll < r.upto)!;
+    if (row.kind === 'miss' && (pfx.slotRetry ?? 0) > 0 && Math.random() * 100 < pfx.slotRetry!) {
+      roll = Math.random() * 100;
+      row = SLOT_TABLE.find((r) => roll < r.upto)!;
+    }
+    const win = row.kind === 'part' ? row.delta : probRound(row.delta * (1 + (pfx.slotWin ?? 0) / 100));
+    wallet.coins = wallet.coins - (free ? 0 : SLOT_COST) + win;
     bumpStat(key, 'slotSpins');
     if (row.kind === 'miss') bumpStat(key, 'slotMissRun');
     else setStat(key, 'slotMissRun', 0);
-    earnCoins(key, row.delta);
+    earnCoins(key, win);
     if (row.kind === 'jackpot') grantAch(key, 'c-jackpot');
     if (row.kind === 'mega') grantAch(key, 'c-mega');
     questProgress(socket.id, 'slot');
@@ -1294,9 +1542,10 @@ io.on('connection', (socket) => {
     reply({
       ok: true,
       kind: row.kind,
-      delta: row.delta,
+      delta: win,
       reels: slotReels(row.kind),
       coins: wallet.coins,
+      ...(free ? { free: true } : {}),
     });
     if (row.kind === 'part' || row.kind === 'jackpot' || row.kind === 'mega') {
       io.emit('slot-win', {
@@ -1304,9 +1553,9 @@ io.on('connection', (socket) => {
         nickname: player.nickname,
         tag: player.tag,
         kind: row.kind,
-        delta: row.delta,
+        delta: win,
       });
-      console.log(`[slot] ${key}: ${row.kind} (+${row.delta}) 잔액 ${wallet.coins}`);
+      console.log(`[slot] ${key}: ${row.kind} (+${win}${free ? ', 무료' : ''}) 잔액 ${wallet.coins}`);
     }
   });
 
@@ -1374,7 +1623,7 @@ io.on('connection', (socket) => {
       return;
     }
     const now = Date.now();
-    if (now - (lastFishAt.get(socket.id) ?? 0) < FISH_MIN_INTERVAL_MS) {
+    if (now - (lastFishAt.get(socket.id) ?? 0) < FISH_MIN_INTERVAL_MS * fxCut(wallets[walletKey(player)], 'fishCd')) {
       reply({ ok: false, error: '낚시가 너무 빨라요.' });
       return;
     }
@@ -1406,12 +1655,18 @@ io.on('connection', (socket) => {
         delta = FISH_CHEST_COIN_MIN + Math.floor(Math.random() * (FISH_CHEST_COIN_MAX - FISH_CHEST_COIN_MIN + 1));
       }
     } else {
-      delta = isNew ? FISH_FIRST_COIN : FISH_REPEAT_COIN;
+      // 🐾 펫: 첫 어획 +%, 반복 +골드, 월척 보너스 +, 낚시 골드 +% (밤 보정), 더블캐치 +%p
+      const pfx = petFxOf(wallet);
+      let raw = isNew ? FISH_FIRST_COIN * (1 + (pfx.fishNew ?? 0) / 100) : FISH_REPEAT_COIN + (pfx.fishRepeat ?? 0);
       // 낚싯대 강화 보너스: 10성+ 반복 어획 +1, 20성+ 더블 캐치(코인 2배)
       const rod = wallet.rodStars ?? 0;
-      if (!isNew && rod >= ROD_REPEAT_BONUS_STARS) delta += 1;
-      if (isTrophy) delta += FISH_TROPHY_COIN; // 월척 보너스
-      if (rod >= ROD_DOUBLE_STARS && Math.random() * 100 < ROD_DOUBLE_RATE) {
+      if (!isNew && rod >= ROD_REPEAT_BONUS_STARS) raw += 1;
+      if (isTrophy) raw += FISH_TROPHY_COIN + (pfx.fishTrophyCoin ?? 0); // 월척 보너스
+      const hh = kstHour(now);
+      raw *= (1 + (pfx.fishCoin ?? 0) / 100) * (hh >= 22 || hh < 6 ? 1 + (pfx.nightFish ?? 0) / 100 : 1);
+      delta = probRound(raw);
+      const dblRate = (rod >= ROD_DOUBLE_STARS ? ROD_DOUBLE_RATE : 0) + (pfx.fishDouble ?? 0);
+      if (dblRate > 0 && Math.random() * 100 < dblRate) {
         delta *= 2;
         doubled = true;
       }
@@ -1462,20 +1717,22 @@ io.on('connection', (socket) => {
       return;
     }
     const stage = ENHANCE_TABLE[stars];
-    if (wallet.coins < stage.cost) {
-      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${stage.cost})`, coins: wallet.coins });
+    // 🐾 펫: 비용 −%, 천장 −회, 하락 확률 −%
+    const cost = Math.max(1, Math.round(stage.cost * fxCut(wallet, 'enhCost')));
+    if (wallet.coins < cost) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${cost})`, coins: wallet.coins });
       return;
     }
     lastEnhanceAt.set(socket.id, now);
-    wallet.coins -= stage.cost;
+    wallet.coins -= cost;
 
     let result: 'success' | 'keep' | 'drop';
     let guaranteed = false;
-    if ((wallet.rodFails ?? 0) >= ENHANCE_PITY) {
+    if ((wallet.rodFails ?? 0) >= Math.max(5, ENHANCE_PITY - Math.floor(fxv(wallet, 'enhPity')))) {
       result = 'success'; // 천장: 연속 실패 누적 → 보장 성공
       guaranteed = true;
     } else {
-      const dropPct = stage.drop * (isEnhanceFriday(now) ? ENHANCE_FRIDAY_DROP_MULT : 1);
+      const dropPct = stage.drop * (isEnhanceFriday(now) ? ENHANCE_FRIDAY_DROP_MULT : 1) * fxCut(wallet, 'enhDrop');
       const roll = Math.random() * 100;
       result = roll < stage.succ ? 'success' : roll < stage.succ + dropPct ? 'drop' : 'keep';
     }
@@ -1515,7 +1772,7 @@ io.on('connection', (socket) => {
       });
     }
     console.log(
-      `[enhance] ${key}: ${stars}성 → ${result}${guaranteed ? '(천장)' : ''} (현재 ${wallet.rodStars}성, -${stage.cost}) 잔액 ${wallet.coins}`,
+      `[enhance] ${key}: ${stars}성 → ${result}${guaranteed ? '(천장)' : ''} (현재 ${wallet.rodStars}성, -${cost}) 잔액 ${wallet.coins}`,
     );
   });
 
@@ -1531,8 +1788,9 @@ io.on('connection', (socket) => {
     const key = walletKey(player);
     const now = Date.now();
     const last = lastBragAt.get(key) ?? 0;
-    if (now - last < 60_000) {
-      reply({ ok: false, error: `자랑은 ${Math.ceil((60_000 - (now - last)) / 1000)}초 후에 다시 할 수 있어요.` });
+    const bragCd = Math.round(60_000 * fxCut(wallets[key], 'bragCd')); // 🐾
+    if (now - last < bragCd) {
+      reply({ ok: false, error: `자랑은 ${Math.ceil((bragCd - (now - last)) / 1000)}초 후에 다시 할 수 있어요.` });
       return;
     }
     lastBragAt.set(key, now);
@@ -1570,8 +1828,9 @@ io.on('connection', (socket) => {
     }
     const now = Date.now();
     const last = lastNoteAt.get(key) ?? 0;
-    if (now - last < NOTE_COOLDOWN_MS) {
-      reply({ ok: false, error: `쪽지는 ${Math.ceil((NOTE_COOLDOWN_MS - (now - last)) / 1000)}초 후에 보낼 수 있어요.` });
+    const noteCd = Math.round(NOTE_COOLDOWN_MS * fxCut(wallets[key], 'noteCd')); // 🐾
+    if (now - last < noteCd) {
+      reply({ ok: false, error: `쪽지는 ${Math.ceil((noteCd - (now - last)) / 1000)}초 후에 보낼 수 있어요.` });
       return;
     }
     const recipientOnline = [...players.values()].some((p) => walletKey(p) === to);
@@ -1585,11 +1844,12 @@ io.on('connection', (socket) => {
       return;
     }
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
-    if (wallet.coins < NOTE_COST) {
-      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${NOTE_COST})`, coins: wallet.coins });
+    const noteCost = Math.max(1, NOTE_COST - Math.floor(fxv(wallet, 'noteCost'))); // 🐾
+    if (wallet.coins < noteCost) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${noteCost})`, coins: wallet.coins });
       return;
     }
-    wallet.coins -= NOTE_COST;
+    wallet.coins -= noteCost;
     bumpStat(key, 'notesSent');
     if (wallets[to]) bumpStat(to, 'notesGot');
     saveWallets();
@@ -1674,11 +1934,18 @@ io.on('connection', (socket) => {
     t.wallet.coins -= cost;
     h.avg = Math.round(((h.avg * h.qty + cost) / (h.qty + t.n)) * 100) / 100;
     h.qty += t.n;
+    // 🐾 펫: 매수 시 확률로 1주 덤 (평단가는 덤 포함 재계산)
+    let bonusShares = 0;
+    if (fxv(t.wallet, 'stockBonus') > 0 && Math.random() * 100 < fxv(t.wallet, 'stockBonus') && h.qty < STOCK_QTY_MAX) {
+      bonusShares = 1;
+      h.avg = Math.round(((h.avg * h.qty) / (h.qty + 1)) * 100) / 100;
+      h.qty += 1;
+    }
     t.wallet.stocks[t.def.id] = h;
     bumpStat(t.key, 'stockBuys');
     saveWallets();
     checkAch(t.key);
-    reply({ ok: true, coins: t.wallet.coins, holding: { ...h } });
+    reply({ ok: true, coins: t.wallet.coins, holding: { ...h }, ...(bonusShares ? { bonusShares } : {}) });
     console.log(`[stock] ${t.key}: ${t.def.name} ${t.n}주 매수 @${t.state.price} (-${cost})`);
   });
 
@@ -1695,9 +1962,12 @@ io.on('connection', (socket) => {
     t.wallet.coins += gain;
     // 실현 손익 (평단가 대비) — 수익/손실 누적 업적용
     const pl = Math.round((t.state.price - h.avg) * t.n);
+    // 🐾 펫: 실현수익 +% (매도 금액이 아니라 수익 기준 — 사고팔기 반복 악용 불가)
+    const petBonus = pl > 0 ? probRound((pl * fxv(t.wallet, 'stockProfit')) / 100) : 0;
     if (pl > 0) {
       bumpStat(t.key, 'stockProfit', pl);
-      earnCoins(t.key, pl);
+      earnCoins(t.key, pl + petBonus);
+      t.wallet.coins += petBonus;
     } else if (pl < 0) {
       bumpStat(t.key, 'stockLoss', -pl);
     }
@@ -1705,7 +1975,7 @@ io.on('connection', (socket) => {
     if (h.qty <= 0) delete t.wallet.stocks![t.def.id];
     saveWallets();
     checkAch(t.key);
-    reply({ ok: true, coins: t.wallet.coins, holding: { qty: h.qty, avg: h.avg } });
+    reply({ ok: true, coins: t.wallet.coins, holding: { qty: h.qty, avg: h.avg }, ...(petBonus ? { petBonus } : {}) });
     console.log(`[stock] ${t.key}: ${t.def.name} ${t.n}주 매도 @${t.state.price} (+${gain})`);
   });
 
@@ -1729,23 +1999,25 @@ io.on('connection', (socket) => {
     }
     const now = Date.now();
     const last = lastTickerAdAt.get(key) ?? 0;
-    if (now - last < TICKER_AD_COOLDOWN_MS) {
-      reply({ ok: false, error: `광고는 ${Math.ceil((TICKER_AD_COOLDOWN_MS - (now - last)) / 1000)}초 후에 보낼 수 있어요.` });
+    const adCd = Math.round(TICKER_AD_COOLDOWN_MS * fxCut(wallets[key], 'adCd')); // 🐾
+    if (now - last < adCd) {
+      reply({ ok: false, error: `광고는 ${Math.ceil((adCd - (now - last)) / 1000)}초 후에 보낼 수 있어요.` });
       return;
     }
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
-    if (wallet.coins < TICKER_AD_COST) {
-      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${TICKER_AD_COST})`, coins: wallet.coins });
+    const adCost = Math.max(1, Math.round(TICKER_AD_COST * fxCut(wallet, 'adCost'))); // 🐾
+    if (wallet.coins < adCost) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${adCost})`, coins: wallet.coins });
       return;
     }
-    wallet.coins -= TICKER_AD_COST;
+    wallet.coins -= adCost;
     bumpStat(key, 'ads');
     saveWallets();
     lastTickerAdAt.set(key, now);
     publishTicker('ad', `📢 ${clean}`, key);
     checkAch(key);
     reply({ ok: true, coins: wallet.coins });
-    console.log(`[ticker] ${key} 광고 (-${TICKER_AD_COST}): ${clean}`);
+    console.log(`[ticker] ${key} 광고 (-${adCost}): ${clean}`);
   });
 
   socket.on('ticker-log', (ack) => {
@@ -1774,17 +2046,18 @@ io.on('connection', (socket) => {
     }
     const key = walletKey(player);
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
-    if (wallet.coins < def.price) {
-      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${def.price})`, coins: wallet.coins });
+    const price = Math.max(1, Math.round(def.price * fxCut(wallet, 'randCost'))); // 🐾
+    if (wallet.coins < price) {
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${price})`, coins: wallet.coins });
       return;
     }
     lastRandomBuyAt.set(socket.id, now);
-    wallet.coins -= def.price;
+    wallet.coins -= price;
     bumpStat(key, 'randomPulls');
     saveWallets();
     checkAch(key);
     reply({ ok: true, coins: wallet.coins });
-    console.log(`[shop] ${key}: ${def.id} 뽑기 (-${def.price}) 잔액 ${wallet.coins}`);
+    console.log(`[shop] ${key}: ${def.id} 뽑기 (-${price}) 잔액 ${wallet.coins}`);
   });
 
   // ---- 보유 파츠 동기화 (클라 기준 합집합 — 다른 PC에서도 수집품 이어받기) ----
@@ -1829,14 +2102,15 @@ io.on('connection', (socket) => {
     }
     const key = walletKey(player);
     const now = Date.now();
-    if (now - (lastRunnerAt.get(key) ?? 0) < (RUNNER_COOLDOWN_SEC - 30) * 1000) {
+    if (now - (lastRunnerAt.get(key) ?? 0) < (RUNNER_COOLDOWN_SEC - 30) * 1000 * fxCut(wallets[key], 'runCd')) {
       reply({ ok: false, error: '아직 쿨타임이에요.' });
       return;
     }
     lastRunnerAt.set(key, now);
     const secs = Math.max(0, Math.min(600, Number(seconds) || 0));
-    const delta = Math.min(RUNNER_COIN_MAX, Math.floor(secs * RUNNER_COIN_PER_SEC));
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    // 🐾 펫: 달리기 골드 +%, 최대 +
+    const delta = Math.min(RUNNER_COIN_MAX + Math.floor(fxv(wallet, 'runCap')), Math.floor(secs * RUNNER_COIN_PER_SEC * fxMul(wallet, 'runCoin')));
     wallet.coins += delta;
     bumpStat(key, 'runnerCoins', delta);
     earnCoins(key, delta);
@@ -1877,7 +2151,7 @@ io.on('connection', (socket) => {
       return;
     }
     const now = Date.now();
-    if (now - (lastDigAt.get(socket.id) ?? 0) < DIG_MIN_INTERVAL_MS) {
+    if (now - (lastDigAt.get(socket.id) ?? 0) < DIG_MIN_INTERVAL_MS * fxCut(wallets[walletKey(player)], 'digCd')) {
       reply({ ok: false, error: '땅파기가 너무 빨라요.' });
       return;
     }
@@ -1927,6 +2201,9 @@ io.on('connection', (socket) => {
       delta = DIG_CHEST_GOLD_COIN;
       gemsDelta = DIG_CHEST_GOLD_GEM;
     }
+    // 🐾 펫: 발굴 골드 +%, 꽝 보장 골드
+    if (kind === 'miss') delta = Math.floor(fxv(wallet, 'digMiss'));
+    else if (delta > 0 && !itemGrant) delta = probRound(delta * fxMul(wallet, 'digCoin'));
     wallet.coins += delta;
     wallet.gems = (wallet.gems ?? 0) + gemsDelta;
     earnCoins(key, delta);
@@ -2092,9 +2369,12 @@ io.on('connection', (socket) => {
       reply({ ok: false, error: `아직 회복 중이에요. (${Math.ceil((b.challengeAt - now) / 1000)}초)` });
       return;
     }
-    const stats = battleStatsOf(wallet);
+    const stats0 = battleStatsOf(wallet);
+    // 🐾 펫: 보스전 공격 +%, 제한 시간 +틱
+    const bossPct = fxv(wallet, 'batBoss');
+    const stats = bossPct > 0 ? { ...stats0, atk: Math.round(stats0.atk * (1 + bossPct / 100)) } : stats0;
     const foe = battleGuardianFor(next);
-    const sim = battleSimulate(stats, foe);
+    const sim = battleSimulate(stats, foe, Math.random, BATTLE_FIGHT_MAX_TICKS + Math.floor(fxv(wallet, 'batTicks')));
     let reward: { coins: number; gems: number; item?: { id: string; name: string } } | undefined;
     let settled: BattleClaimResult | null = null;
     if (sim.win) {
@@ -2106,6 +2386,8 @@ io.on('connection', (socket) => {
       b.maxStage = next;
       b.challengeAt = now + BATTLE_CHALLENGE_COOLDOWN_MS;
       reward = battleClearReward(next);
+      reward.coins = Math.round(reward.coins * fxMul(wallet, 'batBossCoin')); // 🐾
+      if (foe.kind !== 'guardian') reward.gems += Math.floor(fxv(wallet, 'batBossGem'));
       if (foe.kind === 'big' && Math.random() < BATTLE_BIG_BOSS_ITEM_RATE) {
         const unowned = SHOP_ITEMS.filter((i) => !wallet.items.includes(i.id));
         if (unowned.length > 0) {
@@ -2129,7 +2411,7 @@ io.on('connection', (socket) => {
       checkAch(key);
       console.log(`[battle] ${key}: ${next}층 수문장 '${foe.name}' 격파 (+${reward.coins}🪙${reward.gems ? ` +${reward.gems}💎` : ''}${reward.item ? ` 아이템 '${reward.item.name}'` : ''})`);
     } else {
-      b.challengeAt = now + BATTLE_LOSE_COOLDOWN_MS;
+      b.challengeAt = now + Math.round(BATTLE_LOSE_COOLDOWN_MS * fxCut(wallet, 'batLoseCd')); // 🐾 실패 쿨타임 감소
       saveWallets();
       grantAch(key, 'b-lose');
       console.log(`[battle] ${key}: ${next}층 수문장 '${foe.name}'에게 패배 (${sim.log.length}틱)`);
@@ -2138,7 +2420,7 @@ io.on('connection', (socket) => {
       ok: true,
       win: sim.win,
       stage: next,
-      foe: { emoji: foe.emoji, name: foe.name, hp: foe.hp, atk: foe.atk },
+      foe: { emoji: foe.emoji, name: foe.name, sprite: foe.sprite, hp: foe.hp, atk: foe.atk },
       log: sim.log,
       ...(reward ? { reward } : {}),
       ...(settled ? { settled: { kills: settled.kills ?? 0, coins: settled.coins ?? 0, gems: settled.gems ?? 0 } } : {}),
@@ -2245,6 +2527,292 @@ io.on('connection', (socket) => {
     checkAch(key);
     reply({ ok: true, gems: wallet.gems, actions: [...wallet.actions] });
     console.log(`[action-shop] ${key}: ${item.id} 구매 (잔여 ${wallet.gems} 💎)`);
+  });
+
+  // ---- 🐾 펫: 상태 / 뽑기 / 장착 / 먹이 / 레벨 / 자동먹이 / 용품 구매 ----
+
+  const petCtx = (ack: unknown): { reply: (res: any) => void; player?: PlayerState; key: string; wallet?: Wallet } => {
+    const reply = typeof ack === 'function' ? (ack as (res: any) => void) : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return { reply, key: '' };
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    return { reply, player, key, wallet };
+  };
+  /** 장착 변경을 오버레이에 알림 (PlayerState.pet + player-pet 브로드캐스트) */
+  const petSyncEquip = (player: PlayerState, wallet: Wallet) => {
+    const pet = wallet.pet?.equip[0];
+    if (player.pet === pet) return;
+    if (pet) player.pet = pet;
+    else delete player.pet;
+    socket.broadcast.emit('player-pet', { id: socket.id, pet: pet ?? null });
+  };
+
+  socket.on('pet-state', (ack) => {
+    if (typeof ack !== 'function') return;
+    const { player, key, wallet } = petCtx(ack);
+    if (!player || !wallet) return;
+    if (petSettle(wallet)) saveWallets();
+    ack(petStateFor(key));
+  });
+
+  socket.on('pet-gacha', (countRaw, ack) => {
+    const { reply, player, key, wallet } = petCtx(ack);
+    if (!player || !wallet) return;
+    const n = Number(countRaw) === 10 ? 10 : 1;
+    const now = Date.now();
+    if (now - (lastPetGachaAt.get(socket.id) ?? 0) < 500) {
+      reply({ ok: false, error: '너무 빨라요!' });
+      return;
+    }
+    const p = petOf(wallet);
+    const friday = n === 10 && petFridayDiscount(p, now);
+    const cost = n === 10 ? (friday ? PET_GACHA.fridayTen : PET_GACHA.ten) : PET_GACHA.single;
+    if ((wallet.gems ?? 0) < cost) {
+      reply({ ok: false, error: `젬이 부족해요. (${wallet.gems ?? 0}/${cost} 💎)` });
+      return;
+    }
+    lastPetGachaAt.set(socket.id, now);
+    petSettle(wallet, now);
+    wallet.gems = (wallet.gems ?? 0) - cost;
+    if (friday) p.fridayKey = dailyDateKey(now);
+    const results: PetPull[] = [];
+    const news: string[] = [];
+    for (let i = 0; i < n; i++) {
+      // 판정 순서: 5성(천장 보정) → 4성(10회 보정) → 3성. 카운터는 뽑기마다 갱신
+      let star: 3 | 4 | 5 = 3;
+      if (Math.random() * 100 < petRate5(p.pity5 + 1)) star = 5;
+      else if (Math.random() * 100 < petRate4(p.pity4 + 1)) star = 4;
+      p.total++;
+      if (star === 5) {
+        p.pity5 = 0;
+        p.pity4 = 0;
+      } else if (star === 4) {
+        p.pity5++;
+        p.pity4 = 0;
+      } else {
+        p.pity5++;
+        p.pity4++;
+      }
+      if (star === 3) {
+        const totalW = PET_3STAR_POOL.reduce((s, r) => s + r.w, 0);
+        let r = Math.random() * totalW;
+        let pick = PET_3STAR_POOL[0];
+        for (const row of PET_3STAR_POOL) {
+          r -= row.w;
+          if (r < 0) {
+            pick = row;
+            break;
+          }
+        }
+        if (pick.item === 'food') p.food += pick.n;
+        else p.cards += pick.n;
+        results.push({ star: 3, item: pick.item, n: pick.n });
+        continue;
+      }
+      const pool = PET_DEFS.filter((d) => d.star === star);
+      const def = pool[Math.floor(Math.random() * pool.length)];
+      const o = p.owned[def.id];
+      if (!o) {
+        p.owned[def.id] = { dup: 0, lv: 1, satiety: 100, tick: now };
+        results.push({ star, id: def.id, isNew: true, dup: 0 });
+        if (star === 5) {
+          bumpStat(key, 'pet5');
+          news.push(`🐾 ${player.nickname}#${player.tag}님이 5성 펫 '${def.name}'을(를) 획득했습니다!`);
+        }
+      } else if (o.dup < PET_MAX_DUP) {
+        o.dup++;
+        results.push({ star, id: def.id, dup: o.dup });
+        if (star === 5 && o.dup === PET_MAX_DUP) news.push(`🐾 ${player.nickname}#${player.tag}님의 5성 펫 '${def.name}'이(가) 10돌(만돌)을 달성했습니다!`);
+      } else {
+        const refund = PET_REFUND[star];
+        wallet.gems += refund.gems;
+        p.cards += refund.cards;
+        results.push({ star, id: def.id, dup: o.dup, refund });
+      }
+    }
+    bumpStat(key, 'petPulls', n);
+    saveWallets();
+    checkAch(key);
+    socket.emit('gems', wallet.gems);
+    for (const text of news) {
+      io.emit('pet-news', { id: socket.id, nickname: player.nickname, tag: player.tag, text });
+      publishTicker('news', text);
+    }
+    reply({ ok: true, count: n, cost, results, state: petStateFor(key, now) });
+    const summary = results.map((r) => (r.star === 3 ? `${r.item === 'food' ? '먹이' : '카드'}×${r.n}` : `★${r.star} ${r.id}${r.isNew ? '(NEW)' : r.refund ? '(환급)' : `(${r.dup}돌)`}`)).join(', ');
+    console.log(`[pet] ${key}: ${n}회 뽑기 (-${cost}💎${friday ? ' 금요일 할인' : ''}) → ${summary} · 천장 ${p.pity5}/90`);
+  });
+
+  socket.on('pet-equip', (idsRaw, ack) => {
+    const { reply, player, key, wallet } = petCtx(ack);
+    if (!player || !wallet) return;
+    const now = Date.now();
+    const p = petOf(wallet);
+    const ids = [...new Set(Array.isArray(idsRaw) ? idsRaw.filter((i): i is string => typeof i === 'string') : [])];
+    if (ids.some((id) => !p.owned[id])) {
+      reply({ ok: false, error: '보유하지 않은 펫이에요.' });
+      return;
+    }
+    if (ids.length > petSlots(p)) {
+      reply({ ok: false, error: `장착 슬롯은 ${petSlots(p)}칸이에요.` });
+      return;
+    }
+    petSettle(wallet, now); // 해제되는 펫은 지금 포만도에서 멈춤
+    for (const id of ids) if (!p.equip.includes(id)) p.owned[id].tick = now; // 새로 장착: 지금부터 감소
+    p.equip = ids;
+    petSettle(wallet, now);
+    saveWallets();
+    petSyncEquip(player, wallet);
+    reply({ ok: true, state: petStateFor(key, now) });
+    console.log(`[pet] ${key}: 장착 [${ids.join(', ')}] (슬롯 ${petSlots(p)})`);
+  });
+
+  socket.on('pet-feed', (petIdRaw, ack) => {
+    const { reply, player, key, wallet } = petCtx(ack);
+    if (!player || !wallet) return;
+    const now = Date.now();
+    const p = petOf(wallet);
+    const o = p.owned[String(petIdRaw)];
+    if (!o) {
+      reply({ ok: false, error: '보유하지 않은 펫이에요.' });
+      return;
+    }
+    petSettle(wallet, now);
+    if (p.food < 1) {
+      reply({ ok: false, error: '펫 먹이가 없어요. (상점에서 구매하거나 뽑기 3성 보상)' });
+      return;
+    }
+    p.food--;
+    o.satiety = 100;
+    o.tick = now;
+    saveWallets();
+    reply({ ok: true, state: petStateFor(key, now) });
+  });
+
+  socket.on('pet-level', (petIdRaw, ack) => {
+    const { reply, player, key, wallet } = petCtx(ack);
+    if (!player || !wallet) return;
+    const p = petOf(wallet);
+    const o = p.owned[String(petIdRaw)];
+    if (!o) {
+      reply({ ok: false, error: '보유하지 않은 펫이에요.' });
+      return;
+    }
+    if (o.lv >= PET_MAX_LEVEL) {
+      reply({ ok: false, error: '이미 최대 레벨(10)이에요.' });
+      return;
+    }
+    const need = PET_LEVEL_CARDS[o.lv - 1];
+    if (p.cards < need) {
+      reply({ ok: false, error: `경험치카드가 부족해요. (${p.cards}/${need}장)` });
+      return;
+    }
+    petSettle(wallet);
+    p.cards -= need;
+    o.lv++;
+    saveWallets();
+    reply({ ok: true, state: petStateFor(key) });
+    console.log(`[pet] ${key}: ${petIdRaw} Lv${o.lv} (-${need}장)`);
+  });
+
+  socket.on('pet-autofeed', (cfg, ack) => {
+    const { reply, player, key, wallet } = petCtx(ack);
+    if (!player || !wallet) return;
+    const p = petOf(wallet);
+    const pct = Math.floor(Number(cfg?.pct) || PET_AUTOFEED_DEFAULT_PCT);
+    p.autoFeed = { on: cfg?.on === true, pct: Math.max(10, Math.min(90, Math.round(pct / 10) * 10)) };
+    petSettle(wallet); // 켜자마자 임계값 이하면 즉시 급여
+    saveWallets();
+    reply({ ok: true, state: petStateFor(key) });
+  });
+
+  socket.on('buy-pet-item', (kindRaw, qtyRaw, ack) => {
+    const { reply, player, key, wallet } = petCtx(ack);
+    if (!player || !wallet) return;
+    const kind = String(kindRaw);
+    const qty = Math.floor(Number(qtyRaw));
+    if ((kind !== 'food' && kind !== 'card') || !Number.isFinite(qty) || qty < 1 || qty > PET_ITEM_BUY_MAX) {
+      reply({ ok: false, error: '수량이 올바르지 않아요.' });
+      return;
+    }
+    const p = petOf(wallet);
+    if (kind === 'food') {
+      const unit = Math.max(1, Math.round(PET_FOOD_PRICE * fxCut(wallet, 'foodPrice'))); // 🐾 먹이 할인
+      const cost = unit * qty;
+      if (wallet.coins < cost) {
+        reply({ ok: false, error: `골드가 부족해요. (${wallet.coins}/${cost} 🪙)` });
+        return;
+      }
+      wallet.coins -= cost;
+      p.food += qty;
+      socket.emit('coins', wallet.coins);
+    } else {
+      const cost = PET_CARD_PRICE_GEM * qty;
+      if ((wallet.gems ?? 0) < cost) {
+        reply({ ok: false, error: `젬이 부족해요. (${wallet.gems ?? 0}/${cost} 💎)` });
+        return;
+      }
+      wallet.gems = (wallet.gems ?? 0) - cost;
+      p.cards += qty;
+      socket.emit('gems', wallet.gems);
+    }
+    petSettle(wallet); // 먹이를 샀으면 자동 먹이 즉시 판정
+    saveWallets();
+    reply({ ok: true, state: petStateFor(key) });
+    console.log(`[pet] ${key}: ${kind === 'food' ? '먹이' : '경험치카드'} ${qty}개 구매`);
+  });
+
+  // ---- 💱 환전 (골드↔젬) — 잔액 검증·차감 서버 권위 ----
+  socket.on('exchange', (dir, qty, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const n = Math.floor(Number(qty));
+    if (!Number.isFinite(n) || n < 1 || n > EXCHANGE_MAX_QTY) {
+      reply({ ok: false, error: `수량은 1~${EXCHANGE_MAX_QTY} 사이여야 해요.` });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    const gems = wallet.gems ?? 0;
+    // 🐾 펫: 환전 우대 — 매도단가는 매수단가−20 이하로 클램프 (골드↔젬 무한 루프 차단)
+    const buyRate = EXCHANGE_GOLD_PER_GEM_BUY - Math.floor(fxv(wallet, 'exBuy'));
+    const sellRate = Math.min(EXCHANGE_GOLD_PER_GEM_SELL + Math.floor(fxv(wallet, 'exSell')), buyRate - 20);
+    if (dir === 'gold-to-gem') {
+      const cost = n * buyRate;
+      if (wallet.coins < cost) {
+        reply({ ok: false, error: `골드가 부족해요. (${wallet.coins}/${cost} 🪙)`, coins: wallet.coins, gems });
+        return;
+      }
+      wallet.coins -= cost;
+      wallet.gems = gems + n;
+    } else if (dir === 'gem-to-gold') {
+      if (gems < n) {
+        reply({ ok: false, error: `젬이 부족해요. (${gems}/${n} 💎)`, coins: wallet.coins, gems });
+        return;
+      }
+      wallet.gems = gems - n;
+      wallet.coins += n * sellRate; // 환전 골드는 coinsEarned에 넣지 않음 (업적 카운터 부풀림 방지)
+    } else {
+      reply({ ok: false, error: '알 수 없는 교환 방향이에요.' });
+      return;
+    }
+    bumpStat(key, 'exchanges');
+    saveWallets();
+    checkAch(key); // coinsNow 등 잔액 파생 업적
+    socket.emit('coins', wallet.coins);
+    socket.emit('gems', wallet.gems);
+    reply({ ok: true, coins: wallet.coins, gems: wallet.gems, qty: n, buyRate, sellRate });
+    console.log(
+      `[exchange] ${key}: ${dir === 'gold-to-gem' ? `🪙 ${n * buyRate} → 💎 ${n}` : `💎 ${n} → 🪙 ${n * sellRate}`} (잔액 ${wallet.coins} 🪙 · ${wallet.gems} 💎)`,
+    );
   });
 
   socket.on('ranking', (ack) => {
@@ -2390,6 +2958,8 @@ io.on('connection', (socket) => {
       lastRandomBuyAt.delete(socket.id);
       lastEnhanceAt.delete(socket.id);
       lastDigAt.delete(socket.id);
+      lastDigAt.delete(socket.id);
+      lastPetGachaAt.delete(socket.id);
       socket.broadcast.emit('player-fishing', { id: socket.id, phase: 'stop' });
       socket.broadcast.emit('player-digging', { id: socket.id, phase: 'stop' });
       io.emit('player-left', socket.id);

@@ -917,6 +917,27 @@
         flex: 1;
         font-size: 12px;
       }
+      .shop-name small {
+        display: block;
+        color: var(--text-dim);
+        font-size: 10px;
+        margin-top: 1px;
+      }
+      .shop-qty {
+        width: 48px;
+        border: 1px solid var(--header);
+        background: var(--bg-input);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 6px;
+        font-size: 11px;
+        outline: none;
+        flex-shrink: 0;
+      }
+      .shop-btn.shop-max {
+        padding: 4px 6px;
+        font-size: 10px;
+      }
       .shop-btn {
         border: 1px solid var(--header);
         background: var(--bg-input);
@@ -1079,6 +1100,7 @@
       #ach-panel,
       #mineraldex-panel,
       #battle-panel,
+      #pet-panel,
       #slot-panel {
         position: absolute;
         left: 0;
@@ -1105,6 +1127,7 @@
       #ach-panel.open,
       #mineraldex-panel.open,
       #battle-panel.open,
+      #pet-panel.open,
       #slot-panel.open {
         display: flex;
       }
@@ -1470,7 +1493,7 @@
       .bt-side { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
       .bt-avatar {
         width: 144px;
-        height: 126px;
+        height: 128px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1479,6 +1502,8 @@
       }
       /* 합성 프레임의 캐릭터 영역(48x42)을 3배 도트 확대 */
       .bt-avatar canvas { width: 144px; height: 126px; image-rendering: pixelated; }
+      /* 몬스터 32x32 스프라이트 → 4배 */
+      #bt-foe-avatar canvas { width: 128px; height: 128px; }
       .bt-avatar.foe { animation: bt-bob 1.6s ease-in-out infinite; }
       .bt-avatar.hit { animation: bt-hit 0.35s ease-out; }
       .bt-avatar.dead { animation: bt-dead 0.5s ease-in forwards; }
@@ -1626,6 +1651,122 @@
       .bt-top-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .bt-top-row.me { color: var(--nick-self); font-weight: 700; }
       #battle-body .hint { font-size: 10px; color: var(--text-dim); line-height: 1.5; margin: 2px 0 0; flex-shrink: 0; }
+      /* ---- 🐾 펫 (뽑기 / 내 펫) ---- */
+      #pet-panel [hidden] { display: none !important; }
+      #pet-toast { position: absolute; left: 12px; right: 12px; bottom: 14px; z-index: 30; background: rgba(0, 0, 0, 0.88); color: #fff; border: 1px solid var(--header); border-radius: 8px; padding: 8px 12px; font-size: 11px; line-height: 1.5; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); pointer-events: none; }
+      #pet-tabs { display: flex; gap: 6px; padding: 8px 12px 0; flex-shrink: 0; }
+      .pet-tab { flex: 1; border: 1px solid var(--header); border-bottom: 0; background: var(--bg); color: var(--text-dim); border-radius: 8px 8px 0 0; padding: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+      .pet-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+      #pet-body { flex: 1; overflow-y: auto; padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--header); }
+      #pet-body::-webkit-scrollbar { width: 8px; }
+      #pet-body::-webkit-scrollbar-thumb { background: var(--header); border-radius: 4px; }
+      .pet-view { display: flex; flex-direction: column; gap: 8px; }
+      #pet-panel .hint { font-size: 10px; color: var(--text-dim); line-height: 1.5; margin: 2px 0 0; }
+      #pg-stack { display: flex; gap: 8px; }
+      .pg-stat { flex: 1; background: var(--bg); border: 1px solid var(--header); border-radius: 8px; padding: 6px 8px; font-size: 10px; color: var(--text-dim); display: flex; flex-direction: column; gap: 3px; }
+      .pg-stat b { font-size: 14px; color: var(--text); }
+      .dq-fill.gold { background: #ffd54f; }
+      .dq-fill.purple { background: #b388ff; }
+      #pg-banner { min-height: 84px; background: linear-gradient(135deg, var(--bg-input), var(--self-bubble)); border: 1px solid rgba(255, 213, 79, 0.45); border-radius: 10px; display: flex; align-items: center; gap: 12px; padding: 8px 14px; position: relative; overflow: hidden; }
+      #pg-banner canvas { image-rendering: pixelated; flex-shrink: 0; }
+      .pg-banner-info { display: flex; flex-direction: column; gap: 1px; font-size: 11px; color: var(--text-dim); }
+      .pg-banner-info b { font-size: 13px; color: #ffd54f; }
+      .pg-banner-name { position: absolute; top: 5px; right: 8px; font-size: 9px; color: var(--text-dim); }
+      #pg-rates { font-size: 10px; color: var(--text-dim); display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+      #pg-rates button { border: 1px solid var(--header); background: transparent; color: var(--text); border-radius: 6px; padding: 3px 7px; font-size: 10px; cursor: pointer; white-space: nowrap; }
+      #pg-buttons { display: flex; gap: 8px; }
+      #pg-buttons button { flex: 1; border: 1px solid var(--accent); background: var(--bg); color: var(--text); border-radius: 8px; padding: 8px 6px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      #pg-buttons button small { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+      #pg-pull10 { background: var(--accent) !important; color: #fff !important; }
+      #pg-pull10 small { color: #ffe3e8 !important; }
+      #pg-buttons button:hover:enabled { filter: brightness(1.1); }
+      #pg-buttons button:disabled { opacity: 0.5; cursor: default; }
+      #pg-friday { font-size: 11px; font-weight: 700; color: #ffd54f; text-align: center; }
+      #pg-items { font-size: 11px; color: var(--text-dim); }
+      #pg-items b { color: var(--text); }
+      #pm-slots { display: flex; gap: 6px; }
+      .pm-slot { flex: 1; min-height: 88px; background: var(--bg); border: 1px dashed var(--header); border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 9px; color: var(--text-dim); cursor: pointer; padding: 5px 4px; text-align: center; }
+      .pm-slot.filled { border-style: solid; color: var(--text); }
+      .pm-slot.filled.s5 { border-color: #ffd54f; }
+      .pm-slot.filled.s4 { border-color: #b388ff; }
+      .pm-slot.locked { opacity: 0.55; cursor: default; }
+      .pm-slot canvas { image-rendering: pixelated; }
+      .pm-slot-plus { font-size: 20px; }
+      .pm-slot-name { font-weight: 700; font-size: 10px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pm-sat { width: 100%; height: 4px; background: var(--bg-input); border-radius: 2px; overflow: hidden; }
+      .pm-sat i { display: block; height: 100%; background: #7bd88f; }
+      .pm-sat.low i { background: #ffb74d; }
+      .pm-sat.crit i { background: #ef5350; }
+      #pm-care { background: var(--bg); border: 1px solid var(--header); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 5px; font-size: 11px; }
+      .pm-care-row { display: flex; align-items: center; gap: 6px; }
+      .pm-care-row > span:first-child { flex: 1; }
+      .pm-care-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+      .pm-care-hint { font-size: 9px; color: var(--text-dim); flex: 1; }
+      .pm-care-row select { border: 1px solid var(--header); background: var(--bg-input); color: var(--text); border-radius: 5px; padding: 2px 4px; font-size: 10px; }
+      .pm-care-row button { border: 1px solid var(--header); background: transparent; color: var(--text); border-radius: 6px; padding: 3px 8px; font-size: 10px; cursor: pointer; }
+      #pm-filter { display: flex; gap: 4px; }
+      .pm-f { border: 1px solid var(--header); background: var(--bg); color: var(--text-dim); border-radius: 999px; padding: 3px 10px; font-size: 10px; cursor: pointer; }
+      .pm-f.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+      #pm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+      .pm-card { background: var(--bg); border: 1px solid var(--header); border-radius: 8px; padding: 5px 3px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; cursor: pointer; position: relative; min-width: 0; }
+      .pm-card.s5 { border-color: #ffd54f; }
+      .pm-card.s4 { border-color: #b388ff; }
+      .pm-card.unowned { opacity: 0.55; }
+      .pm-card:hover { background: var(--self-bubble); }
+      .pm-card canvas { image-rendering: pixelated; }
+      .pm-card .pm-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pm-card .pm-dup { color: #ffd54f; font-size: 8px; letter-spacing: -0.5px; white-space: nowrap; }
+      .pm-card .pm-eq { position: absolute; top: 2px; right: 3px; font-size: 9px; }
+      .pm-card .pm-sat { margin-top: 1px; }
+      #pet-fx { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.8); z-index: 20; display: flex; align-items: center; justify-content: center; }
+      #pet-fx > div { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; padding: 12px; }
+      .pfx-box { background: var(--bg); border: 1px solid var(--header); border-radius: 10px; padding: 16px; text-align: center; font-size: 13px; line-height: 1.5; max-width: 300px; }
+      .pfx-box p { margin: 0; }
+      .pfx-box .btns { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }
+      #pet-panel button.primary { background: var(--accent); color: #fff; border: 0; }
+      .pfx-box button, #pet-fx-result-btns button, #pd-actions button { border: 1px solid var(--header); background: var(--bg-input); color: var(--text); border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
+      .pfx-box button:hover, #pet-fx-result-btns button:hover, #pd-actions button:hover:enabled { filter: brightness(1.15); }
+      #pd-actions button:disabled { opacity: 0.5; cursor: default; }
+      #pet-fx-scroll { cursor: pointer; }
+      #pet-fx-scroll canvas { width: 192px; height: 192px; image-rendering: pixelated; animation: pfx-wobble 1.4s ease-in-out infinite; filter: drop-shadow(0 0 14px rgba(255, 224, 130, 0.6)); }
+      @keyframes pfx-wobble { 0%, 100% { transform: rotate(-3deg) scale(1); } 50% { transform: rotate(3deg) scale(1.04); } }
+      #pet-fx-scroll div { font-size: 14px; font-weight: 700; color: #fff; text-shadow: 0 1px 4px #000; }
+      #pet-fx-effect canvas { width: 240px; height: 240px; }
+      #pet-fx-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: 100%; }
+      #pet-fx-cards.single { grid-template-columns: 120px; justify-content: center; }
+      .pfx-card { background: var(--bg); border: 2px solid; border-radius: 8px; padding: 6px 2px 4px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9px; position: relative; opacity: 0; animation: pfx-pop 0.35s ease-out forwards; min-width: 0; }
+      .pfx-card.s3 { border-color: #4fc3f7; }
+      .pfx-card.s4 { border-color: #b388ff; box-shadow: 0 0 8px rgba(179, 136, 255, 0.45); }
+      .pfx-card.s5 { border-color: #ffd54f; box-shadow: 0 0 12px rgba(255, 213, 79, 0.7); }
+      .pfx-card canvas, .pfx-card img { image-rendering: pixelated; }
+      .pfx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pfx-badge { font-size: 8px; font-weight: 700; color: var(--text-dim); }
+      .pfx-badge.new { color: #7bd88f; }
+      .pfx-badge.dup { color: #ffd54f; }
+      .pfx-card:hover::after { content: attr(data-name); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.9); color: #fff; padding: 3px 7px; border-radius: 4px; font-size: 10px; white-space: nowrap; margin-bottom: 4px; pointer-events: none; z-index: 2; }
+      @keyframes pfx-pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+      #pet-fx-result-btns { display: flex; gap: 8px; }
+      #pet-detail { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.7); z-index: 15; display: flex; align-items: center; justify-content: center; padding: 12px; }
+      .pd-box { background: var(--bg); border: 1px solid var(--header); border-radius: 10px; padding: 10px 12px; width: 100%; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+      .pd-head { display: flex; align-items: center; gap: 10px; }
+      .pd-head canvas { image-rendering: pixelated; width: 64px; height: 64px; background: var(--bg-input); border-radius: 8px; flex-shrink: 0; }
+      .pd-head b { font-size: 14px; }
+      #pd-sub { font-size: 11px; color: var(--text-dim); }
+      #pd-close { margin-left: auto; border: 0; background: transparent; color: var(--text); font-size: 14px; cursor: pointer; align-self: flex-start; }
+      #pd-flavor { margin: 0; font-size: 11px; color: var(--text-dim); line-height: 1.45; }
+      #pd-status { font-size: 11px; display: flex; flex-direction: column; gap: 4px; }
+      .pd-sat-row { display: flex; flex-direction: column; gap: 3px; }
+      #pd-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+      #pd-actions button { flex: 1; white-space: nowrap; font-size: 11px; padding: 6px 8px; }
+      #pd-effects { display: flex; flex-direction: column; gap: 2px; font-size: 10.5px; }
+      .pd-fx { display: flex; gap: 6px; padding: 3px 6px; border-radius: 5px; background: var(--bg-input); line-height: 1.35; }
+      .pd-fx.on { background: var(--self-bubble); }
+      .pd-fx.off { opacity: 0.5; }
+      .pd-fx.special { border-left: 2px solid #ffd54f; }
+      .pd-fx b { width: 28px; flex-shrink: 0; }
+      .pd-fx i { width: 30px; flex-shrink: 0; font-style: normal; color: var(--text-dim); }
+      .pd-fx span b { width: auto; }
+      .pd-fx small { color: var(--text-dim); }
       /* ---- 일일퀘스트 ---- */
       #daily-list {
         padding: 10px 12px;
@@ -1896,6 +2037,7 @@
       <button data-menu="slot">🎰 슬롯머신</button>
       <button data-menu="forge">🔨 대장간</button>
       <button data-menu="battle">⚔️ 원정</button>
+      <button data-menu="pet">🐾 펫</button>
       <button data-menu="note">✉️ 쪽지</button>
       <button data-menu="stock">📈 주식</button>
       <button data-menu="tickerlog">🗞️ 전광판</button>
@@ -2060,6 +2202,99 @@
           🎣 낚싯대 성 → 공격력 · ⛏️ 광물도감 → 체력 · 📖 낚시도감 → 행운 · 🎖️ 도전과제 → 공격·체력 보너스.<br />
           수문장을 처치하면 다음 층이 열리고, 5·10층 보스는 💎와 상점 아이템을 떨어뜨려요. 몬스터가 떨군 광물은 광물도감에 실려요.
         </p>
+      </div>
+    </div>
+    <div id="pet-panel">
+      <div class="panel-head">
+        <span>🐾 펫 <span id="pet-head-info"></span></span>
+        <button id="pet-close">✕</button>
+      </div>
+      <div id="pet-tabs">
+        <button class="pet-tab active" data-tab="gacha">🎁 뽑기</button>
+        <button class="pet-tab" data-tab="mine">🐾 내 펫</button>
+      </div>
+      <div id="pet-body">
+        <div id="pet-gacha" class="pet-view">
+          <div id="pg-stack">
+            <div class="pg-stat">
+              <span>⭐5 천장 스택</span><b id="pg-pity5">0/90</b>
+              <div class="dq-bar"><div class="dq-fill gold" id="pg-pity5-fill"></div></div>
+            </div>
+            <div class="pg-stat">
+              <span>⭐4 이상 보장</span><b id="pg-pity4">10회 안에</b>
+              <div class="dq-bar"><div class="dq-fill purple" id="pg-pity4-fill"></div></div>
+            </div>
+          </div>
+          <div id="pg-banner"></div>
+          <div id="pg-rates">
+            <span>⭐5 0.6% · ⭐4 10% · ⭐3 89.4% (먹이·경험치카드)</span>
+            <button id="pg-rates-btn">확률 상세</button>
+          </div>
+          <div id="pg-buttons">
+            <button id="pg-pull1">1회 뽑기<small>💎 5</small></button>
+            <button id="pg-pull10">10회 뽑기<small id="pg-pull10-cost">💎 50</small></button>
+          </div>
+          <div id="pg-friday" hidden>🎉 금요일 이벤트 — 오늘 첫 10연 💎 40!</div>
+          <div id="pg-items">🍖 먹이 <b id="pg-food">0</b> · 📜 경험치카드 <b id="pg-cards">0</b> · 누적 뽑기 <b id="pg-total">0</b>회</div>
+          <p class="hint">
+            10회 뽑기는 4성 이상 1개가 보장돼요. 같은 펫을 또 뽑으면 <b>돌파</b>(최대 10돌)로 능력이 강해지고, 3성은 펫 먹이·경험치카드예요.<br />
+            장착한 펫은 캐릭터 뒤를 따라다니며 골드·젬·낚시·발굴·원정·주식 등에 보너스를 줘요. 배가 고프면(포만도 70% 이하) 효과가 줄어요.
+          </p>
+        </div>
+        <div id="pet-mine" class="pet-view" hidden>
+          <div id="pm-slots"></div>
+          <div id="pm-care">
+            <div class="pm-care-row">
+              <span>🍖 먹이 <b id="pm-food">0</b> · 📜 경험치카드 <b id="pm-cards">0</b></span>
+              <button id="pm-shop">🛒 상점</button>
+            </div>
+            <div class="pm-care-row">
+              <label><input type="checkbox" id="pm-auto" /> 자동 먹이</label>
+              <select id="pm-auto-pct"></select>
+              <span class="pm-care-hint">장착 펫 포만도가 이하로 떨어지면 자동 급여</span>
+            </div>
+          </div>
+          <div id="pm-filter">
+            <button class="pm-f active" data-f="all">전체</button>
+            <button class="pm-f" data-f="5">⭐5</button>
+            <button class="pm-f" data-f="4">⭐4</button>
+            <button class="pm-f" data-f="owned">보유</button>
+          </div>
+          <div id="pm-grid"></div>
+        </div>
+      </div>
+      <div id="pet-toast" hidden></div>
+      <div id="pet-fx" hidden>
+        <div id="pet-fx-confirm" hidden>
+          <div class="pfx-box">
+            <p id="pet-fx-confirm-text"></p>
+            <div class="btns"><button id="pet-fx-yes" class="primary">예</button><button id="pet-fx-no">아니오</button></div>
+          </div>
+        </div>
+        <div id="pet-fx-scroll" hidden>
+          <canvas id="pet-fx-scroll-canvas" width="64" height="64"></canvas>
+          <div>✨ 눌러서 확인하기</div>
+        </div>
+        <div id="pet-fx-effect" hidden>
+          <canvas id="pet-fx-effect-canvas" width="240" height="240"></canvas>
+        </div>
+        <div id="pet-fx-result" hidden>
+          <div id="pet-fx-cards"></div>
+          <div id="pet-fx-result-btns"><button id="pet-fx-again" class="primary">다시 뽑기</button><button id="pet-fx-close">닫기</button></div>
+        </div>
+      </div>
+      <div id="pet-detail" hidden>
+        <div class="pd-box">
+          <div class="pd-head">
+            <canvas id="pd-sprite" width="64" height="64"></canvas>
+            <div><b id="pd-name"></b><div id="pd-sub"></div></div>
+            <button id="pd-close">✕</button>
+          </div>
+          <p id="pd-flavor"></p>
+          <div id="pd-status"></div>
+          <div id="pd-actions"></div>
+          <div id="pd-effects"></div>
+        </div>
       </div>
     </div>
     <div id="stock-panel">

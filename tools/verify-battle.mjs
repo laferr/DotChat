@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { io } from 'socket.io-client';
 import {
   ACHIEVEMENTS,
+  BATTLE_TIERS,
   BATTLE_UPGRADE_KEYS,
   battleUpgradeCost,
   battleClearReward,
@@ -42,6 +43,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }
   if (defs.length !== ACHIEVEMENTS.length) fail(`ACH_DEFS ${defs.length}개 ≠ shared ${ACHIEVEMENTS.length}개`);
   console.log(`  동기화 OK: 원정 도전과제 ${mine.length}개 = composer ACH_DEFS (총 ${defs.length}개)`);
+}
+
+// 0-0) BATTLE_TIERS 스프라이트 ↔ assets/extras/manifest-extras.json monsters (tools/import-extras.mjs 산출물)
+{
+  const manifestPath = path.join(root, 'assets/extras/manifest-extras.json');
+  if (fs.existsSync(manifestPath)) {
+    const monsters = new Set(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).monsters ?? []);
+    const missing = [];
+    for (const t of BATTLE_TIERS) {
+      for (const [, name, sprite] of [...t.mobs, t.guardian, t.boss, t.bigBoss]) {
+        if (!monsters.has(sprite)) missing.push(`${name}(${sprite})`);
+      }
+    }
+    if (missing.length) fail(`몬스터 스프라이트 누락: ${missing.join(', ')}`);
+    console.log(`  스프라이트 OK: 층 테이블 ${BATTLE_TIERS.length * 6}개 전부 매니페스트(monsters ${monsters.size}종)에 있음`);
+  } else {
+    console.log('  스프라이트 스킵: assets/extras/manifest-extras.json 없음');
+  }
 }
 
 // 0-1) 밸런스 자체 검증 — 기본 능력치로 1층 수문장은 이기고 10층 대보스는 진다

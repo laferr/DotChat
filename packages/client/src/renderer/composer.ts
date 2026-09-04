@@ -284,6 +284,238 @@ const MINERAL_DEFS: { id: string; name: string; cat: string }[] = [
   { id: 'd193', name: '프리즘 다이아몬드', cat: 'diamond' },
 ];
 
+// 🐾 펫 — shared/protocol.ts의 PET_FX / PET_DEFS와 동기화 유지 필요 (판정·지급은 서버, verify-pet가 검사)
+type PetFxKey =
+  | 'coinMin'
+  | 'gemHour'
+  | 'nightCoin'
+  | 'nightFish'
+  | 'nightGem'
+  | 'morningCoin'
+  | 'stockProfit'
+  | 'stockDelist'
+  | 'stockBonus'
+  | 'fishCoin'
+  | 'fishNew'
+  | 'fishRepeat'
+  | 'fishCd'
+  | 'fishTrophy'
+  | 'fishTrophyCoin'
+  | 'fishChest'
+  | 'fishDouble'
+  | 'digCoin'
+  | 'digCd'
+  | 'digGem'
+  | 'digChest'
+  | 'digMiss'
+  | 'runCoin'
+  | 'runCap'
+  | 'runCd'
+  | 'runShield'
+  | 'slotWin'
+  | 'slotFree'
+  | 'slotRetry'
+  | 'dailyGemChance'
+  | 'dailyAll'
+  | 'attendCoin'
+  | 'attendCap'
+  | 'attendWeek'
+  | 'enhCost'
+  | 'enhDrop'
+  | 'enhPity'
+  | 'batAtk'
+  | 'batHp'
+  | 'batCrit'
+  | 'batCritMult'
+  | 'batLuck'
+  | 'batCap'
+  | 'batCoin'
+  | 'batGem'
+  | 'batMineral'
+  | 'batSpeed'
+  | 'batBoss'
+  | 'batBossCoin'
+  | 'batBossGem'
+  | 'batTicks'
+  | 'batLoseCd'
+  | 'tierFrost'
+  | 'giftCd'
+  | 'giftDouble'
+  | 'exSell'
+  | 'exBuy'
+  | 'noteCd'
+  | 'noteCost'
+  | 'adCost'
+  | 'adCd'
+  | 'bragCd'
+  | 'randCost'
+  | 'satiety'
+  | 'foodPrice';
+interface PetFxDef {
+  label: string;
+  cap: number;
+  client?: boolean;
+}
+const PET_FX: Record<PetFxKey, PetFxDef> = {
+  coinMin: { label: '분당 골드 +{v}', cap: 3 },
+  gemHour: { label: '시간당 💎 +{v}', cap: 2 },
+  nightCoin: { label: '밤(KST 22~06시) 분당 골드 +{v}', cap: 2 },
+  nightFish: { label: '밤(KST 22~06시) 낚시 골드 +{v}%', cap: 40 },
+  nightGem: { label: '밤(KST 22~06시) 시간당 💎 +{v}', cap: 1 },
+  morningCoin: { label: '아침(KST 06~10시) 분당 골드 +{v}', cap: 2 },
+  stockProfit: { label: '주식 매도 실현수익 +{v}%', cap: 40 },
+  stockDelist: { label: '상장폐지 시 보유가치의 {v}% 보상', cap: 50 },
+  stockBonus: { label: '주식 매수 시 {v}% 확률로 1주 덤', cap: 15 },
+  fishCoin: { label: '낚시 골드 +{v}%', cap: 50 },
+  fishNew: { label: '첫 어획 골드 +{v}%', cap: 150 },
+  fishRepeat: { label: '반복 어획 골드 +{v}', cap: 2 },
+  fishCd: { label: '입질 대기 시간 −{v}%', cap: 40, client: true },
+  fishTrophy: { label: '월척 확률 +{v}%p', cap: 1, client: true },
+  fishTrophyCoin: { label: '월척 보너스 골드 +{v}', cap: 15 },
+  fishChest: { label: '낚시 상자류 확률 +{v}% (상대)', cap: 100, client: true },
+  fishDouble: { label: '더블캐치 확률 +{v}%p', cap: 20 },
+  digCoin: { label: '발굴 골드 +{v}%', cap: 50 },
+  digCd: { label: '발굴 쿨타임 −{v}%', cap: 40, client: true },
+  digGem: { label: '젬조각·보석·다이아 확률 +{v}% (상대)', cap: 100, client: true },
+  digChest: { label: '발굴 상자 확률 +{v}% (상대)', cap: 100, client: true },
+  digMiss: { label: '꽝이어도 골드 +{v} 보장', cap: 2 },
+  runCoin: { label: '달리기 골드 +{v}%', cap: 60 },
+  runCap: { label: '달리기 최대 골드 +{v}', cap: 20 },
+  runCd: { label: '러너 쿨타임 −{v}%', cap: 60, client: true },
+  runShield: { label: '러너 트랩 보호막 {v}회', cap: 3, client: true },
+  slotWin: { label: '슬롯 당첨금 +{v}%', cap: 30 },
+  slotFree: { label: '슬롯 무료 스핀 확률 {v}%', cap: 20 },
+  slotRetry: { label: '슬롯 꽝 시 {v}% 확률로 1회 재굴림', cap: 30 },
+  dailyGemChance: { label: '일일퀘스트 완료 시 {v}% 확률로 💎 +1', cap: 100 },
+  dailyAll: { label: '일퀘 올클리어 보너스 💎 +{v}', cap: 5 },
+  attendCoin: { label: '출석 골드 +{v}%', cap: 150 },
+  attendCap: { label: '연속 출석 골드 상한 +{v}', cap: 10 },
+  attendWeek: { label: '연속 7일 보너스 💎 +{v}', cap: 8 },
+  enhCost: { label: '강화 비용 −{v}%', cap: 30 },
+  enhDrop: { label: '강화 하락 확률 −{v}% (상대)', cap: 40 },
+  enhPity: { label: '강화 천장 −{v}회', cap: 3 },
+  batAtk: { label: '원정 공격력 +{v}%', cap: 50 },
+  batHp: { label: '원정 체력 +{v}%', cap: 50 },
+  batCrit: { label: '원정 치명타 +{v}%p', cap: 15 },
+  batCritMult: { label: '원정 치명타 배율 +{v}', cap: 0.3 },
+  batLuck: { label: '원정 행운(드랍률) +{v}%', cap: 60 },
+  batCap: { label: '원정 가방 상한 +{v}시간', cap: 6 },
+  batCoin: { label: '원정 전리품 골드 +{v}%', cap: 40 },
+  batGem: { label: '원정 💎 드랍률 +{v}%', cap: 100 },
+  batMineral: { label: '원정 광물 드랍률 +{v}%', cap: 60 },
+  batSpeed: { label: '원정 처치 속도 +{v}%', cap: 30 },
+  batBoss: { label: '수문장·보스전 공격 +{v}%', cap: 50 },
+  batBossCoin: { label: '수문장 첫 처치 골드 +{v}%', cap: 50 },
+  batBossGem: { label: '5·10층 보스 첫 처치 💎 +{v}', cap: 3 },
+  batTicks: { label: '수문장전 제한 시간 +{v}틱', cap: 60 },
+  batLoseCd: { label: '도전 실패 쿨타임 −{v}%', cap: 75 },
+  tierFrost: { label: '서리 산맥(51~60층) 공격 +{v}%', cap: 40 },
+  giftCd: { label: '선물상자 등장 주기 −{v}%', cap: 40, client: true },
+  giftDouble: { label: '선물상자 파츠 2개 확률 {v}%', cap: 40, client: true },
+  exSell: { label: '젬→골드 환전 +{v}골드/💎', cap: 40 },
+  exBuy: { label: '골드→젬 환전 −{v}골드/💎', cap: 40 },
+  noteCd: { label: '쪽지 쿨타임 −{v}%', cap: 60 },
+  noteCost: { label: '쪽지 비용 −{v}골드', cap: 4 },
+  adCost: { label: '전광판 광고비 −{v}%', cap: 50 },
+  adCd: { label: '광고 쿨타임 −{v}%', cap: 60 },
+  bragCd: { label: '자랑하기 쿨타임 −{v}%', cap: 75 },
+  randCost: { label: '랜덤 파츠 뽑기 비용 −{v}%', cap: 30 },
+  satiety: { label: '장착 펫 포만도 감소 속도 −{v}%', cap: 50 },
+  foodPrice: { label: '상점 펫 먹이 가격 −{v}%', cap: 50 },
+};
+type PetProg = [PetFxKey, number[]];
+interface PetDef {
+  id: string;
+  name: string;
+  star: 4 | 5;
+  theme: string;
+  flavor: string;
+  float?: boolean;
+  s1: PetProg[];
+  minor: PetProg[];
+  s2: PetProg[];
+  s3: [PetFxKey, number][];
+}
+const PET_DEFS: PetDef[] = [
+  { id: 'wildfire', name: '도깨비불', star: 5, theme: '젬 정령', flavor: '푸른 불꽃의 정령. 곁에 두면 젬이 조금씩 모인다. 10돌이면 환전소가 우대 창구가 된다.', float: true, s1: [['gemHour', [0.5, 0.6, 0.7, 0.8, 0.9, 1.5]]], minor: [['giftCd', [5, 8, 11]]], s2: [['exSell', [20, 30, 40]]], s3: [['exBuy', 40]] },
+  { id: 'moonwolf', name: '달그림자 늑대', star: 5, theme: '원정 전투', flavor: '보랏빛 털의 전투형 늑대. 원정 공격력의 최상위 카드.', s1: [['batAtk', [10, 13, 16, 19, 22, 30]]], minor: [['batCrit', [1, 2, 3]]], s2: [['batCap', [2, 3, 4]]], s3: [['batCoin', 25], ['batGem', 50]] },
+  { id: 'fireskull', name: '불꽃 해골', star: 5, theme: '슬롯·도박', flavor: '도박에 미친 해골. 슬롯 당첨금과 무료 스핀, 강화 하락 방어까지.', float: true, s1: [['slotWin', [10, 13, 16, 19, 22, 25]]], minor: [['slotFree', [2, 3.5, 5]]], s2: [['enhDrop', [10, 15, 20]]], s3: [['slotRetry', 20]] },
+  { id: 'slime', name: '에메랄드 슬라임', star: 5, theme: '낚시·발굴 속도', flavor: '찐득한 슬라임이 입질을 앞당기고 삽질을 빠르게 한다. 10돌 더블캐치 10%.', s1: [['fishCd', [10, 13, 16, 19, 22, 25]]], minor: [['digCd', [3, 6, 9]]], s2: [['digCoin', [10, 15, 20]]], s3: [['fishDouble', 10]] },
+  { id: 'cat-gray', name: '잿빛 고양이', star: 5, theme: '주식·자산', flavor: '냉정한 투자 고양이. 실현수익을 불리고 상폐 손실을 메워준다.', s1: [['stockProfit', [10, 14, 18, 22, 26, 30]]], minor: [['adCost', [5, 10, 15]]], s2: [['attendCoin', [50, 75, 100]]], s3: [['coinMin', 1], ['stockDelist', 30]] },
+  { id: 'cat-orange', name: '호박 고양이', star: 5, theme: '일퀘·출석', flavor: '부지런한 주황 고양이. 일일퀘스트마다 젬을 덤으로 챙긴다. 10돌은 퀘스트당 +1 확정.', s1: [['dailyGemChance', [30, 40, 50, 60, 70, 100]]], minor: [['attendCoin', [20, 30, 40]]], s2: [['dailyAll', [1, 2, 3]]], s3: [['attendWeek', 3]] },
+  { id: 'cat-white', name: '백설 고양이', star: 5, theme: '달리기·전천후', flavor: '눈처럼 빠른 흰 고양이. 러너 보상과 쿨타임 전문.', s1: [['runCoin', [20, 25, 30, 35, 40, 60]]], minor: [['coinMin', [0.2, 0.3, 0.4]]], s2: [['runCd', [20, 30, 50]]], s3: [['runCap', 10], ['fishCoin', 10]] },
+  { id: 'CubicAraraAzul', name: '파랑앵무', star: 4, theme: '소셜(쪽지·광고)', flavor: '수다스러운 앵무새. 쪽지를 자주 보낼 수 있게 해준다.', s1: [['noteCd', [20, 25, 30, 35, 40, 60]]], minor: [['coinMin', [0.1, 0.15, 0.2]]], s2: [['adCost', [10, 15, 25]]], s3: [['noteCost', 3]] },
+  { id: 'CubicBat', name: '박쥐', star: 4, theme: '야행성 골드', flavor: '밤(22~06시)에만 힘을 내는 박쥐. 야간 접속 유저용.', s1: [['nightCoin', [0.5, 0.6, 0.7, 0.8, 0.9, 1.5]]], minor: [['batCrit', [0.5, 1, 1.5]]], s2: [['nightFish', [10, 15, 25]]], s3: [['nightGem', 0.5]] },
+  { id: 'CubicBull', name: '황소', star: 4, theme: '주식(불장)', flavor: '상승장의 상징. 매도 실현수익을 불려준다.', s1: [['stockProfit', [5, 6, 7, 8, 9, 15]]], minor: [['coinMin', [0.1, 0.15, 0.2]]], s2: [['adCost', [10, 15, 25]]], s3: [['stockDelist', 15]] },
+  { id: 'CubicBunny', name: '토끼', star: 4, theme: '달리기', flavor: '깡충깡충. 러너 보상과 쿨타임, 10돌엔 트랩 보호막.', s1: [['runCoin', [10, 12, 14, 16, 18, 30]]], minor: [['runCap', [2, 3, 4]]], s2: [['runCd', [20, 25, 35]]], s3: [['runShield', 1]] },
+  { id: 'CubicCat', name: '고양이', star: 4, theme: '선물상자·호기심', flavor: '호기심 많은 고양이. 선물상자가 더 자주 오고 낚시에서 상자를 잘 건진다.', s1: [['giftCd', [10, 12, 14, 16, 18, 25]]], minor: [['coinMin', [0.1, 0.15, 0.2]]], s2: [['fishChest', [30, 40, 60]]], s3: [['fishTrophy', 0.2]] },
+  { id: 'CubicChameleon', name: '카멜레온', star: 4, theme: '변신·뽑기 할인', flavor: '외형 놀이 전문. 랜덤 파츠 뽑기와 강화 비용을 깎는다.', s1: [['randCost', [10, 12, 14, 16, 18, 25]]], minor: [['adCost', [5, 8, 10]]], s2: [['enhCost', [5, 7, 10]]], s3: [['giftDouble', 15]] },
+  { id: 'CubicChicken', name: '닭', star: 4, theme: '출석·아침', flavor: '아침을 깨우는 닭. 출석 골드와 아침 접속 보너스.', s1: [['attendCoin', [30, 35, 40, 45, 50, 80]]], minor: [['coinMin', [0.1, 0.15, 0.2]]], s2: [['morningCoin', [0.5, 0.75, 1]]], s3: [['attendWeek', 2]] },
+  { id: 'CubicCow', name: '젖소', star: 4, theme: '골드 패시브', flavor: '느긋하게 골드를 짜내는 젖소. 10돌이면 분당 +1 골드.', s1: [['coinMin', [0.3, 0.35, 0.4, 0.45, 0.5, 1]]], minor: [['fishCoin', [3, 4, 5]]], s2: [['attendCoin', [20, 30, 40]]], s3: [['satiety', 20]] },
+  { id: 'CubicDolphin', name: '돌고래', star: 4, theme: '낚시 골드', flavor: '낚시꾼의 친구. 낚시 골드와 월척 확률.', s1: [['fishCoin', [8, 10, 12, 14, 16, 25]]], minor: [['fishCd', [2, 3, 4]]], s2: [['fishTrophy', [0.1, 0.15, 0.2]]], s3: [['fishDouble', 3]] },
+  { id: 'CubicDuck', name: '오리', star: 4, theme: '낚시 속도', flavor: '물 위의 오리가 입질을 재촉한다.', s1: [['fishCd', [6, 8, 10, 12, 14, 20]]], minor: [['fishCoin', [2, 3, 4]]], s2: [['fishChest', [25, 35, 50]]], s3: [['fishRepeat', 1]] },
+  { id: 'CubicElephant', name: '코끼리', star: 4, theme: '원정 체력', flavor: '든든한 체력 탱커. 가방도 조금 커진다.', s1: [['batHp', [8, 10, 12, 14, 16, 25]]], minor: [['batCap', [0.5, 0.75, 1]]], s2: [['batCoin', [5, 8, 12]]], s3: [['batTicks', 30]] },
+  { id: 'CubicFish', name: '물고기', star: 4, theme: '낚시 도감', flavor: '도감 채우기 전문. 첫 어획 보상이 커진다.', s1: [['fishNew', [50, 60, 70, 80, 90, 150]]], minor: [['fishCoin', [2, 3, 4]]], s2: [['fishTrophyCoin', [5, 8, 12]]], s3: [['fishRepeat', 1]] },
+  { id: 'CubicFlamingo', name: '플라밍고', star: 4, theme: '전광판 광고', flavor: '화려한 것을 좋아한다. 전광판 광고비·쿨타임 할인.', s1: [['adCost', [20, 25, 30, 35, 40, 50]]], minor: [['noteCd', [10, 15, 20]]], s2: [['adCd', [30, 40, 50]]], s3: [['coinMin', 0.5]] },
+  { id: 'CubicFox', name: '여우', star: 4, theme: '슬롯(교활)', flavor: '교활한 여우. 슬롯 무료 스핀과 꽝 재굴림.', s1: [['slotFree', [3, 4, 5, 6, 7, 10]]], minor: [['slotWin', [2, 3, 4]]], s2: [['slotRetry', [10, 12, 15]]], s3: [['slotWin', 8]] },
+  { id: 'CubicFrog', name: '개구리', star: 4, theme: '발굴 골드', flavor: '땅속 사정에 밝은 개구리. 발굴 골드와 보석 확률.', s1: [['digCoin', [8, 10, 12, 14, 16, 25]]], minor: [['digCd', [2, 3, 4]]], s2: [['digGem', [20, 30, 40]]], s3: [['digMiss', 1]] },
+  { id: 'CubicGiraffe', name: '기린', star: 4, theme: '원정 행운', flavor: '높은 곳에서 전리품을 먼저 본다. 원정 드랍률 특화.', s1: [['batLuck', [10, 12, 14, 16, 18, 30]]], minor: [['batAtk', [1, 2, 3]]], s2: [['batMineral', [20, 30, 40]]], s3: [['batGem', 30]] },
+  { id: 'CubicGrizzly', name: '회색곰', star: 4, theme: '원정 공격', flavor: '묵직한 한 방. 원정 공격력과 치명타.', s1: [['batAtk', [6, 7, 8, 9, 10, 16]]], minor: [['batHp', [1, 2, 3]]], s2: [['batCrit', [3, 4, 5]]], s3: [['batCritMult', 0.1]] },
+  { id: 'CubicHorse', name: '말', star: 4, theme: '달리기 상한', flavor: '오래 달리는 말. 러너 최대 골드를 올린다.', s1: [['runCap', [5, 6, 7, 8, 9, 15]]], minor: [['runCoin', [5, 8, 10]]], s2: [['runCd', [25, 30, 40]]], s3: [['giftCd', 10]] },
+  { id: 'CubicJaguatirica', name: '오셀롯', star: 4, theme: '원정 치명타', flavor: '야행성 사냥꾼. 치명타와 처치 속도.', s1: [['batCrit', [2, 2.5, 3, 3.5, 4, 6]]], minor: [['batAtk', [1, 2, 3]]], s2: [['batSpeed', [10, 15, 20]]], s3: [['nightCoin', 0.5]] },
+  { id: 'CubicLion', name: '사자', star: 4, theme: '원정 보스전', flavor: '수문장 앞에서 포효한다. 보스전 전용 공격력.', s1: [['batBoss', [10, 12, 14, 16, 18, 30]]], minor: [['batHp', [1, 2, 3]]], s2: [['batBossCoin', [25, 35, 50]]], s3: [['batLoseCd', 50]] },
+  { id: 'CubicLoboGuara', name: '갈기늑대', star: 4, theme: '원정 젬 드랍', flavor: '반짝이는 것을 물어오는 늑대. 원정 젬 드랍 특화.', s1: [['batGem', [20, 25, 30, 35, 40, 60]]], minor: [['batLuck', [2, 4, 6]]], s2: [['batMineral', [15, 25, 35]]], s3: [['batBossGem', 1]] },
+  { id: 'CubicMicoLeaoDourado', name: '황금타마린', star: 4, theme: '골드·환전', flavor: '황금빛 원숭이. 분당 골드와 환전 우대.', s1: [['coinMin', [0.4, 0.45, 0.5, 0.55, 0.6, 1.2]]], minor: [['slotWin', [2, 3, 4]]], s2: [['exSell', [10, 20, 30]]], s3: [['exBuy', 20]] },
+  { id: 'CubicMonkey', name: '원숭이', star: 4, theme: '선물상자', flavor: '장난꾸러기. 선물상자를 더 자주, 가끔 두 개씩.', s1: [['giftCd', [8, 10, 12, 14, 16, 22]]], minor: [['runCoin', [3, 5, 7]]], s2: [['giftDouble', [10, 15, 25]]], s3: [['randCost', 15]] },
+  { id: 'CubicMoose', name: '무스', star: 4, theme: '원정 가방', flavor: '큰 뿔에 전리품을 잔뜩 건다. 가방 상한 특화 (방치 유저용).', s1: [['batCap', [1, 1.25, 1.5, 1.75, 2, 3]]], minor: [['batHp', [2, 3, 4]]], s2: [['batCoin', [8, 12, 15]]], s3: [['batTicks', 20]] },
+  { id: 'CubicOwl', name: '부엉이', star: 4, theme: '일퀘 젬', flavor: '지혜로운 부엉이. 일일퀘스트 젬 보너스.', s1: [['dailyGemChance', [15, 20, 25, 30, 35, 50]]], minor: [['nightCoin', [0.2, 0.3, 0.4]]], s2: [['dailyAll', [1, 2, 3]]], s3: [['attendWeek', 2]] },
+  { id: 'CubicPanda', name: '판다', star: 4, theme: '강화 비용', flavor: '느긋한 판다. 대장간 비용과 하락 확률을 낮춘다. 배도 덜 고프다.', s1: [['enhCost', [8, 10, 12, 14, 16, 25]]], minor: [['coinMin', [0.1, 0.15, 0.2]]], s2: [['enhDrop', [10, 15, 20]]], s3: [['satiety', 25]] },
+  { id: 'CubicPenguin', name: '펭귄', star: 4, theme: '얼음낚시', flavor: '얼음 구멍 낚시의 달인.', s1: [['fishCoin', [6, 8, 10, 12, 14, 20]]], minor: [['fishCd', [2, 3, 4]]], s2: [['fishChest', [20, 30, 45]]], s3: [['fishRepeat', 1]] },
+  { id: 'CubicPig', name: '돼지', star: 4, theme: '저금통·출석', flavor: '저금통 돼지. 출석 골드가 크게 늘고 먹이도 싸게 산다.', s1: [['attendCoin', [50, 60, 70, 80, 90, 120]]], minor: [['coinMin', [0.1, 0.15, 0.2]]], s2: [['slotWin', [5, 8, 12]]], s3: [['foodPrice', 25]] },
+  { id: 'CubicPolar', name: '북극곰', star: 4, theme: '원정 체력(서리)', flavor: '서리 산맥의 주인. 51~60층에서 특히 강하다.', s1: [['batHp', [10, 12, 14, 16, 18, 28]]], minor: [['batAtk', [1, 2, 3]]], s2: [['tierFrost', [20, 30, 40]]], s3: [['batTicks', 30]] },
+  { id: 'CubicRacoon', name: '너구리', star: 4, theme: '발굴 속도', flavor: '뒤지기 전문가. 삽질이 빨라지고 상자를 잘 찾는다.', s1: [['digCd', [8, 10, 12, 14, 16, 22]]], minor: [['digCoin', [3, 5, 7]]], s2: [['digChest', [30, 45, 60]]], s3: [['digGem', 30]] },
+  { id: 'CubicRat', name: '쥐', star: 4, theme: '발굴 젬조각', flavor: '작은 틈의 반짝임을 놓치지 않는다. 젬조각·보석·다이아 확률.', s1: [['digGem', [30, 40, 50, 60, 70, 100]]], minor: [['digCoin', [2, 3, 4]]], s2: [['digCd', [5, 8, 10]]], s3: [['digMiss', 2]] },
+  { id: 'CubicRhino', name: '코뿔소', star: 4, theme: '원정 돌진', flavor: '실패해도 바로 다시 들이받는다. 도전 쿨타임 감소.', s1: [['batAtk', [8, 9, 10, 11, 12, 20]]], minor: [['batHp', [2, 3, 4]]], s2: [['batLoseCd', [50, 60, 75]]], s3: [['batSpeed', 15]] },
+  { id: 'CubicSheep', name: '양', star: 4, theme: '골드·포만도', flavor: '온순한 양. 분당 골드와 먹이 절약.', s1: [['coinMin', [0.25, 0.3, 0.35, 0.4, 0.45, 0.8]]], minor: [['noteCd', [10, 15, 20]]], s2: [['satiety', [10, 15, 20]]], s3: [['foodPrice', 20]] },
+  { id: 'CubicShiba', name: '시바견', star: 4, theme: '충성·출석', flavor: '매일 문 앞에서 기다린다. 연속 출석 보상 특화.', s1: [['attendCoin', [40, 45, 50, 55, 60, 90]]], minor: [['attendCap', [1, 2, 3]]], s2: [['attendWeek', [1, 2, 3]]], s3: [['dailyAll', 2]] },
+  { id: 'CubicSnake', name: '뱀', star: 4, theme: '주식(변동성)', flavor: '변동성을 즐기는 뱀. 상폐 보상과 매수 덤.', s1: [['stockProfit', [4, 5, 6, 7, 8, 12]]], minor: [['adCost', [5, 8, 10]]], s2: [['stockDelist', [10, 15, 25]]], s3: [['stockBonus', 5]] },
+  { id: 'CubicToucan', name: '투칸', star: 4, theme: '광고·자랑', flavor: '큰 부리로 떠든다. 광고와 자랑하기 쿨타임.', s1: [['adCost', [15, 20, 25, 30, 35, 45]]], minor: [['noteCd', [10, 15, 20]]], s2: [['bragCd', [50, 60, 75]]], s3: [['adCd', 50]] },
+  { id: 'CubicTurtle', name: '거북', star: 4, theme: '강화 안정', flavor: '느리지만 확실하게. 강화 하락 방어와 천장 단축.', s1: [['enhDrop', [8, 10, 12, 14, 16, 25]]], minor: [['enhCost', [2, 3, 4]]], s2: [['satiety', [10, 15, 20]]], s3: [['enhPity', 1]] },
+  { id: 'CubicUnicorn', name: '유니콘', star: 4, theme: '젬 패시브', flavor: '4성 유일의 젬 패시브. 도깨비불의 축소판.', s1: [['gemHour', [0.2, 0.25, 0.3, 0.35, 0.4, 0.6]]], minor: [['giftCd', [5, 8, 10]]], s2: [['exSell', [20, 30, 40]]], s3: [['exBuy', 30]] },
+  { id: 'CubicWolf', name: '늑대', star: 4, theme: '원정 균형', flavor: '무리 사냥꾼. 공격·체력을 고르게 올린다.', s1: [['batAtk', [5, 6, 7, 8, 9, 12]], ['batHp', [5, 6, 7, 8, 9, 12]]], minor: [['batLuck', [2, 4, 6]]], s2: [['batSpeed', [10, 15, 20]]], s3: [['batCrit', 3]] },
+  { id: 'CubicZebra', name: '얼룩말', star: 4, theme: '달리기 골드', flavor: '줄무늬 스프린터. 러너 골드와 보호막 2회.', s1: [['runCoin', [15, 17, 19, 21, 23, 35]]], minor: [['runCap', [2, 3, 4]]], s2: [['runCd', [15, 25, 35]]], s3: [['runShield', 2]] },
+];
+const PET_MAX_DUP = 10;
+const PET_MAX_LEVEL = 10;
+const PET_LEVEL_CARDS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+const PET_SATIETY_MIN_PER_PCT = [3, 4, 5, 6, 7.5, 9, 10.5, 12, 13.5, 15];
+const PET_GACHA_UI = { single: 5, ten: 50, fridayTen: 40, rate5: 0.6, rate4: 10, hardPity5: 90, pity4: [10, 10, 10, 10, 10, 10, 30, 40, 50, 100] };
+const PET_SLOT_THRESHOLDS = [0, 15, 35];
+/** 돌파 dup(0~10)에서 활성화된 효과 누적값 (protocol.ts petEffectsAt와 동일) */
+function petEffectsAt(def: PetDef, dup: number): Partial<Record<PetFxKey, number>> {
+  const out: Partial<Record<PetFxKey, number>> = {};
+  const pick = (entries: PetProg[], steps: number[]) => {
+    let idx = -1;
+    for (let i = 0; i < steps.length; i++) if (steps[i] <= dup) idx = i;
+    if (idx < 0) return;
+    for (const [k, arr] of entries) out[k] = (out[k] ?? 0) + arr[idx];
+  };
+  pick(def.s1, [0, 1, 3, 6, 9, 10]);
+  pick(def.minor, [2, 4, 8]);
+  pick(def.s2, [5, 7, 10]);
+  if (dup >= PET_MAX_DUP) for (const [k, v] of def.s3) out[k] = (out[k] ?? 0) + v;
+  return out;
+}
+function petFxLabel(key: PetFxKey, v: number): string {
+  const s = Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100);
+  return PET_FX[key].label.replace('{v}', s);
+}
+function petSlotsFor(ownedKinds: number): number {
+  let n = 0;
+  for (const t of PET_SLOT_THRESHOLDS) if (ownedKinds >= t) n++;
+  return Math.max(1, n);
+}
+
 // 도전과제 — shared/protocol.ts의 ACHIEVEMENTS와 동기화 유지 필요 (판정·지급은 서버)
 const ACH_DEFS: {
   id: string;
@@ -373,7 +605,7 @@ const ACH_DEFS: {
   { id: 'b-first', cat: '원정', name: '첫 원정', desc: '원정 전리품 첫 수령', gems: 2, stat: 'battleClaims', goal: 1 },
   { id: 'b-stage5', cat: '원정', name: '풀숲 너머', desc: '원정 5층 돌파', gems: 2, stat: 'battleMax', goal: 5 },
   { id: 'b-stage10', cat: '원정', name: '슬라임 킹 격파', desc: '원정 10층 돌파', gems: 5, stat: 'battleMax', goal: 10 },
-  { id: 'b-stage25', cat: '원정', name: '호수를 건너', desc: '원정 25층 돌파', gems: 5, title: '던전 탐험가', stat: 'battleMax', goal: 25 },
+  { id: 'b-stage25', cat: '원정', name: '늪을 건너', desc: '원정 25층 돌파', gems: 5, title: '던전 탐험가', stat: 'battleMax', goal: 25 },
   { id: 'b-stage50', cat: '원정', name: '화룡 사냥꾼', desc: '원정 50층 돌파', gems: 10, title: '용 사냥꾼', stat: 'battleMax', goal: 50 },
   { id: 'b-stage100', cat: '원정', name: '탑의 정상', desc: '원정 100층 돌파 (봇순이 격파)', gems: 30, title: '탑의 지배자', stat: 'battleMax', goal: 100 },
   { id: 'b-kills1000', cat: '원정', name: '천 마리째', desc: '몬스터 누적 처치 1,000', gems: 3, stat: 'battleKills', goal: 1000 },

@@ -21,6 +21,7 @@ let coins = 0;
 let gems = 0;
 let selfId = null;
 let achBonus = 0; // 검증 중 달성된 도전과제 젬 (신규 지갑 소급 정산 포함)
+let battleGems = 0; // 원정 일퀘 수행 중 전리품으로 떨어진 젬 (드랍/광물 첫 발견)
 const newsLog = [];
 const myActionMsgs = [];
 socket.on('daily', (state) => {
@@ -104,6 +105,22 @@ for (const q of daily.quests) {
         if (!res?.ok) fail(`땅파기 실패: ${res?.error}`);
       }
       break;
+    case 'battle': {
+      // 원정 출발 → 처치가 쌓이면 전리품 수령 (서버 배속 DOTCHAT_BATTLE_SPEED이면 금방, 아니면 실시간 몇 초)
+      const start = await new Promise((r) =>
+        socket.timeout(5000).emit('battle-active', true, (err, v) => r(err ? null : v)),
+      );
+      if (!start?.ok) fail(`원정 출발 실패: ${start?.error}`);
+      let claimed = null;
+      for (let i = 0; i < 8 && !claimed?.ok; i++) {
+        await sleep((start.state?.killMs ?? 4000) < 1000 ? 800 : 4500);
+        claimed = await new Promise((r) => socket.timeout(5000).emit('battle-claim', (err, v) => r(err ? null : v)));
+      }
+      if (!claimed?.ok) fail(`원정 수령 실패: ${claimed?.error}`);
+      battleGems += claimed.gems ?? 0;
+      await new Promise((r) => socket.timeout(5000).emit('battle-active', false, (err, v) => r(err ? null : v)));
+      break;
+    }
     default:
       fail(`알 수 없는 퀘스트 id: ${q.id}`);
   }
@@ -116,7 +133,7 @@ for (const q of daily.quests) {
 // 4) 젬 정산: 퀘스트 보상 합 + 전체 보너스 5 + 도전과제 보상(첫 출석/첫 어획 등)
 await sleep(300);
 if (!daily.allBonusClaimed) fail('전체 완료 보너스 미지급');
-const expectedGems = daily.quests.reduce((s, q) => s + q.reward, 0) + 5 + achBonus;
+const expectedGems = daily.quests.reduce((s, q) => s + q.reward, 0) + 5 + achBonus + battleGems;
 if (gems !== expectedGems) fail(`젬 잔액 ${gems} (기대 ${expectedGems} = 퀘스트+보너스5+업적${achBonus})`);
 console.log(`  젬 정산 OK: ${gems} 💎 (퀘스트 합 + 보너스 5 + 업적 ${achBonus})`);
 

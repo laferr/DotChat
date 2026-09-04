@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pet asset preview</title>
+<style>
+  body{background:#2b2b33;color:#eee;font:12px sans-serif;margin:12px}
+  img,canvas{image-rendering:pixelated;background:#555;margin:2px;vertical-align:top}
+  .row{margin-bottom:6px}
+  .lbl{display:inline-block;width:150px;color:#ccc}
+  h3{margin:14px 0 6px}
+</style>
+<div id="root"></div>
+<script>
+const P='/추가에셋/Pets/';
+const q=new URLSearchParams(location.search);const sec=q.get('sec')||'4';
+const root=document.getElementById('root');
+const cubic=['CubicAraraAzul','CubicBat','CubicBull','CubicBunny','CubicCat','CubicChameleon','CubicChicken','CubicCow','CubicDolphin','CubicDuck','CubicElephant','CubicFish','CubicFlamingo','CubicFox','CubicFrog','CubicGiraffe','CubicGrizzly','CubicHorse','CubicJaguatirica','CubicLion','CubicLoboGuara','CubicMicoLeaoDourado','CubicMonkey','CubicMoose','CubicOwl','CubicPanda','CubicPenguin','CubicPig','CubicPolar','CubicRacoon','CubicRat','CubicRhino','CubicSheep','CubicShiba','CubicSnake','CubicToucan','CubicTurtle','CubicUnicorn','CubicWolf','CubicZebra'];
+if(sec==='4'){
+  const from=+(q.get('from')||0);
+  root.innerHTML='<h3>4성 Cubic (84x16, x4) '+from+'~</h3>';
+  for(const n of cubic.slice(from,from+10)){const d=document.createElement('div');d.className='row';d.innerHTML=`<span class="lbl">${n}</span><img src="${P}4성/${n}.png" width="336" height="64">`;root.appendChild(d);}
+}
+if(sec==='5'){
+  const name=q.get('n')||'Wolf';const s=+(q.get('s')||3);const y=+(q.get('y')||0);const hh=+(q.get('h')||0);
+  root.innerHTML=`<h3>5성 ${name} x${s}</h3>`;
+  const img=new Image();img.src=`${P}5성/${name}.png`;img.decode().then(()=>{const h=hh||img.height;const c=document.createElement('canvas');c.width=img.width*s;c.height=h*s;const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(img,0,y,img.width,h,0,0,img.width*s,h*s);root.appendChild(c);});
+}
+if(sec==='3'){root.innerHTML='<h3>3성 x4</h3><img src="'+P+'3성/펫먹이.png" width=256 height=256> <img src="'+P+'3성/펫경험치카드.png" width=256 height=256>';}
+if(sec==='scroll'){
+  root.innerHTML=`<h3>scroll x4</h3><img src="${P}Magic Scroll14.png" width="256" height="256"> <img src="${P}Magic Scroll88.png" width="256" height="256">`;
+}
+if(sec==='fx'){
+  const n=q.get('n')||'a';
+  root.innerHTML=`<h3>effect ${n} (2400x2880 → 1/4)</h3>`;
+  const img=new Image();img.src=`${P}pipo-nazoobj01${n}_480.png`;img.decode().then(()=>{const c=document.createElement('canvas');c.width=600;c.height=720;const x=c.getContext('2d');x.drawImage(img,0,0,600,720);root.appendChild(c);});
+}
+</script>

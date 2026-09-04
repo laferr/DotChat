@@ -42,6 +42,9 @@ const NET_CHANNELS = new Set([
   'net:battle-news',
   'net:player-battle',
   'self:battle',
+  'self:pet',
+  'net:player-pet',
+  'net:pet-news',
 ]);
 
 contextBridge.exposeInMainWorld('overlay', {
@@ -93,6 +96,14 @@ contextBridge.exposeInMainWorld('overlay', {
   getRankingCached: (): Promise<unknown> => ipcRenderer.invoke('ranking-cached'),
   getDailyState: (): Promise<unknown> => ipcRenderer.invoke('daily-state'),
   buyAction: (actionId: string): Promise<unknown> => ipcRenderer.invoke('buy-action', actionId),
+  exchange: (dir: string, qty: number): Promise<unknown> => ipcRenderer.invoke('exchange', dir, qty),
+  petState: (): Promise<unknown> => ipcRenderer.invoke('pet-state'),
+  petGacha: (count: number): Promise<unknown> => ipcRenderer.invoke('pet-gacha', count),
+  petEquip: (ids: string[]): Promise<unknown> => ipcRenderer.invoke('pet-equip', ids),
+  petFeed: (petId: string): Promise<unknown> => ipcRenderer.invoke('pet-feed', petId),
+  petLevel: (petId: string): Promise<unknown> => ipcRenderer.invoke('pet-level', petId),
+  petAutofeed: (cfg: { on: boolean; pct: number }): Promise<unknown> => ipcRenderer.invoke('pet-autofeed', cfg),
+  buyPetItem: (kind: string, qty: number): Promise<unknown> => ipcRenderer.invoke('buy-pet-item', kind, qty),
   togglePopout: (panel: string) => ipcRenderer.send('toggle-popout', panel),
   closePopout: (panel: string) => ipcRenderer.send('close-popout', panel),
   resizePopout: (panel: string, height: number) => ipcRenderer.send('resize-popout', panel, height),

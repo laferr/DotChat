@@ -325,6 +325,18 @@ function connect(): void {
     broadcast('net:player-appearance', data);
   });
 
+  // 🐾 펫: 내 상태(분당 포만도 틱·자동 먹이) / 누군가의 장착 변경 / 5성 획득 알림
+  socket.on('pet', (state) => applyPetState(state));
+  socket.on('player-pet', (data) => {
+    const p = players.get(data.id);
+    if (p) {
+      if (data.pet) p.pet = data.pet;
+      else delete p.pet;
+    }
+    broadcast('net:player-pet', data);
+  });
+  socket.on('pet-news', (data) => broadcast('net:pet-news', data));
+
   socket.on('player-pinned', (data) => {
     const p = players.get(data.id);
     if (p) p.pinned = data.text;
@@ -354,6 +366,8 @@ function connect(): void {
     myActions = data.actions ?? [];
     myMinerals = data.minerals ?? [];
     myTitle = data.title ?? '';
+    myPetFx = (data.petFx as Record<string, number> | undefined) ?? {};
+    myPet = data.pet ?? null;
     broadcast('self:coins', myCoins);
     broadcast('self:gems', myGems);
     broadcast('self:wallet', walletSnapshot());
@@ -701,6 +715,7 @@ const POPOUT_PANELS: Record<string, { w: number; h: number }> = {
   stock: { w: 380, h: 520 },
   note: { w: 340, h: 480 },
   battle: { w: 380, h: 640 },
+  pet: { w: 380, h: 640 },
 };
 const popoutWindows = new Map<string, BrowserWindow>();
 
@@ -802,6 +817,9 @@ ipcMain.handle('load-part', (_e, layer: string, name: string) => {
 // ---- IPC: 미니게임 에셋 ----
 
 interface ExtrasManifest {
+  /** 🐾 펫 스프라이트/연출 (import-extras.mjs) */
+  pets?: Record<string, unknown>;
+  petUi?: unknown;
   fish: string[];
   /** 새 물고기 (단일 이미지, fish2/ 디렉토리) */
   fish2?: string[];
@@ -810,6 +828,8 @@ interface ExtrasManifest {
   dig?: { file: string; frames: number };
   /** 광물/보석 아이콘 id 목록 (minerals/ 디렉토리) */
   minerals?: string[];
+  /** 원정 몬스터 스프라이트 id 목록 (monsters/ 디렉토리, 32x32) */
+  monsters?: string[];
   reaction: { cell: number; cols: number; rows: number };
 }
 
@@ -840,8 +860,12 @@ ipcMain.handle('load-extra', (_e, relPath: string) => {
     /^tools\/tools_\w+_strip\d+\.png$/.test(rel) ||
     /^rungame\/(Arrow|Trap3)\.png$/.test(rel) ||
     /^effects\/[\w\-]+\.png$/.test(rel) ||
+    /^pets\/ui\/[\w\-]+\.png$/.test(rel) ||
+    (/^pets\/[\w\-]+\.png$/.test(rel) && extrasManifest?.pets?.[rel.slice(5, -4)] !== undefined) ||
     (/^minerals\/[a-z]\d+\.png$/.test(rel) &&
       extrasManifest?.minerals?.includes(rel.slice(9, -4)) === true) ||
+    (/^monsters\/[a-z0-9\-]+\.png$/.test(rel) &&
+      extrasManifest?.monsters?.includes(rel.slice(9, -4)) === true) ||
     (/^fish\/[\w\- ]+\.png$/.test(rel) &&
       extrasManifest?.fish.includes(rel.slice(5, -4)) === true) ||
     (/^fish2\/[\w\- ]+\.png$/.test(rel) &&
@@ -1094,6 +1118,8 @@ let myActions: string[] = [];
 let myMinerals: string[] = [];
 let myTitle = '';
 let myBattleActive = false; // 원정 중 (welcome 플레이어 목록 + player-battle + battle ack로 갱신)
+let myPetFx: Record<string, number> = {}; // 🐾 장착 펫 효과 (클라 로컬 롤/쿨타임용 키만)
+let myPet: string | null = null; // 🐾 장착 펫 id (첫 슬롯)
 let myStocksMarket: unknown = null; // 최신 시세 스냅샷 (stocks 이벤트)
 
 ipcMain.handle('get-coins', () => myCoins);
@@ -1116,6 +1142,76 @@ ipcMain.handle('buy-action', (_e, actionId: string) => {
       }
       resolve(err ? { ok: false, error: '응답이 없어요.' } : res);
     });
+  });
+});
+
+// ---- 🐾 펫 (판정·보유·효과 서버 권위 — ack의 state로 로컬 갱신, 모든 창에 self:pet 전파) ----
+
+function applyPetState(state: unknown): void {
+  const s = state as { fx?: Record<string, number>; equip?: string[]; coins?: number; gems?: number } | null;
+  if (!s || typeof s !== 'object') return;
+  myPetFx = s.fx ?? {};
+  myPet = Array.isArray(s.equip) ? (s.equip[0] ?? null) : null;
+  if (typeof s.coins === 'number') {
+    myCoins = s.coins;
+    broadcast('self:coins', myCoins);
+  }
+  if (typeof s.gems === 'number') {
+    myGems = s.gems;
+    broadcast('self:gems', myGems);
+  }
+  broadcast('self:pet', s);
+  broadcast('self:wallet', walletSnapshot());
+}
+
+function petIpc(event: string, mapArgs: (...args: unknown[]) => unknown[] = () => []) {
+  return (_e: unknown, ...args: unknown[]) =>
+    new Promise((resolve) => {
+      if (!socket?.connected) {
+        resolve(event === 'pet-state' ? null : { ok: false, error: '서버에 연결되어 있지 않아요.' });
+        return;
+      }
+      (socket as any).timeout(15000).emit(event, ...mapArgs(...args), (err: unknown, res: any) => {
+        if (err || !res) {
+          resolve(event === 'pet-state' ? null : { ok: false, error: '응답 시간이 초과됐어요.' });
+          return;
+        }
+        applyPetState(event === 'pet-state' ? res : res.state);
+        resolve(res);
+      });
+    });
+}
+ipcMain.handle('pet-state', petIpc('pet-state'));
+ipcMain.handle('pet-gacha', petIpc('pet-gacha', (count) => [Number(count) === 10 ? 10 : 1]));
+ipcMain.handle('pet-equip', petIpc('pet-equip', (ids) => [Array.isArray(ids) ? ids.map(String) : []]));
+ipcMain.handle('pet-feed', petIpc('pet-feed', (id) => [String(id ?? '')]));
+ipcMain.handle('pet-level', petIpc('pet-level', (id) => [String(id ?? '')]));
+ipcMain.handle('pet-autofeed', petIpc('pet-autofeed', (cfg) => [{ on: (cfg as any)?.on === true, pct: Number((cfg as any)?.pct) || 70 }]));
+ipcMain.handle('buy-pet-item', petIpc('buy-pet-item', (kind, qty) => [String(kind ?? ''), Math.floor(Number(qty) || 0)]));
+
+/** 러너 쿨타임 — 🐾 펫 runCd 효과 반영 */
+const runnerCooldownMs = (): number => Math.round(RUNNER_COOLDOWN_MS * Math.max(0, 1 - (myPetFx.runCd ?? 0) / 100));
+
+// 💱 환전 (골드↔젬) — 판정 서버, 성공 시 잔액 갱신 브로드캐스트
+ipcMain.handle('exchange', (_e, dir: string, qty: number) => {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any)
+      .timeout(10000)
+      .emit('exchange', String(dir), Math.floor(Number(qty) || 0), (err: unknown, res: unknown) => {
+        const r = res as { ok?: boolean; coins?: number; gems?: number } | undefined;
+        if (!err && r) {
+          if (typeof r.coins === 'number') myCoins = r.coins;
+          if (typeof r.gems === 'number') myGems = r.gems;
+          broadcast('self:coins', myCoins);
+          broadcast('self:gems', myGems);
+          broadcast('self:wallet', walletSnapshot());
+        }
+        resolve(err ? { ok: false, error: '응답이 없어요.' } : res);
+      });
   });
 });
 
@@ -1204,6 +1300,8 @@ function walletSnapshot() {
     actions: myActions,
     minerals: myMinerals,
     title: myTitle,
+    petFx: myPetFx,
+    pet: myPet,
   };
 }
 
@@ -1387,7 +1485,7 @@ let fishingActive = false;
 let diggingActive = false;
 
 ipcMain.handle('minigame-state', () => ({
-  runnerRemainSec: Math.max(0, Math.ceil((lastRunnerStart + RUNNER_COOLDOWN_MS - Date.now()) / 1000)),
+  runnerRemainSec: Math.max(0, Math.ceil((lastRunnerStart + runnerCooldownMs() - Date.now()) / 1000)),
   fishingActive,
   diggingActive,
   battleActive: myBattleActive,
@@ -1411,7 +1509,7 @@ ipcMain.handle('minigame-start', (_e, game: string) => {
     return { ok: true };
   }
   if (game === 'runner') {
-    const remain = lastRunnerStart + RUNNER_COOLDOWN_MS - Date.now();
+    const remain = lastRunnerStart + runnerCooldownMs() - Date.now();
     if (remain > 0) {
       return { ok: false, error: `달리기는 ${Math.ceil(remain / 1000)}초 후에 다시 할 수 있어요.` };
     }

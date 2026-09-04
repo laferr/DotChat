@@ -181,6 +181,10 @@
     { id: 'crawl', word: '엎드려', price: 6 },
     { id: 'ready', word: '전투준비', price: 6 },
   ];
+  /** 🐾 펫 용품 가격 (protocol.ts PET_FOOD_PRICE / PET_CARD_PRICE_GEM / PET_ITEM_BUY_MAX) */
+  const PET_SHOP_UI = { food: 200, card: 1, max: 999 };
+  /** 💱 환전 환율 (protocol.ts EXCHANGE_*와 동일 — 판정은 서버) */
+  const EXCHANGE_UI = { buy: 1000, sell: 900, max: 1000 };
   /** 서버 지갑 기준 보유 액션 (self:wallet으로 갱신) */
   let ownedActions: string[] = [];
 
@@ -1505,6 +1509,131 @@
     const eq = inv.equipped;
     shopList.innerHTML = '';
 
+    // 💱 환전 (골드↔젬) — 수량 입력 + MAX, 판정·잔액은 서버 exchange 이벤트. 🐾 펫 효과(exBuy/exSell)로 실효 환율 표시
+    const petFxShop = (wallet as { petFx?: Record<string, number> }).petFx ?? {};
+    const exBuyRate = EXCHANGE_UI.buy - Math.floor(petFxShop.exBuy ?? 0);
+    const exSellRate = Math.min(EXCHANGE_UI.sell + Math.floor(petFxShop.exSell ?? 0), exBuyRate - 20);
+    const exHead = document.createElement('div');
+    exHead.className = 'shop-group';
+    exHead.textContent = `💱 환전 (🪙 ${exBuyRate.toLocaleString()} → 💎 1 · 💎 1 → 🪙 ${exSellRate})`;
+    shopList.appendChild(exHead);
+    for (const dir of ['gold-to-gem', 'gem-to-gold'] as const) {
+      const toGem = dir === 'gold-to-gem';
+      const maxQty = Math.min(EXCHANGE_UI.max, toGem ? Math.floor(wallet.coins / exBuyRate) : gems);
+      const row = document.createElement('div');
+      row.className = 'shop-item';
+      const preview = document.createElement('div');
+      preview.className = 'shop-preview';
+      preview.textContent = toGem ? '💎' : '🪙';
+      const name = document.createElement('span');
+      name.className = 'shop-name';
+      const label = document.createElement('div');
+      label.textContent = toGem ? '골드 → 젬' : '젬 → 골드';
+      const sub = document.createElement('small');
+      name.append(label, sub);
+      const qty = document.createElement('input');
+      qty.type = 'number';
+      qty.className = 'shop-qty';
+      qty.min = '1';
+      qty.max = String(Math.max(1, maxQty));
+      qty.value = '1';
+      qty.title = '교환할 💎 수량';
+      const maxBtn = document.createElement('button');
+      maxBtn.className = 'shop-btn shop-max';
+      maxBtn.textContent = 'MAX';
+      maxBtn.title = `최대 ${maxQty}`;
+      const btn = document.createElement('button');
+      btn.className = 'shop-btn';
+      const readQty = () => Math.max(1, Math.min(EXCHANGE_UI.max, Math.floor(Number(qty.value) || 0)));
+      const refresh = () => {
+        const n = readQty();
+        sub.textContent = toGem
+          ? `${(n * exBuyRate).toLocaleString()} 🪙 → ${n} 💎 · 최대 ${maxQty}`
+          : `${n} 💎 → ${(n * exSellRate).toLocaleString()} 🪙 · 최대 ${maxQty}`;
+        btn.textContent = toGem ? `${(n * exBuyRate).toLocaleString()} 🪙` : `${n} 💎`;
+        btn.disabled = n > maxQty;
+        maxBtn.disabled = maxQty < 1;
+      };
+      qty.addEventListener('input', refresh);
+      maxBtn.addEventListener('click', () => {
+        qty.value = String(Math.max(1, maxQty));
+        refresh();
+      });
+      btn.addEventListener('click', async () => {
+        const n = readQty();
+        btn.disabled = true;
+        const res = await window.overlay.exchange(dir, n);
+        addSystemMessage(
+          res.ok
+            ? toGem
+              ? `💱 🪙 ${(n * exBuyRate).toLocaleString()} → 💎 ${n} 환전 완료! (잔액 💎 ${res.gems ?? '-'})`
+              : `💱 💎 ${n} → 🪙 ${(n * exSellRate).toLocaleString()} 환전 완료! (잔액 🪙 ${res.coins ?? '-'})`
+            : (res.error ?? '환전에 실패했어요.'),
+        );
+        void renderShop();
+      });
+      refresh();
+      row.append(preview, name, qty, maxBtn, btn);
+      shopList.appendChild(row);
+    }
+
+    // 🐾 펫 용품 — 먹이(🪙, foodPrice 효과 할인) / 경험치카드(💎)
+    const petHead = document.createElement('div');
+    petHead.className = 'shop-group';
+    petHead.textContent = '🐾 펫 용품';
+    shopList.appendChild(petHead);
+    for (const kind of ['food', 'card'] as const) {
+      const unit = kind === 'food' ? Math.max(1, Math.round(PET_SHOP_UI.food * (1 - (petFxShop.foodPrice ?? 0) / 100))) : PET_SHOP_UI.card;
+      const balance = kind === 'food' ? wallet.coins : gems;
+      const unitLabel = kind === 'food' ? '🪙' : '💎';
+      const maxQty = Math.min(PET_SHOP_UI.max, Math.floor(balance / unit));
+      const row = document.createElement('div');
+      row.className = 'shop-item';
+      const preview = document.createElement('div');
+      preview.className = 'shop-preview';
+      preview.textContent = kind === 'food' ? '🍖' : '📜';
+      const name = document.createElement('span');
+      name.className = 'shop-name';
+      const label = document.createElement('div');
+      label.textContent = kind === 'food' ? '펫 먹이 (포만도 100%)' : '펫 경험치카드 (레벨업)';
+      const sub = document.createElement('small');
+      name.append(label, sub);
+      const qty = document.createElement('input');
+      qty.type = 'number';
+      qty.className = 'shop-qty';
+      qty.min = '1';
+      qty.max = String(Math.max(1, maxQty));
+      qty.value = '1';
+      const maxBtn = document.createElement('button');
+      maxBtn.className = 'shop-btn shop-max';
+      maxBtn.textContent = 'MAX';
+      const btn = document.createElement('button');
+      btn.className = 'shop-btn';
+      const readQty = () => Math.max(1, Math.min(PET_SHOP_UI.max, Math.floor(Number(qty.value) || 0)));
+      const refresh = () => {
+        const n = readQty();
+        sub.textContent = `개당 ${unit} ${unitLabel}${kind === 'food' && unit < PET_SHOP_UI.food ? ` (🐾 할인, 정가 ${PET_SHOP_UI.food})` : ''} · 최대 ${maxQty}`;
+        btn.textContent = `${(n * unit).toLocaleString()} ${unitLabel}`;
+        btn.disabled = n > maxQty;
+        maxBtn.disabled = maxQty < 1;
+      };
+      qty.addEventListener('input', refresh);
+      maxBtn.addEventListener('click', () => {
+        qty.value = String(Math.max(1, maxQty));
+        refresh();
+      });
+      btn.addEventListener('click', async () => {
+        const n = readQty();
+        btn.disabled = true;
+        const res = (await window.overlay.buyPetItem(kind, n)) as { ok: boolean; error?: string };
+        addSystemMessage(res.ok ? `🐾 ${kind === 'food' ? '펫 먹이' : '경험치카드'} ${n}개 구매!` : (res.error ?? '구매에 실패했어요.'));
+        void renderShop();
+      });
+      refresh();
+      row.append(preview, name, qty, maxBtn, btn);
+      shopList.appendChild(row);
+    }
+
     // 💎 액션 (젬 전용 — 골드로 구매 불가)
     const ownedActs = wallet.actions ?? [];
     const actHead = document.createElement('div');
@@ -2233,11 +2362,12 @@
     costs: Record<string, number | null>;
     stats: BattleStatsView;
     tier: string;
-    mob: { emoji: string; name: string; hp: number; atk: number };
+    mob: { emoji: string; name: string; sprite?: string; hp: number; atk: number };
     guardian: {
       stage: number;
       emoji: string;
       name: string;
+      sprite?: string;
       hp: number;
       atk: number;
       kind: string;
@@ -2271,7 +2401,7 @@
     error?: string;
     win?: boolean;
     stage?: number;
-    foe?: { emoji: string; name: string; hp: number; atk: number };
+    foe?: { emoji: string; name: string; sprite?: string; hp: number; atk: number };
     log?: [number, number, number, number][];
     reward?: { coins: number; gems: number; item?: { id: string; name: string } };
     settled?: { kills: number; coins: number; gems: number };
@@ -2381,7 +2511,7 @@
     btHeadInfo.textContent = `· 최고 ${st.maxStage}층 돌파`;
     btGems.textContent = `💎 ${st.gems}`;
     // 전장
-    btFoeAvatar.textContent = st.mob.emoji;
+    setFoeSprite(st.mob.sprite, st.mob.emoji);
     btFoeAvatar.classList.remove('dead');
     btFoeName.textContent = `${st.mob.name} (${st.effStage}층)`;
     btMeName.textContent = battleMyKey.split('#')[0] || '나';
@@ -2511,6 +2641,31 @@
       btFloat(`-${fmtNum(st.mob.hp)}`, Math.random() * 100 < st.stats.crit ? 'crit' : '', 'foe');
       if (st.coinPerKill >= 1 || Math.random() < st.coinPerKill) btFloat(`+🪙`, 'loot', 'foe');
     }
+  }
+
+  // 몬스터 스프라이트 (assets/extras/monsters/<id>.png 32x32 → 4배) — 없으면 이모지 폴백
+  const btFoeCanvas = document.createElement('canvas');
+  btFoeCanvas.width = 32;
+  btFoeCanvas.height = 32;
+  let btFoeSpriteId = '';
+  function setFoeSprite(sprite: string | undefined, emoji: string): void {
+    if (!sprite) {
+      btFoeSpriteId = '';
+      btFoeAvatar.textContent = emoji;
+      return;
+    }
+    if (btFoeSpriteId === sprite && btFoeCanvas.parentElement === btFoeAvatar) return;
+    btFoeSpriteId = sprite;
+    btFoeAvatar.textContent = emoji; // 로딩 중/실패 폴백
+    void loadImageFromExtra(`monsters/${sprite}.png`).then((img) => {
+      if (!img || btFoeSpriteId !== sprite) return;
+      const ctx = btFoeCanvas.getContext('2d')!;
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, 32, 32);
+      ctx.drawImage(img, 0, 0);
+      btFoeAvatar.textContent = '';
+      btFoeAvatar.appendChild(btFoeCanvas);
+    });
   }
 
   // 내 캐릭터 전신 도트 (PartComposer 합성 프레임) — 공격 모션을 계속 반복
@@ -2697,7 +2852,7 @@
     const foe = res.foe;
     const stage = res.stage ?? 0;
     const myMax = battleState.stats.hp;
-    btFoeAvatar.textContent = foe.emoji;
+    setFoeSprite(foe.sprite, foe.emoji);
     btFoeAvatar.classList.remove('dead');
     btFoeName.textContent = `${foe.name} (${stage}층 수문장)`;
     btSetHp(btFoeHp, btFoeHptext, foe.hp, foe.hp);
@@ -2763,6 +2918,613 @@
     addSystemMessage(d.text);
   });
 
+  // ---- 🐾 펫 (뽑기 / 내 펫 — 판정·보유·효과는 서버, 여기서는 연출과 표시) ----
+
+  interface PetOwnedView {
+    dup: number;
+    lv: number;
+    satiety: number;
+    tick: number;
+  }
+  interface PetStateView {
+    owned: Record<string, PetOwnedView>;
+    equip: string[];
+    slots: number;
+    food: number;
+    cards: number;
+    autoFeed: { on: boolean; pct: number };
+    pity4: number;
+    pity5: number;
+    total: number;
+    fridayDiscount: boolean;
+    fx: Record<string, number>;
+    coins: number;
+    gems: number;
+    now: number;
+  }
+  interface PetPullView {
+    star: 3 | 4 | 5;
+    id?: string;
+    item?: string;
+    n?: number;
+    isNew?: boolean;
+    dup?: number;
+    refund?: { gems: number; cards: number };
+  }
+  interface PetSheetView {
+    cellW: number;
+    cellH: number;
+    idle: number;
+    walk: number;
+    float?: boolean;
+    scale?: number;
+    faceLeft?: boolean;
+    walkLeft?: number;
+    foot?: number;
+  }
+  interface PetUiView {
+    food: string;
+    card: string;
+    scroll: string;
+    fx: Record<string, string>;
+    fxCell: number;
+    fxCols: number;
+    fxCount: number;
+  }
+
+  const petPanel = document.getElementById('pet-panel')!;
+  const petClose = document.getElementById('pet-close') as HTMLButtonElement;
+  const petHeadInfo = document.getElementById('pet-head-info')!;
+  const petTabBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('#pet-tabs .pet-tab'));
+  const petGachaView = document.getElementById('pet-gacha')!;
+  const petMineView = document.getElementById('pet-mine')!;
+  const pgPity5 = document.getElementById('pg-pity5')!;
+  const pgPity5Fill = document.getElementById('pg-pity5-fill')!;
+  const pgPity4 = document.getElementById('pg-pity4')!;
+  const pgPity4Fill = document.getElementById('pg-pity4-fill')!;
+  const pgBanner = document.getElementById('pg-banner')!;
+  const pgRatesBtn = document.getElementById('pg-rates-btn') as HTMLButtonElement;
+  const pgPull1 = document.getElementById('pg-pull1') as HTMLButtonElement;
+  const pgPull10 = document.getElementById('pg-pull10') as HTMLButtonElement;
+  const pgPull10Cost = document.getElementById('pg-pull10-cost')!;
+  const pgFriday = document.getElementById('pg-friday')!;
+  const pgFood = document.getElementById('pg-food')!;
+  const pgCards = document.getElementById('pg-cards')!;
+  const pgTotal = document.getElementById('pg-total')!;
+  const pmSlots = document.getElementById('pm-slots')!;
+  const pmFood = document.getElementById('pm-food')!;
+  const pmCards = document.getElementById('pm-cards')!;
+  const pmShop = document.getElementById('pm-shop') as HTMLButtonElement;
+  const pmAuto = document.getElementById('pm-auto') as HTMLInputElement;
+  const pmAutoPct = document.getElementById('pm-auto-pct') as HTMLSelectElement;
+  const pmFilterBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('#pm-filter .pm-f'));
+  const pmGrid = document.getElementById('pm-grid')!;
+  const petFxEl = document.getElementById('pet-fx')!;
+  const petFxConfirm = document.getElementById('pet-fx-confirm')!;
+  const petFxConfirmText = document.getElementById('pet-fx-confirm-text')!;
+  const petFxYes = document.getElementById('pet-fx-yes') as HTMLButtonElement;
+  const petFxNo = document.getElementById('pet-fx-no') as HTMLButtonElement;
+  const petFxScroll = document.getElementById('pet-fx-scroll')!;
+  const petFxScrollCanvas = document.getElementById('pet-fx-scroll-canvas') as HTMLCanvasElement;
+  const petFxEffect = document.getElementById('pet-fx-effect')!;
+  const petFxEffectCanvas = document.getElementById('pet-fx-effect-canvas') as HTMLCanvasElement;
+  const petFxResult = document.getElementById('pet-fx-result')!;
+  const petFxCards = document.getElementById('pet-fx-cards')!;
+  const petFxAgain = document.getElementById('pet-fx-again') as HTMLButtonElement;
+  const petFxClose = document.getElementById('pet-fx-close') as HTMLButtonElement;
+  const petDetail = document.getElementById('pet-detail')!;
+  const pdSprite = document.getElementById('pd-sprite') as HTMLCanvasElement;
+  const pdName = document.getElementById('pd-name')!;
+  const pdSub = document.getElementById('pd-sub')!;
+  const pdClose = document.getElementById('pd-close') as HTMLButtonElement;
+  const pdFlavor = document.getElementById('pd-flavor')!;
+  const pdStatus = document.getElementById('pd-status')!;
+  const pdActions = document.getElementById('pd-actions')!;
+  const pdEffects = document.getElementById('pd-effects')!;
+
+  const petToastEl = document.getElementById('pet-toast')!;
+  let petToastTimer = 0;
+  /** 펫 패널 안 안내 (팝아웃에서도 보이도록 채팅 대신 패널 하단 토스트) */
+  function petToast(text: string, ms = 3500): void {
+    petToastEl.textContent = text;
+    petToastEl.hidden = false;
+    window.clearTimeout(petToastTimer);
+    petToastTimer = window.setTimeout(() => (petToastEl.hidden = true), ms);
+    if (!POPOUT) addSystemMessage(text);
+  }
+
+  const PET_STAR_COLOR: Record<number, string> = { 3: '#4fc3f7', 4: '#b388ff', 5: '#ffd54f' };
+  const petDefById = new Map<string, PetDef>(PET_DEFS.map((d) => [d.id, d]));
+  let petSt: PetStateView | null = null;
+  let petExtras: { pets?: Record<string, PetSheetView>; petUi?: PetUiView } | null = null;
+  let petTab: 'gacha' | 'mine' = 'gacha';
+  let petFilter = 'all';
+  let petBusy = false;
+  let petDetailId: string | null = null;
+  let petBannerTimer = 0;
+  let petBannerIdx = 0;
+  let petLastCount = 1;
+  const petUiImgCache = new Map<string, Promise<HTMLImageElement | null>>();
+
+  function petUiImage(rel: string): Promise<HTMLImageElement | null> {
+    let cached = petUiImgCache.get(rel);
+    if (!cached) {
+      cached = loadImageFromExtra(rel);
+      petUiImgCache.set(rel, cached);
+    }
+    return cached;
+  }
+  /** 펫 정지 프레임(0행 0번)을 size×size 캔버스에 정수 배율로 (실루엣 = 미보유) */
+  function petSpriteCanvas(id: string, size = 48, silhouette = false): HTMLCanvasElement {
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    c.style.width = `${size}px`;
+    c.style.height = `${size}px`;
+    const def = petExtras?.pets?.[id];
+    if (!def) return c;
+    void loadImageFromExtra(`pets/${id}.png`).then((img) => {
+      if (!img) return;
+      const ctx = c.getContext('2d')!;
+      ctx.imageSmoothingEnabled = false;
+      const s = Math.max(1, Math.floor(size / Math.max(def.cellW, def.cellH)));
+      const w = def.cellW * s;
+      const h = def.cellH * s;
+      ctx.drawImage(img, 0, 0, def.cellW, def.cellH, Math.round((size - w) / 2), Math.round((size - h) / 2), w, h);
+      if (silhouette) {
+        ctx.globalCompositeOperation = 'source-in';
+        ctx.fillStyle = '#3d2f36';
+        ctx.fillRect(0, 0, size, size);
+      }
+    });
+    return c;
+  }
+  function petItemImg(kind: string, size = 40): HTMLImageElement {
+    const img = document.createElement('img');
+    img.width = size;
+    img.height = size;
+    img.alt = kind === 'food' ? '펫 먹이' : '경험치카드';
+    const rel = kind === 'food' ? petExtras?.petUi?.food : petExtras?.petUi?.card;
+    if (rel) void petUiImage(rel).then((src) => src && (img.src = src.src));
+    return img;
+  }
+  const petSatietyClass = (s: number) => (s <= 30 ? 'crit' : s <= 70 ? 'low' : '');
+  function petSatietyBar(satiety: number): HTMLElement {
+    const bar = document.createElement('div');
+    bar.className = `pm-sat ${petSatietyClass(satiety)}`;
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.max(0, Math.min(100, satiety))}%`;
+    bar.appendChild(fill);
+    bar.title = `포만도 ${Math.round(satiety)}%`;
+    return bar;
+  }
+
+  async function openPetPanel(): Promise<void> {
+    if (!petExtras) petExtras = (await window.overlay.getExtras()) as typeof petExtras;
+    const st = (await window.overlay.petState()) as PetStateView | null;
+    if (st) petSt = st;
+    paintPet();
+    startPetBanner();
+  }
+  function setPetTab(tab: 'gacha' | 'mine'): void {
+    petTab = tab;
+    for (const b of petTabBtns) b.classList.toggle('active', b.dataset.tab === tab);
+    petGachaView.hidden = tab !== 'gacha';
+    petMineView.hidden = tab !== 'mine';
+    paintPet();
+  }
+  for (const b of petTabBtns) b.addEventListener('click', () => setPetTab(b.dataset.tab === 'mine' ? 'mine' : 'gacha'));
+  petClose.addEventListener('click', () => petPanel.classList.remove('open'));
+
+  function paintPet(): void {
+    if (!petSt) return;
+    petHeadInfo.textContent = `🪙 ${petSt.coins.toLocaleString()} · 💎 ${petSt.gems}`;
+    updateCoins(petSt.coins);
+    updateGems(petSt.gems);
+    if (petTab === 'gacha') paintPetGacha();
+    else paintPetMine();
+  }
+
+  // ---- 뽑기 탭 ----
+  function paintPetGacha(): void {
+    const st = petSt!;
+    pgPity5.textContent = `${st.pity5}/${PET_GACHA_UI.hardPity5}`;
+    pgPity5Fill.style.width = `${Math.min(100, (st.pity5 / PET_GACHA_UI.hardPity5) * 100)}%`;
+    const left4 = 10 - st.pity4;
+    pgPity4.textContent = `${left4}회 안에`;
+    pgPity4Fill.style.width = `${Math.min(100, (st.pity4 / 10) * 100)}%`;
+    const cost10 = st.fridayDiscount ? PET_GACHA_UI.fridayTen : PET_GACHA_UI.ten;
+    pgPull10Cost.textContent = st.fridayDiscount ? `💎 ${cost10} (🎉 금요일 할인)` : `💎 ${cost10}`;
+    pgFriday.hidden = !st.fridayDiscount;
+    pgPull1.disabled = petBusy || st.gems < PET_GACHA_UI.single;
+    pgPull10.disabled = petBusy || st.gems < cost10;
+    pgFood.textContent = String(st.food);
+    pgCards.textContent = String(st.cards);
+    pgTotal.textContent = String(st.total);
+  }
+  function startPetBanner(): void {
+    window.clearInterval(petBannerTimer);
+    const fives = PET_DEFS.filter((d) => d.star === 5);
+    const paintBanner = () => {
+      if (!petPanel.classList.contains('open')) {
+        window.clearInterval(petBannerTimer);
+        return;
+      }
+      const def = fives[petBannerIdx % fives.length];
+      petBannerIdx++;
+      pgBanner.innerHTML = '';
+      const spr = petSpriteCanvas(def.id, 64);
+      spr.classList.add('pg-banner-spr');
+      const info = document.createElement('div');
+      info.className = 'pg-banner-info';
+      const owned = petSt?.owned[def.id];
+      info.innerHTML = `<b>★5 ${def.name}</b><small>${def.theme}</small><small>${owned ? `보유 · ${owned.dup}돌` : '미보유'}</small>`;
+      const tag = document.createElement('span');
+      tag.className = 'pg-banner-name';
+      tag.textContent = `5성 ${petBannerIdx % fives.length || fives.length}/${fives.length}`;
+      pgBanner.append(spr, info, tag);
+    };
+    paintBanner();
+    petBannerTimer = window.setInterval(paintBanner, 2800);
+  }
+  pgRatesBtn.addEventListener('click', () => {
+    const p4 = PET_GACHA_UI.pity4;
+    petToast(
+      `🐾 펫 뽑기 확률 — ⭐5 ${PET_GACHA_UI.rate5}% (70회차부터 +5%p/회, 최대 ${PET_GACHA_UI.hardPity5}회 안에 확정, 획득 시 0/${PET_GACHA_UI.hardPity5}) · ⭐4 ${PET_GACHA_UI.rate4}% (7뽑 ${p4[6]}% → 8뽑 ${p4[7]}% → 9뽑 ${p4[8]}% → 10뽑 ${p4[9]}%) · ⭐3 나머지(펫 먹이 ×1 60% / ×3 25% / 경험치카드 15%). 5성 7종·4성 40종은 등급 안에서 균등. 중복 = 돌파(+1, 최대 10돌), 만돌 이후 중복은 💎·카드로 환급.`,
+      9000,
+    );
+  });
+
+  function petShowFx(section: 'confirm' | 'scroll' | 'effect' | 'result' | null): void {
+    petFxEl.hidden = section === null;
+    petFxConfirm.hidden = section !== 'confirm';
+    petFxScroll.hidden = section !== 'scroll';
+    petFxEffect.hidden = section !== 'effect';
+    petFxResult.hidden = section !== 'result';
+  }
+  let petConfirmResolve: ((ok: boolean) => void) | null = null;
+  function petConfirmDialog(text: string): Promise<boolean> {
+    petFxConfirmText.textContent = text;
+    petShowFx('confirm');
+    return new Promise((resolve) => {
+      petConfirmResolve = resolve;
+    });
+  }
+  petFxYes.addEventListener('click', () => petConfirmResolve?.(true));
+  petFxNo.addEventListener('click', () => petConfirmResolve?.(false));
+
+  /** 마법 두루마리 — 눌러서 확인하기 (클릭까지 대기) */
+  async function petScrollStage(): Promise<void> {
+    const scroll = petExtras?.petUi?.scroll;
+    const ctx = petFxScrollCanvas.getContext('2d')!;
+    ctx.clearRect(0, 0, 64, 64);
+    if (scroll) {
+      const img = await petUiImage(scroll);
+      if (img) ctx.drawImage(img, 0, 0);
+    }
+    petShowFx('scroll');
+    await new Promise<void>((resolve) => petFxScroll.addEventListener('click', () => resolve(), { once: true }));
+  }
+  /** 등급 이펙트 2초 루프 (3성 파랑 / 4성 보라 / 5성 노랑, 30프레임 15fps) */
+  async function petEffectStage(star: 3 | 4 | 5): Promise<void> {
+    const ui = petExtras?.petUi;
+    petShowFx('effect');
+    const ctx = petFxEffectCanvas.getContext('2d')!;
+    const size = petFxEffectCanvas.width;
+    ctx.clearRect(0, 0, size, size);
+    const sheet = ui ? await petUiImage(ui.fx[String(star)]) : null;
+    const DURATION = 2000;
+    await new Promise<void>((resolve) => {
+      const start = performance.now();
+      const frame = (t: number) => {
+        const el = t - start;
+        ctx.clearRect(0, 0, size, size);
+        if (sheet && ui) {
+          const fi = Math.floor(el / (DURATION / ui.fxCount)) % ui.fxCount;
+          const sx = (fi % ui.fxCols) * ui.fxCell;
+          const sy = Math.floor(fi / ui.fxCols) * ui.fxCell;
+          ctx.drawImage(sheet, sx, sy, ui.fxCell, ui.fxCell, 0, 0, size, size);
+        } else {
+          // 이펙트 시트가 없으면 등급 색 원으로 대체
+          ctx.fillStyle = PET_STAR_COLOR[star];
+          ctx.globalAlpha = 0.5 + 0.5 * Math.sin(el / 120);
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        if (el < DURATION) requestAnimationFrame(frame);
+        else resolve();
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+  function petPullName(r: PetPullView): string {
+    if (r.star === 3) return r.item === 'food' ? `펫 먹이 ×${r.n ?? 1}` : `경험치카드 ×${r.n ?? 1}`;
+    return `★${r.star} ${petDefById.get(r.id ?? '')?.name ?? r.id}`;
+  }
+  function petShowResults(results: PetPullView[]): void {
+    petFxCards.innerHTML = '';
+    petFxCards.classList.toggle('single', results.length === 1);
+    results.forEach((r, i) => {
+      const card = document.createElement('div');
+      card.className = `pfx-card s${r.star}`;
+      card.dataset.name = petPullName(r);
+      card.style.animationDelay = `${i * 80}ms`;
+      if (r.star === 3) card.appendChild(petItemImg(r.item ?? 'food', 40));
+      else card.appendChild(petSpriteCanvas(r.id ?? '', 48));
+      const name = document.createElement('span');
+      name.className = 'pfx-name';
+      name.textContent = r.star === 3 ? (r.item === 'food' ? '먹이' : '카드') : (petDefById.get(r.id ?? '')?.name ?? '');
+      const badge = document.createElement('span');
+      badge.className = 'pfx-badge';
+      if (r.star === 3) {
+        badge.textContent = `×${r.n ?? 1}`;
+      } else if (r.refund) {
+        badge.textContent = `환급 💎${r.refund.gems}`;
+        badge.classList.add('dup');
+      } else if (r.isNew) {
+        badge.textContent = 'NEW!';
+        badge.classList.add('new');
+      } else {
+        badge.textContent = `돌파 ${r.dup}돌`;
+        badge.classList.add('dup');
+      }
+      card.append(name, badge);
+      petFxCards.appendChild(card);
+    });
+    petShowFx('result');
+  }
+  async function petDoGacha(count: number): Promise<void> {
+    if (petBusy || !petSt) return;
+    const cost = count === 10 ? (petSt.fridayDiscount ? PET_GACHA_UI.fridayTen : PET_GACHA_UI.ten) : PET_GACHA_UI.single;
+    if (petSt.gems < cost) {
+      petToast(`젬이 부족해요. (${petSt.gems}/${cost} 💎)`);
+      return;
+    }
+    const ok = await petConfirmDialog(`젬 ${cost}개를 소모하여 ${count}회 뽑기를 진행하시겠습니까?`);
+    if (!ok) {
+      petShowFx(null);
+      return;
+    }
+    petBusy = true;
+    petLastCount = count;
+    paintPetGacha();
+    const res = (await window.overlay.petGacha(count)) as {
+      ok: boolean;
+      error?: string;
+      results?: PetPullView[];
+      state?: PetStateView;
+    };
+    if (!res.ok || !res.results) {
+      petBusy = false;
+      petShowFx(null);
+      petToast(res.error ?? '뽑기에 실패했어요.');
+      paintPet();
+      return;
+    }
+    if (res.state) petSt = res.state;
+    await petScrollStage();
+    const maxStar = Math.max(...res.results.map((r) => r.star)) as 3 | 4 | 5;
+    await petEffectStage(maxStar);
+    petShowResults(res.results);
+    const news = res.results.filter((r) => r.star === 5 && r.isNew).map((r) => petDefById.get(r.id ?? '')?.name);
+    if (news.length) petToast(`🐾 5성 펫 획득! ${news.join(', ')}`);
+    petBusy = false;
+    paintPet();
+  }
+  pgPull1.addEventListener('click', () => void petDoGacha(1));
+  pgPull10.addEventListener('click', () => void petDoGacha(10));
+  petFxAgain.addEventListener('click', () => {
+    petShowFx(null);
+    void petDoGacha(petLastCount);
+  });
+  petFxClose.addEventListener('click', () => petShowFx(null));
+
+  // ---- 내 펫 탭 ----
+  function petOwnedSorted(): PetDef[] {
+    return [...PET_DEFS].sort((a, b) => b.star - a.star || a.name.localeCompare(b.name, 'ko'));
+  }
+  function paintPetMine(): void {
+    const st = petSt!;
+    pmSlots.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const slot = document.createElement('div');
+      slot.className = 'pm-slot';
+      if (i >= st.slots) {
+        slot.classList.add('locked');
+        const need = PET_SLOT_THRESHOLDS[i];
+        slot.innerHTML = `<span>🔒</span><span>펫 ${need}종 수집 시 해금</span><span>(${Object.keys(st.owned).length}/${need})</span>`;
+        pmSlots.appendChild(slot);
+        continue;
+      }
+      const id = st.equip[i];
+      if (id && st.owned[id]) {
+        const def = petDefById.get(id)!;
+        const o = st.owned[id];
+        slot.classList.add('filled', `s${def.star}`);
+        slot.append(petSpriteCanvas(id, 40));
+        const name = document.createElement('span');
+        name.className = 'pm-slot-name';
+        name.textContent = `${def.name} ${o.dup}돌 Lv${o.lv}`;
+        slot.append(name, petSatietyBar(o.satiety));
+        const sat = document.createElement('span');
+        sat.textContent = `포만도 ${Math.round(o.satiety)}%`;
+        slot.append(sat);
+        slot.addEventListener('click', () => openPetDetail(id));
+      } else {
+        slot.innerHTML = `<span class="pm-slot-plus">＋</span><span>슬롯 ${i + 1}</span><span>아래에서 펫 선택</span>`;
+        slot.addEventListener('click', () => petToast('아래 목록에서 보유한 펫을 눌러 장착하세요.'));
+      }
+      pmSlots.appendChild(slot);
+    }
+    pmFood.textContent = String(st.food);
+    pmCards.textContent = String(st.cards);
+    pmAuto.checked = st.autoFeed.on;
+    pmAutoPct.value = String(st.autoFeed.pct);
+    for (const b of pmFilterBtns) b.classList.toggle('active', b.dataset.f === petFilter);
+    pmGrid.innerHTML = '';
+    for (const def of petOwnedSorted()) {
+      const o = st.owned[def.id];
+      if (petFilter === '5' && def.star !== 5) continue;
+      if (petFilter === '4' && def.star !== 4) continue;
+      if (petFilter === 'owned' && !o) continue;
+      const card = document.createElement('div');
+      card.className = `pm-card s${def.star}${o ? '' : ' unowned'}`;
+      card.appendChild(petSpriteCanvas(def.id, 40, !o));
+      const name = document.createElement('span');
+      name.className = 'pm-name';
+      name.textContent = o ? def.name : '???';
+      card.appendChild(name);
+      const dup = document.createElement('span');
+      dup.className = 'pm-dup';
+      dup.textContent = o ? `${'★'.repeat(Math.min(5, o.dup))}${o.dup > 5 ? `+${o.dup - 5}` : ''} Lv${o.lv}`.trim() || '명함' : `★${def.star}`;
+      card.appendChild(dup);
+      if (o && st.equip.includes(def.id)) {
+        const eq = document.createElement('span');
+        eq.className = 'pm-eq';
+        eq.textContent = '🐾';
+        eq.title = '장착 중';
+        card.appendChild(eq);
+        card.appendChild(petSatietyBar(o.satiety));
+      }
+      card.addEventListener('click', () => openPetDetail(def.id));
+      pmGrid.appendChild(card);
+    }
+  }
+  for (const b of pmFilterBtns)
+    b.addEventListener('click', () => {
+      petFilter = b.dataset.f ?? 'all';
+      paintPetMine();
+    });
+  pmShop.addEventListener('click', () => window.overlay.togglePopout('shop'));
+  const petAutofeedSend = () => {
+    void window.overlay.petAutofeed({ on: pmAuto.checked, pct: Number(pmAutoPct.value) || 70 }).then((r) => {
+      const res = r as { ok: boolean; error?: string; state?: PetStateView };
+      if (res.ok && res.state) petSt = res.state;
+      else if (!res.ok) petToast(res.error ?? '설정에 실패했어요.');
+      paintPet();
+    });
+  };
+  pmAuto.addEventListener('change', petAutofeedSend);
+  pmAutoPct.addEventListener('change', petAutofeedSend);
+
+  // ---- 펫 상세 (획득 & 돌파 효과 표시, 장착/먹이/레벨) ----
+  const petRowKind = (n: number) => (n === 0 ? '명함' : n === 5 ? '특수Ⅱ' : n === 10 ? '특수Ⅲ' : n === 2 || n === 4 || n === 8 ? '소소' : '수치');
+  function petEffectRows(def: PetDef, dup: number, owned: boolean): HTMLElement[] {
+    const rows: HTMLElement[] = [];
+    for (let n = 0; n <= PET_MAX_DUP; n++) {
+      const cur = petEffectsAt(def, n);
+      const prev = n > 0 ? petEffectsAt(def, n - 1) : {};
+      const parts: string[] = [];
+      for (const [k, v] of Object.entries(cur) as [PetFxKey, number][]) {
+        if (prev[k] === undefined) parts.push(`<b>${petFxLabel(k, v)}</b>`);
+        else if (prev[k] !== v) parts.push(`${petFxLabel(k, v)} <small>(${prev[k]}→${v})</small>`);
+      }
+      const row = document.createElement('div');
+      row.className = `pd-fx ${owned && n <= dup ? 'on' : 'off'}${n === 0 || n === 5 || n === 10 ? ' special' : ''}`;
+      row.innerHTML = `<b>${n}돌</b><i>${petRowKind(n)}</i><span>${parts.join(' · ')}</span>`;
+      rows.push(row);
+    }
+    return rows;
+  }
+  function openPetDetail(id: string): void {
+    const def = petDefById.get(id);
+    if (!def || !petSt) return;
+    petDetailId = id;
+    const o = petSt.owned[id];
+    const ctx = pdSprite.getContext('2d')!;
+    ctx.clearRect(0, 0, pdSprite.width, pdSprite.height);
+    const spr = petSpriteCanvas(id, 64, !o);
+    setTimeout(() => ctx.drawImage(spr, 0, 0), 250); // 시트 로딩 후 복사
+    pdName.textContent = `${'★'.repeat(def.star)} ${o ? def.name : '???'}`;
+    pdName.style.color = PET_STAR_COLOR[def.star];
+    pdSub.textContent = o ? `${def.theme} · ${o.dup}돌 · Lv${o.lv} · 포만도 ${Math.round(o.satiety)}%` : `${def.theme} · 미보유`;
+    pdFlavor.textContent = o ? def.flavor : '아직 만나지 못한 펫이에요. 뽑기에서 획득하면 능력이 발현됩니다.';
+    pdStatus.innerHTML = '';
+    if (o) {
+      const equipped = petSt.equip.includes(id);
+      const satRow = document.createElement('div');
+      satRow.className = 'pd-sat-row';
+      satRow.append(petSatietyBar(o.satiety));
+      const satText = document.createElement('span');
+      const mult = o.satiety <= 30 ? '효과 −90%' : o.satiety <= 70 ? '효과 −30%' : '효과 100%';
+      satText.textContent = `포만도 ${Math.round(o.satiety)}% (${mult}) · Lv${o.lv}: 1% 감소에 ${PET_SATIETY_MIN_PER_PCT[o.lv - 1]}분${equipped ? '' : ' · 미장착(휴식 중, 감소 없음)'}`;
+      satRow.append(satText);
+      pdStatus.append(satRow);
+      const dupText = document.createElement('div');
+      dupText.textContent = `돌파 ${o.dup}/${PET_MAX_DUP}${o.dup < PET_MAX_DUP ? ` · 같은 펫을 ${PET_MAX_DUP - o.dup}장 더 뽑으면 만돌` : ' · 만돌! 이후 중복은 💎·카드 환급'}`;
+      pdStatus.append(dupText);
+    }
+    pdActions.innerHTML = '';
+    if (o) {
+      const equipped = petSt.equip.includes(id);
+      const eqBtn = document.createElement('button');
+      eqBtn.textContent = equipped ? '장착 해제' : '장착';
+      eqBtn.className = equipped ? '' : 'primary';
+      eqBtn.addEventListener('click', () => {
+        const st = petSt!;
+        let next: string[];
+        if (equipped) next = st.equip.filter((x) => x !== id);
+        else if (st.equip.length < st.slots) next = [...st.equip, id];
+        else next = [id, ...st.equip.slice(1)]; // 슬롯이 가득 차면 1번 슬롯 교체
+        void petAction(window.overlay.petEquip(next), equipped ? `'${def.name}' 장착 해제` : `🐾 '${def.name}' 장착!`);
+      });
+      const feedBtn = document.createElement('button');
+      feedBtn.textContent = `🍖 먹이 주기 (${petSt.food}개)`;
+      feedBtn.disabled = petSt.food < 1 || o.satiety >= 100;
+      feedBtn.addEventListener('click', () => void petAction(window.overlay.petFeed(id), `🍖 '${def.name}' 포만도 100%!`));
+      const need = o.lv < PET_MAX_LEVEL ? PET_LEVEL_CARDS[o.lv - 1] : 0;
+      const lvBtn = document.createElement('button');
+      lvBtn.textContent = o.lv >= PET_MAX_LEVEL ? 'Lv MAX' : `📜 레벨업 (${need}장 / 보유 ${petSt.cards})`;
+      lvBtn.disabled = o.lv >= PET_MAX_LEVEL || petSt.cards < need;
+      lvBtn.addEventListener('click', () => void petAction(window.overlay.petLevel(id), `📜 '${def.name}' Lv${o.lv + 1}!`));
+      pdActions.append(eqBtn, feedBtn, lvBtn);
+    }
+    pdEffects.innerHTML = '';
+    pdEffects.append(...petEffectRows(def, o?.dup ?? -1, Boolean(o)));
+    petDetail.hidden = false;
+  }
+  async function petAction(p: Promise<unknown>, okMsg: string): Promise<void> {
+    const res = (await p) as { ok: boolean; error?: string; state?: PetStateView };
+    if (res.ok && res.state) {
+      petSt = res.state;
+      petToast(okMsg);
+    } else if (!res.ok) petToast(res.error ?? '실패했어요.');
+    paintPet();
+    if (petDetailId && !petDetail.hidden) openPetDetail(petDetailId);
+  }
+  pdClose.addEventListener('click', () => {
+    petDetail.hidden = true;
+    petDetailId = null;
+  });
+  petDetail.addEventListener('click', (e) => {
+    if (e.target === petDetail) {
+      petDetail.hidden = true;
+      petDetailId = null;
+    }
+  });
+  // 자동 먹이 임계값 옵션
+  for (let p = 10; p <= 90; p += 10) {
+    const opt = document.createElement('option');
+    opt.value = String(p);
+    opt.textContent = `${p}% 이하`;
+    pmAutoPct.appendChild(opt);
+  }
+
+  window.overlay.on('self:pet', (data) => {
+    petSt = data as PetStateView;
+    if (petPanel.classList.contains('open') && !petBusy) {
+      paintPet();
+      if (petDetailId && !petDetail.hidden) openPetDetail(petDetailId);
+    }
+  });
+  window.overlay.on('net:pet-news', (data) => {
+    const d = data as { id: string; text: string };
+    if (d.id === chatSelfId) return; // 본인은 뽑기 결과로 충분
+    addSystemMessage(d.text);
+  });
+
   // ---- ☰ 메뉴 드롭다운 ----
 
   const menuBtn = document.getElementById('menu-btn') as HTMLButtonElement;
@@ -2770,6 +3532,7 @@
 
   function closeAllPanels(): void {
     panel.classList.remove('open');
+    petPanel.classList.remove('open');
     optionsPanel.classList.remove('open');
     pinnedPanel.classList.remove('open');
     slotPanel.classList.remove('open');
@@ -2826,6 +3589,9 @@
         break;
       case 'battle':
         window.overlay.togglePopout('battle');
+        break;
+      case 'pet':
+        window.overlay.togglePopout('pet');
         break;
       case 'note':
         window.overlay.togglePopout('note');
@@ -2985,6 +3751,9 @@
           break;
         case 'battle':
           void openBattlePanel();
+          break;
+        case 'pet':
+          void openPetPanel();
           break;
       }
       // 패널 ✕(open 해제) → 창 닫기
