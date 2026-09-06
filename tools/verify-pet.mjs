@@ -168,6 +168,31 @@ while (pulls < 100) {
 if (!got5) fail(`${pulls}회 1뽑 동안 5성 없음 (천장 ${maxPity})`);
 console.log(`  5성 천장 OK: ${pulls}회 1뽑 만에 5성 (최대 스택 ${maxPity}) · 잔여 💎 ${st.gems}${dupSeen ? ' · 돌파 확인' : ''}`);
 
+// 10연 순차 규칙: 5성이 나오면 그 자리에서 스택 0, 그 뒤 남은 뽑기는 기본 확률로 굴리며 스택에 쌓인다
+// → 5성 포함 10연 뒤 스택 = 마지막 5성 이후 뽑기 수 (예: 3번째 5성 → 7/90). 5성 없는 10연은 +10
+{
+  let batches = 0;
+  let found = false;
+  while (batches < 9) {
+    await sleep(600);
+    r = await call('pet-gacha', 10);
+    if (!r.ok) fail(`순차 규칙 검증 중 10연 실패: ${r.error}`);
+    batches++;
+    const last5 = r.results.map((x) => x.star).lastIndexOf(5);
+    if (last5 >= 0) {
+      const expect = 9 - last5;
+      if (r.state.pity5 !== expect) fail(`10연 ${last5 + 1}번째 5성 뒤 스택이 ${r.state.pity5} (기대 ${expect})`);
+      found = true;
+      st = r.state;
+      break;
+    }
+    if (r.state.pity5 !== st.pity5 + 10) fail(`5성 없는 10연 뒤 스택 증가 이상: ${st.pity5}→${r.state.pity5}`);
+    st = r.state;
+  }
+  if (!found) fail('9번의 10연(90뽑) 안에 5성이 없음 — 천장 위반');
+  console.log(`  10연 순차 OK: ${batches}번째 10연에 5성 → 이후 스택 ${st.pity5}/90 (잔여 💎 ${st.gems})`);
+}
+
 // 돌파/환급: 같은 펫이 여러 번 나왔으면 dup 증가, 10돌 초과는 refund
 const ownedIds = Object.keys(st.owned);
 if (ownedIds.length === 0) fail('뽑기 후 보유 펫이 없음');
