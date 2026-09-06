@@ -168,6 +168,29 @@ while (pulls < 100) {
 if (!got5) fail(`${pulls}회 1뽑 동안 5성 없음 (천장 ${maxPity})`);
 console.log(`  5성 천장 OK: ${pulls}회 1뽑 만에 5성 (최대 스택 ${maxPity}) · 잔여 💎 ${st.gems}${dupSeen ? ' · 돌파 확인' : ''}`);
 
+// 10연 배치 규칙: 5성이 하나라도 포함된 10연 뒤에는 스택이 0/90 (5성 이후 남은 뽑기는 스택에 안 쌓임)
+{
+  let batches = 0;
+  let found = false;
+  while (batches < 9) {
+    await sleep(600);
+    r = await call('pet-gacha', 10);
+    if (!r.ok) fail(`배치 규칙 검증 중 10연 실패: ${r.error}`);
+    batches++;
+    const idx5 = r.results.findIndex((x) => x.star === 5);
+    if (idx5 >= 0) {
+      if (r.state.pity5 !== 0) fail(`10연 ${idx5 + 1}번째에 5성이 나왔는데 이후 스택이 ${r.state.pity5} (기대 0)`);
+      found = true;
+      st = r.state;
+      break;
+    }
+    if (r.state.pity5 !== st.pity5 + 10) fail(`5성 없는 10연 뒤 스택 증가 이상: ${st.pity5}→${r.state.pity5}`);
+    st = r.state;
+  }
+  if (!found) fail('9번의 10연(90뽑) 안에 5성이 없음 — 천장 위반');
+  console.log(`  10연 배치 OK: ${batches}번째 10연에 5성 → 스택 0/90 (잔여 💎 ${st.gems})`);
+}
+
 // 돌파/환급: 같은 펫이 여러 번 나왔으면 dup 증가, 10돌 초과는 refund
 const ownedIds = Object.keys(st.owned);
 if (ownedIds.length === 0) fail('뽑기 후 보유 펫이 없음');
