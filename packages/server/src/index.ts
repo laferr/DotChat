@@ -2581,10 +2581,8 @@ io.on('connection', (socket) => {
     if (friday) p.fridayKey = dailyDateKey(now);
     const results: PetPull[] = [];
     const news: string[] = [];
-    // 10연도 1회씩 순차 판정: 5성(천장 보정) → 4성(10회 보정) → 3성. 5성이 나오면 그 즉시 스택 0 — 같은 10연의 남은 뽑기는
-    // 기본 확률(0.6%)로만 굴리고 스택에 쌓지 않는다 (사용자 확정: 10연에 5성이 하나라도 있으면 결과 후 0/90)
-    let got5 = false;
     for (let i = 0; i < n; i++) {
+      // 판정 순서: 5성(천장 보정) → 4성(10회 보정) → 3성. 카운터는 뽑기마다 갱신
       let star: 3 | 4 | 5 = 3;
       if (Math.random() * 100 < petRate5(p.pity5 + 1)) star = 5;
       else if (Math.random() * 100 < petRate4(p.pity4 + 1)) star = 4;
@@ -2592,12 +2590,11 @@ io.on('connection', (socket) => {
       if (star === 5) {
         p.pity5 = 0;
         p.pity4 = 0;
-        got5 = true;
       } else if (star === 4) {
-        if (!got5) p.pity5++;
+        p.pity5++;
         p.pity4 = 0;
       } else {
-        if (!got5) p.pity5++;
+        p.pity5++;
         p.pity4++;
       }
       if (star === 3) {
