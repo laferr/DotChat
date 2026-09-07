@@ -79,6 +79,10 @@ npm run bot      # 테스트 봇 (두 번째 유저 시뮬레이션)
 
 ## 인스톨러 빌드
 
+릴리스 버전은 `node tools/bump-version.mjs <버전>`으로 갱신합니다.
+클라이언트 package.json만 바꾸면 서버의 업데이트 안내 버전이 남으므로,
+공유 APP_VERSION과 락파일까지 함께 갱신해야 합니다.
+
 ```bash
 npm run capes:import # PixelLab 등 파츠 반영 (Python + Pillow 필요)
 npm run dist
