@@ -1,0 +1,278 @@
+{
+  "PixelLabAngel": {
+    "anchor": [
+      32,
+      24
+    ],
+    "target": [
+      32,
+      48
+    ]
+  },
+  "PixelLabBat": {
+    "anchor": [
+      32,
+      32
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabButterfly": {
+    "anchor": [
+      32,
+      31
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabFlame": {
+    "anchor": [
+      32,
+      38
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabFrost": {
+    "anchor": [
+      32,
+      43
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabSolarHalo": {
+    "anchor": [
+      32,
+      32
+    ],
+    "target": [
+      32,
+      29
+    ]
+  },
+  "PixelLabLunarHalo": {
+    "anchor": [
+      32,
+      32
+    ],
+    "target": [
+      32,
+      28
+    ]
+  },
+  "PixelLabArcaneHalo": {
+    "anchor": [
+      32,
+      32
+    ],
+    "target": [
+      32,
+      28
+    ]
+  },
+  "PixelLabVectorJet": {
+    "anchor": [
+      32,
+      32
+    ],
+    "target": [
+      32,
+      22
+    ],
+    "scale": 0.5
+  },
+  "PixelLabCrimsonDrive": {
+    "anchor": [
+      15,
+      36
+    ],
+    "target": [
+      32,
+      24
+    ],
+    "flip": true,
+    "scale": 0.5
+  },
+  "PixelLabOrbitalDrones": {
+    "anchor": [
+      32,
+      32
+    ],
+    "target": [
+      32,
+      23
+    ],
+    "scale": 0.5
+  },
+  "PixelLabBrassThruster": {
+    "anchor": [
+      44,
+      39
+    ],
+    "target": [
+      32,
+      24
+    ],
+    "scale": 0.5
+  },
+  "PixelLabRavenAnimated": {
+    "anchor": [
+      56,
+      59
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabDragonAnimated": {
+    "anchor": [
+      53,
+      51
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabSeraphAnimated": {
+    "anchor": [
+      60,
+      61
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabStoneArms": {
+    "anchor": [
+      48,
+      48
+    ],
+    "target": [
+      32,
+      41
+    ]
+  },
+  "PixelLabAsuraArms": {
+    "anchor": [
+      48,
+      54
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabSunPhoenix": {
+    "anchor": [
+      55,
+      60
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabObsidianWings": {
+    "anchor": [
+      49,
+      44
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabOceanWings": {
+    "anchor": [
+      53,
+      56
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabLunaMoth": {
+    "anchor": [
+      48,
+      43
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabVerdantWings": {
+    "anchor": [
+      54,
+      51
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabRunePaper": {
+    "anchor": [
+      48,
+      39
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabAstralWings": {
+    "anchor": [
+      66,
+      61
+    ],
+    "target": [
+      28,
+      47
+    ],
+    "cell": 144
+  },
+  "PixelLabBoneWings": {
+    "anchor": [
+      57,
+      46
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabPeacockWings": {
+    "anchor": [
+      52,
+      64
+    ],
+    "target": [
+      32,
+      47
+    ]
+  },
+  "PixelLabClockworkWings": {
+    "anchor": [
+      62,
+      57
+    ],
+    "target": [
+      32,
+      47
+    ]
+  }
+}

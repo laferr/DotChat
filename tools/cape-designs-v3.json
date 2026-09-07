@@ -1,0 +1,102 @@
+[
+  {
+    "id": "PixelLabSunPhoenix",
+    "label": "태양 불사조 날개",
+    "theme": "a grand pair of phoenix feather wings, ivory and rich gold layered plumage with bright orange feather tips, a tiny gold central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabObsidianWings",
+    "label": "흑요석 날개",
+    "theme": "a grand pair of angular obsidian crystal wings, dark purple black shard feathers with sharp magenta crystal edges and violet highlights, a tiny purple central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabOceanWings",
+    "label": "심해 유리 날개",
+    "theme": "a grand pair of translucent-looking ocean blue glass fin wings, teal segmented fins with pale cyan rims and little pearl ornaments, solid readable pixel colors, a tiny pearl central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabLunaMoth",
+    "label": "달빛 나방 날개",
+    "theme": "a grand pair of luna moth wings, pale mint cream upper wings with mauve eye spots and long elegant pale mint lower wing tails, a tiny emerald central back clasp, no insect body",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabVerdantWings",
+    "label": "세계수 잎사귀 날개",
+    "theme": "a grand pair of lush emerald leaf wings, layered long leaves with lime highlights and golden vine veins, a tiny wood and green gem central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabRunePaper",
+    "label": "룬 종이 날개",
+    "theme": "a grand pair of folded parchment wings, ivory origami feather panels with a few violet runic markings and dark plum edges, a tiny amethyst central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabAstralWings",
+    "label": "성운 별빛 날개",
+    "theme": "a grand pair of celestial feather wings, deep indigo and violet feathers with tiny cyan and white stars and bright pink nebula clusters, a tiny silver central back clasp, no background stars outside wings",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabBoneWings",
+    "label": "망령 뼈 날개",
+    "theme": "a grand pair of skeletal dragon wings, curved ivory bone spars with torn pale turquoise ghost membranes, dark blue contours and a tiny silver central back clasp, no skull and no creature",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabPeacockWings",
+    "label": "공작 비취 날개",
+    "theme": "a grand pair of luxurious peacock feather wings, long teal and emerald feather fans with sapphire blue and gold eye patterns, tiny gold central back clasp, no bird body and no tail fan",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  },
+  {
+    "id": "PixelLabClockworkWings",
+    "label": "시계장치 대형 날개",
+    "theme": "a grand pair of intricate clockwork wings, long articulated copper bronze metal feather blades with teal enamel plates and tiny visible cog joints, a tiny brass central back clasp, no jetpack or vehicle",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29
+  }
+]

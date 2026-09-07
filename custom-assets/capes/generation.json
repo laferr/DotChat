@@ -1,0 +1,104 @@
+[
+  {
+    "id": "PixelLabAngel",
+    "label": "천사깃털",
+    "theme": "a pair of broad ivory white angel feather wings, layered feathers, pale blue shadows, warm gold shoulder clasp",
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "7f1b05b9-dd92-4160-8d3b-3ac5e1f3dc90",
+    "request": {
+      "height": 64,
+      "outline": "single color outline",
+      "view": "side",
+      "width": 64,
+      "description": "a pair of broad ivory white angel feather wings, layered feathers, pale blue shadows, warm gold shoulder clasp. Standalone wearable back accessory only, no character, no person, no body, no head, no mannequin. Front elevation, viewed as worn by a character facing the viewer. Symmetrical left and right wings fully spread sideways, connected only at a small center attachment. Wide horizontal silhouette, width about twice height. Both outer tips fully visible, centered with clear margin. Crisp 16-bit fantasy RPG pixel art, chunky readable pixel clusters, limited palette, dark one pixel outlines, no antialiasing, no ground shadow, transparent background.",
+      "shading": "basic shading",
+      "detail": "medium detail"
+    }
+  },
+  {
+    "id": "PixelLabBat",
+    "label": "밤의 박쥐",
+    "theme": "a pair of wide dark violet bat wings, scalloped purple membranes, dark charcoal wing bones, tiny ruby clasp",
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "c06af719-a8c8-48bd-95b9-e99ae8c2a2fd",
+    "request": {
+      "height": 64,
+      "outline": "single color outline",
+      "view": "side",
+      "width": 64,
+      "description": "a pair of wide dark violet bat wings, scalloped purple membranes, dark charcoal wing bones, tiny ruby clasp. Standalone wearable back accessory only, no character, no person, no body, no head, no mannequin. Front elevation, viewed as worn by a character facing the viewer. Symmetrical left and right wings fully spread sideways, connected only at a small center attachment. Wide horizontal silhouette, width about twice height. Both outer tips fully visible, centered with clear margin. Crisp 16-bit fantasy RPG pixel art, chunky readable pixel clusters, limited palette, dark one pixel outlines, no antialiasing, no ground shadow, transparent background.",
+      "shading": "basic shading",
+      "detail": "medium detail"
+    }
+  },
+  {
+    "id": "PixelLabButterfly",
+    "label": "오로라 나비",
+    "theme": "a pair of broad butterfly fairy wings, turquoise and pink violet sections, dark purple borders, elegant rounded upper wings and short lower wings",
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "e238ce7b-8afd-43de-b433-912d9f81f7d2",
+    "request": {
+      "height": 64,
+      "outline": "single color outline",
+      "view": "side",
+      "width": 64,
+      "description": "a pair of broad butterfly fairy wings, turquoise and pink violet sections, dark purple borders, elegant rounded upper wings and short lower wings. Standalone wearable back accessory only, no character, no person, no body, no head, no mannequin. Front elevation, viewed as worn by a character facing the viewer. Symmetrical left and right wings fully spread sideways, connected only at a small center attachment. Wide horizontal silhouette, width about twice height. Both outer tips fully visible, centered with clear margin. Crisp 16-bit fantasy RPG pixel art, chunky readable pixel clusters, limited palette, dark one pixel outlines, no antialiasing, no ground shadow, transparent background.",
+      "shading": "basic shading",
+      "detail": "medium detail"
+    }
+  },
+  {
+    "id": "PixelLabFlame",
+    "label": "불사조 불꽃",
+    "theme": "a pair of wide phoenix flame wings, sweeping orange and scarlet flame feathers, golden yellow tips, angular flame silhouette",
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "68deaf35-dc94-4030-b764-72bd25798a4c",
+    "request": {
+      "height": 64,
+      "outline": "single color outline",
+      "view": "side",
+      "width": 64,
+      "description": "a pair of wide phoenix flame wings, sweeping orange and scarlet flame feathers, golden yellow tips, angular flame silhouette. Standalone wearable back accessory only, no character, no person, no body, no head, no mannequin. Front elevation, viewed as worn by a character facing the viewer. Symmetrical left and right wings fully spread sideways, connected only at a small center attachment. Wide horizontal silhouette, width about twice height. Both outer tips fully visible, centered with clear margin. Crisp 16-bit fantasy RPG pixel art, chunky readable pixel clusters, limited palette, dark one pixel outlines, no antialiasing, no ground shadow, transparent background.",
+      "shading": "basic shading",
+      "detail": "medium detail"
+    }
+  },
+  {
+    "id": "PixelLabFrost",
+    "label": "서리결정",
+    "theme": "a pair of broad ice crystal wings, icy cyan and pale blue faceted crystal shards fanning sideways, white highlights, navy edges",
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "2f5e873b-4011-4ef0-82ae-e72fe088a95e",
+    "request": {
+      "height": 64,
+      "outline": "single color outline",
+      "view": "side",
+      "width": 64,
+      "description": "a pair of broad ice crystal wings, icy cyan and pale blue faceted crystal shards fanning sideways, white highlights, navy edges. Standalone wearable back accessory only, no character, no person, no body, no head, no mannequin. Front elevation, viewed as worn by a character facing the viewer. Symmetrical left and right wings fully spread sideways, connected only at a small center attachment. Wide horizontal silhouette, width about twice height. Both outer tips fully visible, centered with clear margin. Crisp 16-bit fantasy RPG pixel art, chunky readable pixel clusters, limited palette, dark one pixel outlines, no antialiasing, no ground shadow, transparent background.",
+      "shading": "basic shading",
+      "detail": "medium detail"
+    }
+  },
+  {
+    "id": "PixelLabRoyal",
+    "label": "왕실 망토",
+    "theme": "a royal crimson cloth cape spread broadly to both sides like wings, gold embroidered edges, ivory fur shoulder trim, two sweeping fabric panels, luxurious royal mantle",
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "bcbbb519-669f-48b3-9250-0086d64fea9a",
+    "request": {
+      "height": 64,
+      "outline": "single color outline",
+      "view": "side",
+      "width": 64,
+      "description": "a royal crimson cloth cape spread broadly to both sides like wings, gold embroidered edges, ivory fur shoulder trim, two sweeping fabric panels, luxurious royal mantle. Standalone wearable back accessory only, no character, no person, no body, no head, no mannequin. Front elevation, viewed as worn by a character facing the viewer. Symmetrical left and right wings fully spread sideways, connected only at a small center attachment. Wide horizontal silhouette, width about twice height. Both outer tips fully visible, centered with clear margin. Crisp 16-bit fantasy RPG pixel art, chunky readable pixel clusters, limited palette, dark one pixel outlines, no antialiasing, no ground shadow, transparent background.",
+      "shading": "basic shading",
+      "detail": "medium detail"
+    }
+  }
+]

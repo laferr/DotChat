@@ -80,6 +80,7 @@ npm run bot      # 테스트 봇 (두 번째 유저 시뮬레이션)
 ## 인스톨러 빌드
 
 ```bash
+npm run capes:import # PixelLab 등 파츠 반영 (Python + Pillow 필요)
 npm run dist
 ```
 

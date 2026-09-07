@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DotChat · 후광·날개·다중팔 착용실</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:24px;background:#20252f;color:#edf0f5;font:15px system-ui,sans-serif}h1{font-size:23px;margin:0 0 8px}p{color:#b3bfcd;margin:8px 0 16px}header,main{max-width:1200px;margin:auto}nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:16px 0}select,button{background:#323c4b;color:white;border:1px solid #647386;border-radius:5px;padding:8px;cursor:pointer}#grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.item{border:1px solid #4b596c;padding:12px;background:#29323f;border-radius:6px;text-align:left;min-width:0}.item[aria-pressed=true]{border-color:#a3d7ff;box-shadow:inset 0 0 0 1px #a3d7ff}.item h2{font:600 15px system-ui;margin:0 0 8px;display:flex;justify-content:space-between;gap:8px}.tag{font-size:11px;color:#a3d7ff;font-weight:400}.stage{display:flex;justify-content:center;align-items:center;background:#596477;height:196px;gap:4px;overflow:hidden}.stage canvas{width:224px;height:196px;image-rendering:pixelated;max-width:78%;object-fit:contain}.stage img{width:64px;height:64px;object-fit:contain;image-rendering:pixelated;max-width:20%}.meta{margin:9px 0 0;color:#b9c7d8;font-size:11px;overflow-wrap:anywhere}#status{margin:16px 0;color:#b5e1c0}#baseline{display:flex;align-items:center;gap:14px;margin-bottom:16px}#baseline canvas{width:112px;height:98px;image-rendering:pixelated;background:#596477}iframe{width:100%;height:720px;border:1px solid #647386;margin-top:12px}summary{cursor:pointer;padding:12px;background:#303b49}#selected{margin-top:6px;color:#91cbff}@media(max-width:950px){#grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){body{padding:12px}#grid{grid-template-columns:1fr}h1{font-size:20px}}
+</style>
+<style>
+.stage{height:288px;position:relative;overflow:hidden}.stage canvas{width:288px;height:288px;max-width:none;flex-shrink:0;object-fit:fill}.stage img{display:none}#baseline canvas{width:288px;height:288px;flex-shrink:0}#baseline{align-items:flex-end}.item details{margin-top:8px}.item details img{image-rendering:pixelated;display:block;margin:8px auto;max-width:none}.item summary{padding:5px;font-size:12px}@media(max-width:520px){#baseline{display:block}#baseline canvas{display:block;margin:auto}}
+</style>
+<header><h1>후광·날개·다중팔 착용실</h1><p>대형 날개 10종 추가 · 모든 파츠 정지 이미지 · 총 27종</p>
+<nav>
+<label>분류 <select id="category"><option value="latest">새 대형 날개 10종</option><option value="new">추가 파츠 22종</option><option value="후광">후광</option><option value="기계">로봇·제트팩</option><option value="다중팔">다중팔</option><option value="날개">고정 날개</option><option value="old">이전 망토 5종</option><option value="all">전체 27종</option></select></label>
+<label>종족 <select id="race"><option>Human</option><option>Elf</option><option>Orc</option></select></label>
+<label>동작 <select id="action"><option value="idle">서 있기</option><option value="run">달리기</option><option value="slash">공격</option><option value="jump">점프</option><option value="roll">구르기</option><option value="death">쓰러짐</option></select></label>
+<label><input type="checkbox" id="mirror"> 좌우 반전</label><label><input type="checkbox" id="animate" checked> 캐릭터 동작 재생</label><button id="export">현재 비교 PNG 저장</button>
+</nav></header>
+<main><div id="baseline"><canvas width="64" height="56" id="base"></canvas><div>등 파츠 미착용<br><span class="meta">원본 픽셀을 정수 배율로 표시합니다.</span><div id="selected">파츠를 선택해보세요.</div></div></div><div id="grid"></div><div id="status">에셋 확인 중…</div><details><summary>실제 외모 파츠 패널 열기 (로컬 테스트 인벤토리)</summary><iframe src="/tools/cape-harness.html?panel=appearance" title="실제 외모 파츠 패널"></iframe></details></main>
+<script src="/packages/client/dist/renderer/composer.js"></script>
+<script>
+const $=selector=>document.querySelector(selector);
+const provider=(layer,name)=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>layer==='Cape'?reject(Error(`이미지 로드 실패: ${layer}/${name}`)):resolve(null);image.src=`/assets/pixelheroes/${encodeURIComponent(layer)}/${encodeURIComponent(name)}.png`});
+const composer=new PartComposer(provider),grid=$('#grid'),status=$('#status');
+let catalog=[],designs=[],results=[],baseFrames,elapsed=0,previous=performance.now(),revision=0;
+const appearance=()=>({race:{name:$('#race').value},hair:{name:'Hair1'},armor:{name:'TravelerTunic'}});
+function paint(canvas,frames){
+ const action=$('#action').value,sequence=frames[action]||frames.anims[action],fps=action==='idle'?(frames.idleFps||1.6):10;
+ const frame=sequence[Math.floor(elapsed*fps)%sequence.length];
+ if(canvas.width!==144){canvas.width=canvas.height=144}
+ const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,144,144);ctx.save();
+ if($('#mirror').checked){ctx.translate(144,0);ctx.scale(-1,1)}
+ const offset=(144-frame.width)/2;
+ ctx.drawImage(frame,offset,offset);ctx.restore();
+}
+async function refresh(){
+ const current=++revision;
+ try{
+  const app=appearance(),category=$('#category').value,visible=catalog.filter(d=>category==='all'||(category==='latest'?d.batch===3:category==='new'?!d.old:category==='old'?d.old:d.category===category));
+  const base=await composer.compose(app),composed=await Promise.all(visible.map(d=>composer.compose({...app,cape:{name:d.id}})));
+  if(current!==revision)return;
+  designs=visible;results=composed;baseFrames=base;grid.replaceChildren();elapsed=0;
+  for(const d of designs){const item=document.createElement('button');item.className='item';item.setAttribute('aria-pressed','false');item.innerHTML=`<h2>${d.label}<span class="tag">${d.animated?'8프레임':d.category||'이전 시안'}</span></h2><div class="stage"><canvas width="128" height="128"></canvas></div><div class="meta">${d.id} · ${['PixelLabVectorJet','PixelLabOrbitalDrones','PixelLabCrimsonDrive','PixelLabBrassThruster'].includes(d.id)?'소형 공중 배치':'원본 픽셀 유지'} · 2배 표시</div>`;item.onclick=()=>{document.querySelectorAll('.item').forEach(el=>el.setAttribute('aria-pressed',String(el===item)));$('#selected').textContent='선택: '+d.label};grid.append(item)}
+  draw();status.textContent=`${designs.length}종 착용 합성 완료 · ${app.race.name} · 모든 파츠 Static`;
+ }catch(error){status.textContent='실패: '+error.message;throw error}
+}
+function draw(){if(baseFrames)paint($('#base'),baseFrames);results.forEach((frames,i)=>paint(document.querySelectorAll('.item canvas')[i],frames))}
+function animate(now){if($('#animate').checked){elapsed+=(now-previous)/1000;draw()}previous=now;requestAnimationFrame(animate)}
+(async()=>{const [old,fresh,latest,manifest]=await Promise.all(['/tools/cape-designs.json','/tools/cape-designs-v2.json','/tools/cape-designs-v3.json','/assets/pixelheroes/manifest.json'].map(url=>fetch(url).then(r=>r.json())));catalog=[...latest,...fresh,...old.map(d=>({...d,old:true}))].filter(d=>manifest.layers.Cape.includes(d.id));await refresh();requestAnimationFrame(animate)})().catch(error=>status.textContent='실패: '+error.message);
+$('#race').onchange=refresh;$('#category').onchange=refresh;$('#action').onchange=()=>{elapsed=0;draw()};$('#mirror').onchange=draw;
+$('#export').onclick=async()=>{
+ const canvas=document.createElement('canvas');canvas.width=960;canvas.height=Math.ceil(designs.length/3)*340;const ctx=canvas.getContext('2d');ctx.fillStyle='#29323f';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=false;
+ document.querySelectorAll('.item canvas').forEach((sprite,i)=>{const x=(i%3)*320,y=Math.floor(i/3)*340;ctx.fillStyle='#edf0f5';ctx.font='18px sans-serif';ctx.fillText(designs[i].label,x+18,y+28);ctx.drawImage(sprite,x+16,y+40,288,288)});
+ const response=await fetch('/save',{method:'POST',body:canvas.toDataURL('image/png')});status.textContent=response.ok?'착용 비교 PNG 저장 완료':'PNG 저장 실패';
+};
+</script></html>
+

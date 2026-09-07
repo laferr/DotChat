@@ -318,6 +318,64 @@
   const hsvH = document.getElementById('hsv-h') as HTMLInputElement;
   const hsvS = document.getElementById('hsv-s') as HTMLInputElement;
   const hsvV = document.getElementById('hsv-v') as HTMLInputElement;
+  const appearancePreview = document.getElementById('appearance-preview') as HTMLDetailsElement;
+  const appearanceCanvas = document.getElementById('appearance-preview-canvas') as HTMLCanvasElement;
+  const appearanceStage = document.getElementById('appearance-preview-stage')!;
+  const appearanceZoom = document.getElementById('appearance-preview-zoom') as HTMLSelectElement;
+  const appearanceMirror = document.getElementById('appearance-preview-mirror') as HTMLInputElement;
+  const appearanceStatus = document.getElementById('appearance-preview-status')!;
+  let appearanceSprite: HTMLCanvasElement | null = null;
+  let panelRevision = 0;
+
+  function paintAppearancePreview(): void {
+    if (!appearanceSprite || !appearancePreview.open || !panel.classList.contains('open')) return;
+    const sprite = appearanceSprite;
+    const scale = appearanceZoom.value === 'auto'
+      ? Math.max(1, Math.min(6, Math.floor(Math.min((appearanceStage.clientWidth - 12) / sprite.width, (appearanceStage.clientHeight - 12) / sprite.height))))
+      : Number(appearanceZoom.value);
+    appearanceCanvas.width = sprite.width;
+    appearanceCanvas.height = sprite.height;
+    appearanceCanvas.style.width = `${sprite.width * scale}px`;
+    appearanceCanvas.style.height = `${sprite.height * scale}px`;
+    const ctx = appearanceCanvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    if (appearanceMirror.checked) { ctx.translate(sprite.width, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(sprite, 0, 0);
+    appearanceStatus.textContent = `현재 착용 장비 · ${scale}배 확대${appearanceZoom.value !== 'auto' ? ' · 넘치는 부분은 스크롤로 확인' : ''}`;
+  }
+
+  async function updateAppearancePreview(equipped: Appearance, revision: number): Promise<void> {
+    appearanceStatus.textContent = '착용 모습 불러오는 중…';
+    try {
+      const frames = await chatComposer.compose(equipped);
+      if (revision !== panelRevision) return;
+      if (!frames) throw new Error('No composed frame');
+      const frame = frames.idle[0];
+      const pixels = frame.getContext('2d')!.getImageData(0, 0, frame.width, frame.height).data;
+      let left = frame.width, top = frame.height, right = -1, bottom = -1;
+      for (let y = 0; y < frame.height; y++) for (let x = 0; x < frame.width; x++) {
+        if (!pixels[(y * frame.width + x) * 4 + 3]) continue;
+        left = Math.min(left, x); top = Math.min(top, y);
+        right = Math.max(right, x); bottom = Math.max(bottom, y);
+      }
+      if (right < left) throw new Error('Empty composed frame');
+      // Crop transparent margins only; every equipment pixel stays at native resolution.
+      const sprite = document.createElement('canvas');
+      sprite.width = right - left + 9; sprite.height = bottom - top + 9;
+      sprite.getContext('2d')!.drawImage(frame, left, top, right - left + 1, bottom - top + 1, 4, 4, right - left + 1, bottom - top + 1);
+      appearanceSprite = sprite;
+      paintAppearancePreview();
+    } catch {
+      if (revision !== panelRevision) return;
+      appearanceSprite = null;
+      appearanceCanvas.width = appearanceCanvas.height = 1;
+      appearanceStatus.textContent = '착용 모습을 불러오지 못했습니다. 파츠를 다시 선택해 주세요.';
+    }
+  }
+  appearanceZoom.addEventListener('change', paintAppearancePreview);
+  appearanceMirror.addEventListener('change', paintAppearancePreview);
+  appearancePreview.addEventListener('toggle', paintAppearancePreview);
+  new ResizeObserver(paintAppearancePreview).observe(appearanceStage);
 
   interface SlotDef {
     key: string;
@@ -372,7 +430,8 @@
     if (slot.key === 'ears') {
       return ownedRaces(owned).filter((n) => manifest?.races.find((r) => r.name === n)?.ears);
     }
-    return owned.filter((id) => id.startsWith(`${slot.layer}/`)).map((id) => id.split('/')[1]);
+    return owned.filter((id) => id.startsWith(`${slot.layer}/`)).map((id) => id.split('/')[1])
+      .filter((name) => manifest?.layers[slot.layer]?.includes(name));
   }
 
   function equippedIn(slot: string, equipped: Appearance): PartChoice | null {
@@ -392,8 +451,11 @@
   }
 
   async function renderPanel(): Promise<void> {
+    const revision = ++panelRevision;
     if (!manifest) manifest = (await window.overlay.getManifest()) as typeof manifest;
     const inv = await window.overlay.getInventory();
+    if (revision !== panelRevision) return;
+    void updateAppearancePreview(inv.equipped, revision);
     ownedCountEl.textContent = `보유 ${inv.owned.length}개`;
 
     // 슬롯 탭
@@ -2694,14 +2756,15 @@
     // 공격 4프레임(120ms) → 숨 고르기 idle 2프레임(220ms) → 반복
     const seq: { frame: HTMLCanvasElement; ms: number }[] = [
       ...attack.map((frame) => ({ frame, ms: 120 })),
-      ...frames.idle.map((frame) => ({ frame, ms: 220 })),
+      ...frames.idle.slice(0, frames.idleFps ? 4 : 2).map((frame) => ({ frame, ms: frames.idleFps ? 1000 / frames.idleFps : 220 })),
     ];
     if (seq.length === 0) return;
     let i = 0;
     const step = () => {
       const cur = seq[i % seq.length];
       btMeCtx.clearRect(0, 0, BT_CROP.w, BT_CROP.h);
-      btMeCtx.drawImage(cur.frame, BT_CROP.x, BT_CROP.y, BT_CROP.w, BT_CROP.h, 0, 0, BT_CROP.w, BT_CROP.h);
+      const offset = phBodyOffset(cur.frame);
+      btMeCtx.drawImage(cur.frame, BT_CROP.x + offset, BT_CROP.y + offset, BT_CROP.w, BT_CROP.h, 0, 0, BT_CROP.w, BT_CROP.h);
       i++;
       battleAnimTimer = window.setTimeout(step, cur.ms);
     };

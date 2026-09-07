@@ -1,0 +1,270 @@
+[
+  {
+    "id": "PixelLabSunPhoenix",
+    "label": "태양 불사조 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "10c91ee9-5fae-4309-8d44-87b2a9ec22f1",
+    "request": {
+      "description": "Wearable pair of spread phoenix wings attached to a tiny back clasp. No character. a grand pair of phoenix feather wings, ivory and rich gold layered plumage with bright orange feather tips, a tiny gold central back clasp",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabSunPhoenix.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        55,
+        60
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  },
+  {
+    "id": "PixelLabObsidianWings",
+    "label": "흑요석 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "b2e2673a-353c-45a4-bd7b-e557bd18a8d6",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of angular obsidian crystal wings, dark purple black shard feathers with sharp magenta crystal edges and violet highlights, a tiny purple central back clasp",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabObsidianWings.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        51,
+        44
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  },
+  {
+    "id": "PixelLabOceanWings",
+    "label": "심해 유리 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "1f2c68aa-2bd3-40ea-a66b-247a79b2a4ba",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of translucent-looking ocean blue glass fin wings, teal segmented fins with pale cyan rims and little pearl ornaments, solid readable pixel colors, a tiny pearl central back clasp",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabOceanWings.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        53,
+        56
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  },
+  {
+    "id": "PixelLabLunaMoth",
+    "label": "달빛 나방 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "ea94297a-df50-43cb-a126-a808caa355fa",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of luna moth wings, pale mint cream upper wings with mauve eye spots and long elegant pale mint lower wing tails, a tiny emerald central back clasp, no insect body",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabLunaMoth.png",
+    "selectedDirection": "south-west",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        48,
+        40
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "The object model interprets the moth orientation differently; this view has the broad near wing on image left."
+  },
+  {
+    "id": "PixelLabVerdantWings",
+    "label": "세계수 잎사귀 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "6605f367-f898-4bf3-a882-05401aede543",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of lush emerald leaf wings, layered long leaves with lime highlights and golden vine veins, a tiny wood and green gem central back clasp",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabVerdantWings.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        54,
+        51
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  },
+  {
+    "id": "PixelLabRunePaper",
+    "label": "룬 종이 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "36980341-a914-4bae-91ac-cb1ea9f3166f",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of folded parchment wings, ivory origami feather panels with a few violet runic markings and dark plum edges, a tiny amethyst central back clasp",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabRunePaper.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        51,
+        40
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  },
+  {
+    "id": "PixelLabAstralWings",
+    "label": "성운 별빛 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "e9ed9e16-ea9d-4bc1-ab18-a7aa00d285a7",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of celestial feather wings, deep indigo and violet feathers with tiny cyan and white stars and bright pink nebula clusters, a tiny silver central back clasp, no background stars outside wings",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabAstralWings.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        66,
+        61
+      ],
+      "target": [
+        33,
+        47
+      ]
+    },
+    "selectionNote": "The south-east rotation was still too symmetrical. Final pro edit redraws a broad near-left feather fan and a narrow far-right wing with a right-offset root.",
+    "finalEdit": {
+      "tool": "edit_image",
+      "jobId": "1f82057e-4057-47a3-b2f7-bea67e1e9ec1",
+      "request": {
+        "description": "Change the camera angle to a clearly oblique three-quarter front view, as if the wearer is standing diagonally facing viewer-right. Spread wings only without any person. Near wing on image LEFT must sweep down and left in a broad fan. Far wing on image RIGHT must be visibly narrower and extend higher, strongly foreshortened. Move the small back clasp to the RIGHT of the canvas center. Retain both wings clearly separated by an open U shaped gap above the clasp. Keep this indigo violet cosmic feather design and cyan white star markings. Crisp native pixel art and transparent background. Not a frontal symmetrical emblem; not merely a 2D rotation.",
+        "no_background": true
+      }
+    }
+  },
+  {
+    "id": "PixelLabBoneWings",
+    "label": "망령 뼈 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "0a4fe74d-9786-41a6-8088-0a381d55bca7",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of skeletal dragon wings, curved ivory bone spars with torn pale turquoise ghost membranes, dark blue contours and a tiny silver central back clasp, no skull and no creature",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabBoneWings.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        48,
+        40
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  },
+  {
+    "id": "PixelLabPeacockWings",
+    "label": "공작 비취 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "b404529d-ec35-436d-8efb-7d6c22790f03",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of luxurious peacock feather wings, long teal and emerald feather fans with sapphire blue and gold eye patterns, tiny gold central back clasp, no bird body and no tail fan",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabPeacockWings.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        51,
+        64
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  },
+  {
+    "id": "PixelLabClockworkWings",
+    "label": "시계장치 대형 날개",
+    "service": "PixelLab MCP",
+    "tool": "create_8_direction_object",
+    "objectId": "7918bbe0-326b-4004-9cfb-b36be059de1d",
+    "request": {
+      "description": "Wearable pair of spread wings attached to a tiny back clasp. No character. a grand pair of intricate clockwork wings, long articulated copper bronze metal feather blades with teal enamel plates and tiny visible cog joints, a tiny brass central back clasp, no jetpack or vehicle",
+      "view": "low top-down"
+    },
+    "reference": "archive-frontal-v3/PixelLabClockworkWings.png",
+    "selectedDirection": "south-east",
+    "static": true,
+    "scale": 1,
+    "layout": {
+      "anchor": [
+        62,
+        57
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "selectionNote": "Selected oblique view with visible foreshortening and unequal wing elevations."
+  }
+]

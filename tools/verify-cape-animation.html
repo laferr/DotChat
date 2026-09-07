@@ -1,0 +1,55 @@
+<!doctype html><html><meta charset="utf-8"><title>Cape animation verification</title>
+<pre id="result">Running compositor checks…</pre>
+<script src="/packages/client/dist/renderer/composer.js"></script><script>
+(async()=>{
+ const result=document.querySelector('#result'),lines=[];
+ const assert=(condition,message)=>{if(!condition)throw Error(message)};
+ const composer=new PartComposer((layer,name)=>new Promise(resolve=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>resolve(null);image.src=`/assets/pixelheroes/${layer}/${name}.png`}));
+ const designs=(await Promise.all(['/tools/cape-designs-v2.json','/tools/cape-designs-v3.json'].map(url=>fetch(url).then(r=>r.json())))).flat();
+ const layouts=await fetch('/tools/cape-layout.json').then(r=>r.json());
+ const manifest=await fetch('/assets/pixelheroes/manifest.json').then(r=>r.json());
+ assert(!manifest.layers.Cape.includes('PixelLabRoyal')&&!manifest.layers.Cape.includes('PixelLabOctoArms'),'retired capes remain registered');
+ const pixels=canvas=>canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+ const bodyPixels=canvas=>canvas.getContext('2d').getImageData(phBodyOffset(canvas),phBodyOffset(canvas),64,64).data;
+ const identical=(a,b)=>a.length===b.length&&a.every((value,index)=>value===b[index]);
+ for(const race of ['Human','Orc']){
+  const appearance={race:{name:race},hair:{name:'Hair1'},armor:{name:'TravelerTunic'}},base=await composer.compose(appearance);
+  for(const design of designs){
+   const frames=await composer.compose({...appearance,cape:{name:design.id}});
+   assert(frames,design.id+' compose returned null');
+   assert(frames.idle[0].width===(layouts[design.id].cell||128),design.id+' did not preserve large canvas');
+   assert(identical(pixels(phMakeFace(frames.idle[0])),pixels(phMakeFace(base.idle[0]))),design.id+' altered face avatar');
+   assert(!identical(pixels(frames.idle[0]),pixels(base.idle[0])),design.id+' is invisible');
+   if(design.animated){
+    assert(frames.idle.length===40&&frames.run.length===20&&frames.idleFps===8,design.id+' animation timing');
+    assert(!identical(pixels(frames.idle[0]),pixels(frames.idle[1])),design.id+' first frames do not move');
+    for(let i=0;i<40;i++){
+     const body=bodyPixels(base.idle[Math.floor(i/5)%2]),wearing=bodyPixels(frames.idle[i]);
+     for(let p=0;p<body.length;p+=4)if(body[p+3]===255)assert(body.slice(p,p+4).every((value,c)=>value===wearing[p+c]),design.id+' changed foreground body pixels');
+    }
+    for(let i=0;i<20;i++){
+     const body=bodyPixels(base.run[i%4]),wearing=bodyPixels(frames.run[i]);
+     for(let p=0;p<body.length;p+=4)if(body[p+3]===255)assert(body.slice(p,p+4).every((value,c)=>value===wearing[p+c]),design.id+' changed run pose');
+    }
+   }else assert(frames.idle.length===2&&frames.run.length===4&&!frames.idleFps,design.id+' changed static timing');
+   if(design.sourceFrame===0||design.id==='PixelLabAstralWings'){
+    const a=pixels(frames.idle[0]),b=pixels(frames.idle[1]),bodyA=bodyPixels(base.idle[0]),bodyB=bodyPixels(base.idle[1]);
+    const cell=frames.idle[0].width,offset=phBodyOffset(frames.idle[0]);
+    for(let y=0;y<cell;y++)for(let x=0;x<cell;x++){
+     const bodyIndex=((y-offset)*64+x-offset)*4,inside=x>=offset&&x<offset+64&&y>=offset&&y<offset+64;
+     if(inside&&(bodyA[bodyIndex+3]||bodyB[bodyIndex+3]))continue;
+     const p=(y*cell+x)*4;
+     assert(a.slice(p,p+4).every((v,c)=>v===b[p+c]),design.id+' accessory moves during idle');
+    }
+    const tinted=await composer.compose({...appearance,cape:{name:design.id,h:110,s:35,v:20}});
+    assert(tinted.idle.length===2&&!tinted.idleFps,design.id+' HSV enabled animation');
+   }
+   for(const [action,sequence]of Object.entries(base.anims))assert(sequence.length===frames.anims[action].length,design.id+' changed action duration '+action);
+   lines.push('PASS '+race+' / '+design.id);
+  }
+ }
+ const legacy=await composer.compose({race:{name:'Human'},cape:{name:'PixelLabAngel'}});
+ assert(legacy.idle.length===2&&!legacy.idleFps,'legacy cape regression');
+ result.textContent=lines.join('\n')+'\nPASS legacy cape\nCAPE_ANIMATION_OK';
+})().catch(error=>document.querySelector('#result').textContent='CAPE_ANIMATION_FAIL: '+error.stack);
+</script></html>

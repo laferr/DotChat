@@ -1,0 +1,139 @@
+[
+  {
+    "id": "PixelLabObsidianWings",
+    "service": "PixelLab MCP",
+    "tool": "edit_image",
+    "jobId": "8eac6a32-d9dd-4ab5-be7e-655fe8317cda",
+    "frameIndex": 0,
+    "request": {
+      "description": "Reduce the excessive three-quarter turn of these wearable wing accessories. Redraw at a very gentle 15 degree front-right yaw for a character standing only slightly diagonally. Both wings should remain broadly visible, with only mild perspective: the far right wing about 90 percent the apparent width of the near left wing. Keep their upper tips almost level, at most 3 pixels height difference. Do not roll or tilt the entire pair in the image plane. Preserve a tiny connected central back clasp and the same design, colors and native pixel-art detail. Wings only, no character, transparent background, one static pose. Aim for subtle asymmetry, between frontal symmetry and the current exaggerated turn.",
+      "no_background": true
+    },
+    "reference": "archive-oblique-v3/PixelLabObsidianWings.png",
+    "layout": {
+      "anchor": [
+        49,
+        44
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "static": true,
+    "scale": 1
+  },
+  {
+    "id": "PixelLabBoneWings",
+    "service": "PixelLab MCP",
+    "tool": "edit_image",
+    "jobId": "8eac6a32-d9dd-4ab5-be7e-655fe8317cda",
+    "frameIndex": 1,
+    "request": {
+      "description": "Reduce the excessive three-quarter turn of these wearable wing accessories. Redraw at a very gentle 15 degree front-right yaw for a character standing only slightly diagonally. Both wings should remain broadly visible, with only mild perspective: the far right wing about 90 percent the apparent width of the near left wing. Keep their upper tips almost level, at most 3 pixels height difference. Do not roll or tilt the entire pair in the image plane. Preserve a tiny connected central back clasp and the same design, colors and native pixel-art detail. Wings only, no character, transparent background, one static pose. Aim for subtle asymmetry, between frontal symmetry and the current exaggerated turn.",
+      "no_background": true
+    },
+    "reference": "archive-oblique-v3/PixelLabBoneWings.png",
+    "layout": {
+      "anchor": [
+        57,
+        46
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "static": true,
+    "scale": 1
+  },
+  {
+    "id": "PixelLabPeacockWings",
+    "service": "PixelLab MCP",
+    "tool": "edit_image",
+    "jobId": "8eac6a32-d9dd-4ab5-be7e-655fe8317cda",
+    "frameIndex": 2,
+    "request": {
+      "description": "Reduce the excessive three-quarter turn of these wearable wing accessories. Redraw at a very gentle 15 degree front-right yaw for a character standing only slightly diagonally. Both wings should remain broadly visible, with only mild perspective: the far right wing about 90 percent the apparent width of the near left wing. Keep their upper tips almost level, at most 3 pixels height difference. Do not roll or tilt the entire pair in the image plane. Preserve a tiny connected central back clasp and the same design, colors and native pixel-art detail. Wings only, no character, transparent background, one static pose. Aim for subtle asymmetry, between frontal symmetry and the current exaggerated turn.",
+      "no_background": true
+    },
+    "reference": "archive-oblique-v3/PixelLabPeacockWings.png",
+    "layout": {
+      "anchor": [
+        52,
+        64
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "static": true,
+    "scale": 1
+  },
+  {
+    "id": "PixelLabLunaMoth",
+    "service": "PixelLab MCP",
+    "tool": "edit_image",
+    "jobId": "8eac6a32-d9dd-4ab5-be7e-655fe8317cda",
+    "frameIndex": 3,
+    "request": {
+      "description": "Reduce the excessive three-quarter turn of these wearable wing accessories. Redraw at a very gentle 15 degree front-right yaw for a character standing only slightly diagonally. Both wings should remain broadly visible, with only mild perspective: the far right wing about 90 percent the apparent width of the near left wing. Keep their upper tips almost level, at most 3 pixels height difference. Do not roll or tilt the entire pair in the image plane. Preserve a tiny connected central back clasp and the same design, colors and native pixel-art detail. Wings only, no character, transparent background, one static pose. Aim for subtle asymmetry, between frontal symmetry and the current exaggerated turn.",
+      "no_background": true
+    },
+    "reference": "archive-oblique-v3/PixelLabLunaMoth.png",
+    "layout": {
+      "anchor": [
+        48,
+        43
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "static": true,
+    "scale": 1
+  },
+  {
+    "id": "PixelLabRunePaper",
+    "service": "PixelLab MCP",
+    "tool": "edit_image",
+    "jobId": "62538226-b676-4337-aaaa-98bc891bbdce",
+    "frameIndex": 0,
+    "request": {
+      "description": "Keep the wings upright with both upper tips at almost the same height. Add only a slight 15 degree turn toward viewer-right: left wing gently broader, right wing only slightly narrower. The pair must still be wide open, with the back clasp under the center gap. No diagonal leaning or banking, no side view, no strong foreshortening. Preserve the parchment wing design and violet runes, same pixel scale, transparent background, no character.",
+      "no_background": true
+    },
+    "reference": "archive-frontal-v3/PixelLabRunePaper.png",
+    "layout": {
+      "anchor": [
+        48,
+        39
+      ],
+      "target": [
+        32,
+        47
+      ]
+    },
+    "static": true,
+    "scale": 1
+  },
+  {
+    "id": "PixelLabAstralWings",
+    "change": "Translate the existing sprite five native pixels left; add cell padding to avoid clipping. Artwork unchanged.",
+    "layout": {
+      "anchor": [
+        66,
+        61
+      ],
+      "target": [
+        28,
+        47
+      ],
+      "cell": 144
+    },
+    "static": true,
+    "scale": 1
+  }
+]

@@ -1,0 +1,113 @@
+[
+  {
+    "id": "PixelLabSolarHalo",
+    "label": "태양 후광",
+    "category": "후광",
+    "width": 29,
+    "height": 29,
+    "top": 23,
+    "theme": "a floating ornate golden solar halo behind the wearer's head and shoulders, tilted elliptical golden sun ring with short tapered sun rays and warm amber glow, open hollow center, sacred sun disk, viewed obliquely at a three-quarter angle"
+  },
+  {
+    "id": "PixelLabLunarHalo",
+    "label": "초승달 후광",
+    "category": "후광",
+    "width": 30,
+    "height": 29,
+    "top": 23,
+    "theme": "an elegant floating crescent moon halo behind the wearer's head, large luminous ivory blue crescent curving up from the left, three small lavender orbiting stars to the right, asymmetric crescent silhouette, open hollow center, tilted three-quarter angle"
+  },
+  {
+    "id": "PixelLabArcaneHalo",
+    "label": "마법진 후광",
+    "category": "후광",
+    "width": 31,
+    "height": 29,
+    "top": 24,
+    "theme": "a hovering arcane violet magic halo behind the wearer's upper body, two thin intersecting tilted elliptical rings with cyan rune marks and a few pink crystal nodes, asymmetrical orbital arrangement with a clear hollow center"
+  },
+  {
+    "id": "PixelLabVectorJet",
+    "label": "벡터 제트팩",
+    "category": "기계",
+    "width": 30,
+    "height": 25,
+    "top": 32,
+    "theme": "a compact white titanium science fiction jetpack with two swept mechanical fins and short cyan exhaust flames, the nearer left thruster and left wing visibly larger, right thruster partly hidden by central pack, diagonal three-quarter perspective, angular white armor and dark navy joints"
+  },
+  {
+    "id": "PixelLabCrimsonDrive",
+    "label": "크림슨 드라이브",
+    "category": "기계",
+    "width": 34,
+    "height": 26,
+    "top": 30,
+    "theme": "a dark gunmetal and crimson robotic wing backpack, angular segmented red armor blades swept diagonally upward, bright orange miniature thruster ports, asymmetrical three-quarter view, nearer left wing spread wide and larger, farther right wing noticeably foreshortened"
+  },
+  {
+    "id": "PixelLabOrbitalDrones",
+    "label": "오비탈 드론",
+    "category": "기계",
+    "width": 35,
+    "height": 25,
+    "top": 30,
+    "theme": "a floating robotic backpack accessory with three small detached white and teal guardian drones orbiting a compact central reactor, asymmetric arrangement, largest drone low on left, two smaller drones high on right, three-quarter perspective, dark outlines and green sensor lights"
+  },
+  {
+    "id": "PixelLabBrassThruster",
+    "label": "황동 비행장치",
+    "category": "기계",
+    "width": 33,
+    "height": 25,
+    "top": 32,
+    "theme": "a steampunk brass winged jetpack, asymmetrical copper mechanical feather fins, round teal turbine and short pale blue exhaust, left wing nearer and larger, right wing foreshortened, three-quarter front-right oblique perspective, compact brown leather central backpack"
+  },
+  {
+    "id": "PixelLabRavenAnimated",
+    "label": "까마귀 날개",
+    "category": "날개",
+    "width": 35,
+    "height": 29,
+    "top": 29,
+    "theme": "a pair of midnight raven feather wings attached to a tiny dark back clasp, blue violet highlights on black feathers, seen from an oblique three-quarter front-right angle, nearer left wing spread wider and slightly lower, farther right wing foreshortened and higher, elegant staggered feather silhouette",
+    "sourceFrame": 0
+  },
+  {
+    "id": "PixelLabDragonAnimated",
+    "label": "용 날개",
+    "category": "날개",
+    "width": 36,
+    "height": 28,
+    "top": 30,
+    "theme": "a pair of emerald dragon membrane wings attached to a small bronze back clasp, jade green wing membranes and gold brown wing bones, three-quarter front-right angle, nearer left wing larger and swept outward, farther right wing visibly smaller and slightly raised, asymmetric perspective",
+    "sourceFrame": 0
+  },
+  {
+    "id": "PixelLabSeraphAnimated",
+    "label": "빛의 날개",
+    "category": "날개",
+    "width": 35,
+    "height": 29,
+    "top": 28,
+    "theme": "a pair of luminous cyan and ivory angel energy wings attached to a tiny golden back clasp, geometric feather blades with warm gold edges, oblique three-quarter front-right perspective, nearer left wing bigger and spread low, farther right wing shorter and tilted up, asymmetric luminous silhouette",
+    "sourceFrame": 0
+  },
+  {
+    "id": "PixelLabStoneArms",
+    "label": "고대 석상 팔",
+    "category": "다중팔",
+    "width": 40,
+    "height": 32,
+    "top": 27,
+    "theme": "Zakum from MapleStory inspired back accessory with exactly six massive floating ancient stone arms arranged around an empty central space, weathered sandstone blocky fists, carved turquoise glowing runes, gold wrist bands, three arms on each side at staggered heights, NO central statue, NO head, NO face, NO body, accessory arms only, three-quarter front-right oblique perspective with nearer left arms larger than the far right arms"
+  },
+  {
+    "id": "PixelLabAsuraArms",
+    "label": "아수라의 팔",
+    "category": "다중팔",
+    "width": 38,
+    "height": 32,
+    "top": 26,
+    "theme": "Asura inspired divine back accessory, exactly six spectral bronze-gold muscular arms fanning behind an empty central space, ornate golden bracelets and deep red sacred ribbons, hands in different martial mudra poses with open palms and clenched fists, no head, no face, no torso, only the six additional arms joined to a tiny back clasp, three-quarter front-right perspective, staggered asymmetric arm poses and foreshortened farther right arms"
+  }
+]

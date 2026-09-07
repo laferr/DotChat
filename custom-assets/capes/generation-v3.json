@@ -1,0 +1,322 @@
+[
+  {
+    "id": "PixelLabSunPhoenix",
+    "label": "태양 불사조 날개",
+    "theme": "a grand pair of phoenix feather wings, ivory and rich gold layered plumage with bright orange feather tips, a tiny gold central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "ff6b27f9-8db5-4cb9-af86-d8af240fbe23",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of phoenix feather wings, ivory and rich gold layered plumage with bright orange feather tips, a tiny gold central back clasp. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        56
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabObsidianWings",
+    "label": "흑요석 날개",
+    "theme": "a grand pair of angular obsidian crystal wings, dark purple black shard feathers with sharp magenta crystal edges and violet highlights, a tiny purple central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "1219a467-deca-4b50-84eb-9cc8a07bb990",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of angular obsidian crystal wings, dark purple black shard feathers with sharp magenta crystal edges and violet highlights, a tiny purple central back clasp. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        44
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabOceanWings",
+    "label": "심해 유리 날개",
+    "theme": "a grand pair of translucent-looking ocean blue glass fin wings, teal segmented fins with pale cyan rims and little pearl ornaments, solid readable pixel colors, a tiny pearl central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "2c11549e-5a79-4d1a-bd7e-a45cc3fd5d08",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of translucent-looking ocean blue glass fin wings, teal segmented fins with pale cyan rims and little pearl ornaments, solid readable pixel colors, a tiny pearl central back clasp. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        55
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabLunaMoth",
+    "label": "달빛 나방 날개",
+    "theme": "a grand pair of luna moth wings, pale mint cream upper wings with mauve eye spots and long elegant pale mint lower wing tails, a tiny emerald central back clasp, no insect body",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "02e655ad-320d-4050-8204-2670b513460c",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of luna moth wings, pale mint cream upper wings with mauve eye spots and long elegant pale mint lower wing tails, a tiny emerald central back clasp, no insect body. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        40
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabVerdantWings",
+    "label": "세계수 잎사귀 날개",
+    "theme": "a grand pair of lush emerald leaf wings, layered long leaves with lime highlights and golden vine veins, a tiny wood and green gem central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "d9e223c1-441f-4f03-ab7f-896bc7b45565",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of lush emerald leaf wings, layered long leaves with lime highlights and golden vine veins, a tiny wood and green gem central back clasp. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        48
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabRunePaper",
+    "label": "룬 종이 날개",
+    "theme": "a grand pair of folded parchment wings, ivory origami feather panels with a few violet runic markings and dark plum edges, a tiny amethyst central back clasp",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "057df677-10ba-4d6e-8cf6-8f5f39bc0042",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of folded parchment wings, ivory origami feather panels with a few violet runic markings and dark plum edges, a tiny amethyst central back clasp. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        42
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabAstralWings",
+    "label": "성운 별빛 날개",
+    "theme": "a grand pair of celestial feather wings, deep indigo and violet feathers with tiny cyan and white stars and bright pink nebula clusters, a tiny silver central back clasp, no background stars outside wings",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "50267fdc-97d0-4680-9dbb-0a6e8c5f6cad",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of celestial feather wings, deep indigo and violet feathers with tiny cyan and white stars and bright pink nebula clusters, a tiny silver central back clasp, no background stars outside wings. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        68
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabBoneWings",
+    "label": "망령 뼈 날개",
+    "theme": "a grand pair of skeletal dragon wings, curved ivory bone spars with torn pale turquoise ghost membranes, dark blue contours and a tiny silver central back clasp, no skull and no creature",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "0eb52e1d-2460-42d3-afb7-5321da138014",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of skeletal dragon wings, curved ivory bone spars with torn pale turquoise ghost membranes, dark blue contours and a tiny silver central back clasp, no skull and no creature. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        38
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabPeacockWings",
+    "label": "공작 비취 날개",
+    "theme": "a grand pair of luxurious peacock feather wings, long teal and emerald feather fans with sapphire blue and gold eye patterns, tiny gold central back clasp, no bird body and no tail fan",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "f84e6fde-2348-4d1f-9482-39f723509b14",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of luxurious peacock feather wings, long teal and emerald feather fans with sapphire blue and gold eye patterns, tiny gold central back clasp, no bird body and no tail fan. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        55
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  },
+  {
+    "id": "PixelLabClockworkWings",
+    "label": "시계장치 대형 날개",
+    "theme": "a grand pair of intricate clockwork wings, long articulated copper bronze metal feather blades with teal enamel plates and tiny visible cog joints, a tiny brass central back clasp, no jetpack or vehicle",
+    "category": "날개",
+    "batch": 3,
+    "width": 36,
+    "height": 28,
+    "top": 29,
+    "service": "PixelLab MCP",
+    "tool": "create_map_object",
+    "objectId": "b5d4dfbc-d481-4006-a501-26f07fbc31cb",
+    "request": {
+      "view": "side",
+      "description": "a grand pair of intricate clockwork wings, long articulated copper bronze metal feather blades with teal enamel plates and tiny visible cog joints, a tiny brass central back clasp, no jetpack or vehicle. Exactly two LARGE WINGS only, standalone wearable back accessory, no character, no person, no head, no torso, no mannequin. Oblique three-quarter front-right view for a character looking slightly right. Near left wing broader and lower, far right wing narrower and slightly higher: clear foreshortening, not mirror symmetry. Wings spread broadly diagonally up and outward, connected at one small central clasp near lower middle. Leave an open U shaped space above the clasp for a separate character head. Entire silhouette inside canvas with 5 pixel padding, fixed centered composition. Crisp low resolution fantasy RPG pixel art, chunky readable pixel clusters, limited palette, single dark pixel outline, basic shading, no anti-aliasing, no smooth gradients. Transparent background. One static pose, no animation, no ground shadow.",
+      "shading": "basic shading",
+      "outline": "single color outline",
+      "detail": "medium detail",
+      "width": 96,
+      "height": 96
+    },
+    "layout": {
+      "anchor": [
+        48,
+        54
+      ],
+      "target": [
+        32,
+        47
+      ]
+    }
+  }
+]

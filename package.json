@@ -6,6 +6,8 @@
     "packages/*"
   ],
   "scripts": {
+    "capes:import": "python tools/import-generated-capes.py",
+    "capes:preview": "npm run build -w @dotchat/client && npm run capes:import && node tools/cape-harness.mjs && node tools/serve.mjs",
     "build": "npm run build -w @dotchat/shared && npm run build -w @dotchat/client && npm run build -w @dotchat/server",
     "dev": "npm run build && npm run start -w @dotchat/client",
     "start": "npm run start -w @dotchat/client",

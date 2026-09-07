@@ -608,7 +608,7 @@ function battleFrame(actor: Actor): HTMLCanvasElement | null {
   const attackDur = anim.length / fps;
   const t = actor.animClock % (attackDur + 0.5);
   if (t < attackDur) return anim[Math.min(anim.length - 1, Math.floor(t * fps))];
-  return frames.idle[Math.floor(actor.animClock * IDLE_FPS) % frames.idle.length];
+  return frames.idle[Math.floor(actor.animClock * (frames.idleFps ?? IDLE_FPS)) % frames.idle.length];
 }
 
 // ---- 그리기 ----
@@ -644,7 +644,7 @@ function currentFrame(actor: Actor): HTMLCanvasElement | null {
     const idx = Math.floor(actor.animClock * RUN_FPS) % actor.frames.run.length;
     return actor.frames.run[idx];
   }
-  const idx = Math.floor(actor.animClock * IDLE_FPS) % actor.frames.idle.length;
+  const idx = Math.floor(actor.animClock * (actor.frames.idleFps ?? IDLE_FPS)) % actor.frames.idle.length;
   return actor.frames.idle[idx];
 }
 
@@ -892,8 +892,8 @@ function drawActor(actor: Actor, now: number): void {
   if (!frame) return;
   drawPet(actor, now); // 펫은 캐릭터 뒤 레이어 (지나칠 때 자연스럽게 겹침)
   drawAura(actor, now);
-  const size = PH_CELL * viewScale;
-  const top = cellTop(actor);
+  const size = frame.width * viewScale;
+  const top = cellTop(actor) - phBodyOffset(frame) * viewScale;
   const left = Math.round(actor.x - size / 2);
 
   // 발밑 그림자

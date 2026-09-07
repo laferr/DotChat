@@ -1,0 +1,27 @@
+[
+  {
+    "id": "PixelLabAngel",
+    "label": "천사깃털",
+    "theme": "a pair of broad ivory white angel feather wings, layered feathers, pale blue shadows, warm gold shoulder clasp"
+  },
+  {
+    "id": "PixelLabBat",
+    "label": "밤의 박쥐",
+    "theme": "a pair of wide dark violet bat wings, scalloped purple membranes, dark charcoal wing bones, tiny ruby clasp"
+  },
+  {
+    "id": "PixelLabButterfly",
+    "label": "오로라 나비",
+    "theme": "a pair of broad butterfly fairy wings, turquoise and pink violet sections, dark purple borders, elegant rounded upper wings and short lower wings"
+  },
+  {
+    "id": "PixelLabFlame",
+    "label": "불사조 불꽃",
+    "theme": "a pair of wide phoenix flame wings, sweeping orange and scarlet flame feathers, golden yellow tips, angular flame silhouette"
+  },
+  {
+    "id": "PixelLabFrost",
+    "label": "서리결정",
+    "theme": "a pair of broad ice crystal wings, icy cyan and pale blue faceted crystal shards fanning sideways, white highlights, navy edges"
+  }
+]

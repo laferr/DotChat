@@ -1301,6 +1301,16 @@
         gap: 4px;
         padding: 0 12px 8px;
       }
+      #appearance-preview { margin: 0 12px 10px; flex-shrink: 0; }
+      #appearance-preview summary { cursor: pointer; color: var(--nick); font-size: 12px; padding: 5px 0; }
+      .appearance-preview-controls { display: flex; align-items: center; gap: 12px; margin: 5px 0 8px; font-size: 11px; color: var(--text-dim); }
+      .appearance-preview-controls select { background: var(--bg); color: var(--text); border: 1px solid var(--header); border-radius: 5px; padding: 3px; }
+      #appearance-preview-stage { height: 220px; overflow: auto; border: 1px solid var(--header); border-radius: 8px; background: var(--bg); }
+      #appearance-preview-content { min-width: 100%; min-height: 100%; width: max-content; display: grid; place-items: center; }
+      #appearance-preview-canvas { display: block; image-rendering: pixelated; }
+      #appearance-preview-status { color: var(--text-dim); font-size: 10px; margin: 5px 0 0; }
+      #appearance-panel #char-grid { min-height: 80px; }
+      #appearance-panel { overflow-y: auto; }
       .slot-tab {
         border: 1px solid var(--header);
         background: var(--bg);
@@ -2402,6 +2412,15 @@
         <span>외모 변경 <span id="owned-count"></span></span>
         <button id="panel-close">✕</button>
       </div>
+      <details id="appearance-preview" open>
+        <summary>현재 착용 모습</summary>
+        <div class="appearance-preview-controls">
+          <label>확대 <select id="appearance-preview-zoom"><option value="auto">자동</option><option value="2">2배</option><option value="4">4배</option></select></label>
+          <label><input type="checkbox" id="appearance-preview-mirror" /> 좌우 반전</label>
+        </div>
+        <div id="appearance-preview-stage"><div id="appearance-preview-content"><canvas id="appearance-preview-canvas" width="1" height="1" role="img" aria-label="현재 착용한 장비의 전체 모습"></canvas></div></div>
+        <p id="appearance-preview-status" role="status">착용 모습 불러오는 중…</p>
+      </details>
       <div id="slot-tabs"></div>
       <div id="hsv-controls">
         <label>색조 <input id="hsv-h" type="range" min="-180" max="180" step="5" /></label>

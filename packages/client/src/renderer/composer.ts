@@ -34,6 +34,8 @@ interface Appearance {
 interface ComposedFrames {
   idle: HTMLCanvasElement[];
   run: HTMLCanvasElement[];
+  /** Animated accessories may sample faster while repeating the original body poses. */
+  idleFps?: number;
   /** 액션 애니메이션 (slash/jab/shot/block/roll/jump/death/crawl/ready) */
   anims: Record<string, HTMLCanvasElement[]>;
 }
@@ -720,7 +722,15 @@ function phAdjustPixels(data: Uint8ClampedArray, hue: number, sat: number, val: 
 }
 
 // 프레임에서 캐릭터가 실제로 시작되는 최상단을 찾아 얼굴 32x32 크롭 (아바타/트레이 공용)
+const phBodyFrames = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+
+/** Original 64px body cell within an expanded accessory frame. */
+function phBodyOffset(frame: HTMLCanvasElement): number {
+  return (frame.width - PH_CELL) / 2;
+}
+
 function phMakeFace(frame: HTMLCanvasElement): HTMLCanvasElement {
+  frame = phBodyFrames.get(frame) ?? frame;
   const ctx = frame.getContext('2d')!;
   const data = ctx.getImageData(0, 0, frame.width, frame.height).data;
   let top = 0;
@@ -767,6 +777,10 @@ class PartComposer {
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           phAdjustPixels(imageData.data, h, s, v);
           ctx.putImageData(imageData, 0, 0);
+          // Atlas metadata is not artwork; HSV must not turn a static cape into an animation.
+          if ([128, 144].some(cell => img.width === cell * 8 && img.height === 992 + cell)) {
+            ctx.drawImage(img, 0, 960, 1, 1, 0, 960, 1, 1);
+          }
         }
         return canvas;
       });
@@ -815,10 +829,26 @@ class PartComposer {
 
     const headSheet = await this.tintedSheet('Head', { ...race });
     const sheets: HTMLCanvasElement[] = [];
+    // Generated animated capes append eight 64px frames at y=928.
+    // Keep the regular sheet rows as a static fallback for older clients.
+    let animatedCape: HTMLCanvasElement | null = null;
+    let wideCape: HTMLCanvasElement | null = null;
+    let wideCapeAnimated = false;
+    let wideCapeCell = 128;
     for (const [layer, choice, clipToHead] of plan) {
       if (!choice?.name) continue;
       let sheet = await this.tintedSheet(layer, choice);
       if (!sheet) continue; // Bracers/Ears 등 파일 없는 조합은 생략
+      if (layer === 'Cape' && choice.name.startsWith('PixelLab') && [128, 144].includes(sheet.height - 992) && sheet.width === (sheet.height - 992) * 8) {
+        wideCape = sheet;
+        wideCapeCell = sheet.height - 992;
+        wideCapeAnimated = sheet.getContext('2d')!.getImageData(0, 960, 1, 1).data[0] === 8;
+        continue;
+      }
+      if (layer === 'Cape' && choice.name.endsWith('Animated') && sheet.height === 992 && sheet.width === 576) {
+        animatedCape = sheet;
+        continue;
+      }
       if (clipToHead && headSheet) {
         // 헬멧 착용 시 머리카락을 머리 영역으로 클리핑 (삐져나옴 방지)
         const clipped = document.createElement('canvas');
@@ -834,11 +864,36 @@ class PartComposer {
     }
     if (sheets.length === 0) return null;
 
-    const buildFrame = (fx: number, fy: number): HTMLCanvasElement => {
+    const bodyCache = new Map<string, HTMLCanvasElement>();
+    const hasCapeAnimation = !!animatedCape || wideCapeAnimated;
+    const buildFrame = (fx: number, fy: number, capeFrame = 0): HTMLCanvasElement => {
+      if (wideCape) {
+        const key = `${fx}/${fy}`;
+        let body = bodyCache.get(key);
+        if (!body) {
+          body = document.createElement('canvas');
+          body.width = body.height = PH_CELL;
+          const ctx = body.getContext('2d')!;
+          for (const sheet of sheets) ctx.drawImage(sheet, fx, fy, PH_CELL, PH_CELL, 0, 0, PH_CELL, PH_CELL);
+          bodyCache.set(key, body);
+        }
+        const frame = document.createElement('canvas');
+        frame.width = frame.height = wideCapeCell;
+        const ctx = frame.getContext('2d')!;
+        const index = wideCapeAnimated ? capeFrame % 8 : 0;
+        ctx.drawImage(wideCape, index * wideCapeCell, 992, wideCapeCell, wideCapeCell, 0, 0, wideCapeCell, wideCapeCell);
+        const bodyOffset = (wideCapeCell - PH_CELL) / 2;
+        ctx.drawImage(body, bodyOffset, bodyOffset);
+        phBodyFrames.set(frame, body);
+        return frame;
+      }
       const frame = document.createElement('canvas');
       frame.width = PH_CELL;
       frame.height = PH_CELL;
       const fctx = frame.getContext('2d')!;
+      if (animatedCape) {
+        fctx.drawImage(animatedCape, (capeFrame % 8) * PH_CELL, 928, PH_CELL, PH_CELL, 0, 0, PH_CELL, PH_CELL);
+      }
       for (const sheet of sheets) {
         fctx.drawImage(sheet, fx, fy, PH_CELL, PH_CELL, 0, 0, PH_CELL, PH_CELL);
       }
@@ -847,12 +902,21 @@ class PartComposer {
 
     const anims: Record<string, HTMLCanvasElement[]> = {};
     for (const [id, row] of Object.entries(PH_ACTION_ROWS)) {
-      anims[id] = Array.from({ length: row.count }, (_v, i) => buildFrame(i * PH_CELL, row.y));
+      anims[id] = Array.from({ length: row.count }, (_v, i) => buildFrame(i * PH_CELL, row.y, i));
     }
 
     return {
-      idle: PH_FRAMES.idle.map((f) => buildFrame(f.x, f.y)),
-      run: PH_FRAMES.run.map((f) => buildFrame(f.x, f.y)),
+      // 40 ticks at 8fps preserve the body's 1.6fps idle and the cape's 8fps loop.
+      idle: hasCapeAnimation ? Array.from({ length: 40 }, (_v, i) => {
+        const f = PH_FRAMES.idle[Math.floor(i / 5) % 2];
+        return buildFrame(f.x, f.y, i);
+      }) : PH_FRAMES.idle.map((f) => buildFrame(f.x, f.y)),
+      // 20 ticks at the normal 10fps run rate cover both repeating cycles.
+      run: hasCapeAnimation ? Array.from({ length: 20 }, (_v, i) => {
+        const f = PH_FRAMES.run[i % 4];
+        return buildFrame(f.x, f.y, Math.floor(i * 8 / 10));
+      }) : PH_FRAMES.run.map((f) => buildFrame(f.x, f.y)),
+      ...(hasCapeAnimation ? { idleFps: 8 } : {}),
       anims,
     };
   }
