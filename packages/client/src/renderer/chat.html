@@ -723,7 +723,17 @@
       .stock-name { flex: 1; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .stock-price { font-weight: 700; white-space: nowrap; }
       .stock-diff { width: 56px; text-align: right; font-size: 11px; white-space: nowrap; }
-      .stock-hold { width: 46px; text-align: right; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+      .stock-hold {
+        width: 76px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        font-size: 10px;
+        line-height: 1.2;
+        color: var(--text-dim);
+        white-space: nowrap;
+      }
+      .stock-mypl { font-weight: 700; }
       .diff-up { color: #ff6b6b; }
       .diff-down { color: #6ec3ff; }
       #stock-detail {
@@ -747,14 +757,17 @@
         color: var(--text-dim);
         display: flex;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 2px 8px;
       }
-      #stock-trade-row {
+      /* 매수/매도 각각 수량칸 + MAX (매수 MAX=잔액·보유한도 기준, 매도 MAX=보유 전량) */
+      .stock-trade-row {
         display: flex;
         gap: 6px;
         align-items: center;
       }
-      #stock-qty {
-        width: 72px;
+      .stock-qty {
+        width: 104px; /* 9자리(999,999,999) + 스피너 */
         border: 1px solid var(--header);
         background: var(--bg-input);
         color: var(--text);
@@ -763,7 +776,7 @@
         font-size: 12px;
         outline: none;
       }
-      #stock-max {
+      .stock-max {
         border: 1px solid var(--header);
         background: var(--bg);
         color: var(--text);
@@ -772,7 +785,7 @@
         font-size: 11px;
         cursor: pointer;
       }
-      #stock-max:hover { border-color: var(--accent); }
+      .stock-max:hover { border-color: var(--accent); }
       #stock-buy, #stock-sell {
         flex: 1;
         border: 0;
@@ -2323,10 +2336,14 @@
           <span id="stock-detail-left"></span>
           <span id="stock-detail-right"></span>
         </div>
-        <div id="stock-trade-row">
-          <input id="stock-qty" type="number" min="1" max="9999" value="1" />
-          <button id="stock-max">MAX</button>
+        <div class="stock-trade-row">
+          <input id="stock-buy-qty" class="stock-qty" type="number" min="1" max="999999999" value="1" />
+          <button id="stock-buy-max" class="stock-max" title="잔액으로 살 수 있는 최대 수량">MAX</button>
           <button id="stock-buy">매수</button>
+        </div>
+        <div class="stock-trade-row">
+          <input id="stock-sell-qty" class="stock-qty" type="number" min="1" max="999999999" value="1" />
+          <button id="stock-sell-max" class="stock-max" title="보유 전량">MAX</button>
           <button id="stock-sell">매도</button>
         </div>
       </div>

@@ -712,7 +712,7 @@ const POPOUT_PANELS: Record<string, { w: number; h: number }> = {
   forge: { w: 340, h: 470 },
   shop: { w: 360, h: 520 },
   slot: { w: 320, h: 420 },
-  stock: { w: 380, h: 520 },
+  stock: { w: 380, h: 560 },
   note: { w: 340, h: 480 },
   battle: { w: 380, h: 640 },
   pet: { w: 380, h: 640 },

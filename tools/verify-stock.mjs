@@ -43,13 +43,18 @@ const emitAck = (socket, event, ...args) =>
     socket.timeout(10000).emit(event, ...args, (err, res) => (err ? reject(err) : resolve(res)));
   });
 
-// 1) 접속 시 시세 스냅샷 (10종목 + nextTickTs)
+// 1) 접속 시 시세 스냅샷 (12종목 + nextTickTs)
+const STOCK_COUNT = 12;
 const a = await connect('주식검증A', '0061'); // 시드: 10000코인 + 봇순이 10주
 if (!(await waitFor(() => a.market !== null, 5000))) fail('stocks 스냅샷 미수신');
-if (a.market.stocks.length !== 10) fail(`종목 수 이상: ${a.market.stocks.length}`);
+if (a.market.stocks.length !== STOCK_COUNT) fail(`종목 수 이상: ${a.market.stocks.length}`);
 if (!Number.isFinite(a.market.nextTickTs)) fail('nextTickTs 없음');
 const airpass0 = a.market.stocks.find((s) => s.id === 'airpass');
-console.log(`  시세 스냅샷 OK (10종목, 에어패스 ${airpass0.price})`);
+// 대형주 2종(슥하이닉스 10000·삼별전자 5000) — 스냅샷 첫 두 자리, 신규 서버면 시작가 그대로
+const [big1, big2] = a.market.stocks;
+if (big1.id !== 'hynix' || big2.id !== 'sambyeol') fail(`대형주 순서 이상: ${big1.id}, ${big2.id}`);
+if (!(big1.price > 0 && big2.price > 0)) fail('대형주 가격 이상');
+console.log(`  시세 스냅샷 OK (${STOCK_COUNT}종목, 슥하이닉스 ${big1.price} · 삼별전자 ${big2.price} · 에어패스 ${airpass0.price})`);
 
 // 2) 매수/매도: 차감·보유·평단
 let res = await emitAck(a.socket, 'stock-buy', 'airpass', 3);
@@ -61,9 +66,14 @@ if (!res.ok || res.holding?.qty !== 1) fail(`매도 이상: ${JSON.stringify(res
 if (!(res.coins > coinsAfterBuy)) fail('매도 후 코인 미증가');
 console.log(`  매수/매도 OK (3주 매수 → 2주 매도, 잔여 1주)`);
 
-// 3) 유효성: 없는 종목/수량 0/보유 초과 매도/잔액 부족
+// 3) 유효성: 없는 종목/수량 0/수량 상한(999,999,999) 초과/보유 초과 매도/잔액 부족
+const QTY_MAX = 999_999_999;
 if ((await emitAck(a.socket, 'stock-buy', 'nope', 1)).ok) fail('없는 종목 매수됨');
 if ((await emitAck(a.socket, 'stock-buy', 'airpass', 0)).ok) fail('수량 0 매수됨');
+if ((await emitAck(a.socket, 'stock-buy', 'botsoon', QTY_MAX + 1)).ok) fail('수량 상한 초과 매수됨');
+// 상한값 자체는 유효한 수량 → 잔액 부족으로만 거절되어야 함 (수량 오류 메시지가 아니어야)
+res = await emitAck(a.socket, 'stock-buy', 'hynix', QTY_MAX);
+if (res.ok || !/코인이 부족/.test(res.error ?? '')) fail(`상한 수량 판정 이상: ${JSON.stringify(res)}`);
 if ((await emitAck(a.socket, 'stock-sell', 'airpass', 99)).ok) fail('보유 초과 매도됨');
 const c = await connect('주식검증C', '0062'); // 신규 10코인
 if ((await emitAck(c.socket, 'stock-buy', 'airpass', 1)).ok) fail('잔액 부족 매수됨');

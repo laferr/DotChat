@@ -1043,8 +1043,11 @@
   const stockChart = document.getElementById('stock-chart') as HTMLCanvasElement;
   const stockDetailLeft = document.getElementById('stock-detail-left')!;
   const stockDetailRight = document.getElementById('stock-detail-right')!;
-  const stockQty = document.getElementById('stock-qty') as HTMLInputElement;
-  const stockMaxBtn = document.getElementById('stock-max') as HTMLButtonElement;
+  // 매수/매도 각각 수량칸 + MAX 버튼 (매수 MAX=잔액·보유한도 기준, 매도 MAX=보유 전량)
+  const stockBuyQty = document.getElementById('stock-buy-qty') as HTMLInputElement;
+  const stockSellQty = document.getElementById('stock-sell-qty') as HTMLInputElement;
+  const stockBuyMaxBtn = document.getElementById('stock-buy-max') as HTMLButtonElement;
+  const stockSellMaxBtn = document.getElementById('stock-sell-max') as HTMLButtonElement;
   const stockBuyBtn = document.getElementById('stock-buy') as HTMLButtonElement;
   const stockSellBtn = document.getElementById('stock-sell') as HTMLButtonElement;
 
@@ -1062,6 +1065,18 @@
 
   const stockDef = (id: string) => STOCK_DEFS.find((d) => d.id === id);
   const marketOf = (id: string) => stockMarket?.stocks.find((s) => s.id === id);
+
+  // 종목별 내 손익 (평단가 대비 평가손익, 상폐 중이면 없음)
+  function holdingPl(id: string): { pl: number; pct: number } | null {
+    const h = myHoldings[id];
+    const m = marketOf(id);
+    if (!h || h.qty <= 0 || !m || m.delistedUntil) return null;
+    const pl = Math.round((m.price - h.avg) * h.qty);
+    const pct = h.avg > 0 ? ((m.price - h.avg) / h.avg) * 100 : 0;
+    return { pl, pct };
+  }
+  const plText = (pl: number) => `${pl >= 0 ? '+' : ''}${pl.toLocaleString()}`;
+  const plCls = (pl: number) => (pl > 0 ? 'diff-up' : pl < 0 ? 'diff-down' : '');
 
   function diffText(s: StockStateLike): { text: string; cls: string } {
     if (s.delistedUntil) return { text: '💀상폐', cls: 'delisted' };
@@ -1096,11 +1111,17 @@
       row.className =
         'stock-row' + (s.id === selectedStock ? ' selected' : '') + (s.delistedUntil ? ' delisted' : '');
       const h = myHoldings[s.id];
+      const p = holdingPl(s.id);
+      const holdHtml =
+        h && h.qty > 0
+          ? `<span>${h.qty.toLocaleString()}주</span>` +
+            (p ? `<span class="stock-mypl ${plCls(p.pl)}">${plText(p.pl)}</span>` : '')
+          : '';
       row.innerHTML =
         `<span class="stock-name">${def.name}</span>` +
         `<span class="stock-price">${s.delistedUntil ? '-' : s.price.toLocaleString()}</span>` +
         `<span class="stock-diff ${d.cls}">${d.text}</span>` +
-        `<span class="stock-hold">${h && h.qty > 0 ? `${h.qty}주` : ''}</span>`;
+        `<span class="stock-hold">${holdHtml}</span>`;
       row.addEventListener('click', () => {
         selectedStock = s.id;
         renderStockList();
@@ -1128,8 +1149,14 @@
       ? `<span class="delist-warn">💀 상장폐지 — 재상장 대기 중</span>`
       : `시작가 ${def.initial.toLocaleString()} · 현재 ${((m.price / def.initial) * 100).toFixed(0)}%` +
         (warn ? ' <span class="delist-warn">⚠️상폐위험</span>' : '');
-    stockDetailRight.textContent =
-      h && h.qty > 0 ? `보유 ${h.qty}주 · 평단 ${Math.round(h.avg).toLocaleString()}` : '보유 없음';
+    const p = holdingPl(id!);
+    stockDetailRight.innerHTML =
+      h && h.qty > 0
+        ? `보유 ${h.qty.toLocaleString()}주 · 평단 ${Math.round(h.avg).toLocaleString()}` +
+          (p
+            ? ` · 손익 <b class="${plCls(p.pl)}">${plText(p.pl)}🪙 (${p.pct >= 0 ? '+' : ''}${p.pct.toFixed(1)}%)</b>`
+            : '')
+        : '보유 없음';
 
     // 미니 차트 (최근 48틱)
     const ctx = stockChart.getContext('2d')!;
@@ -1198,9 +1225,13 @@
 
   async function doTrade(kind: 'buy' | 'sell'): Promise<void> {
     if (!selectedStock || stockTrading) return;
-    const qty = Math.floor(Number(stockQty.value));
+    const qty = Math.floor(Number((kind === 'buy' ? stockBuyQty : stockSellQty).value));
     if (!Number.isFinite(qty) || qty < 1) {
       addSystemMessage('수량을 확인해주세요.');
+      return;
+    }
+    if (qty > STOCK_QTY_MAX) {
+      addSystemMessage(`한 번에 최대 ${STOCK_QTY_MAX.toLocaleString()}주까지 거래할 수 있어요.`);
       return;
     }
     stockTrading = true;
@@ -1231,11 +1262,21 @@
     renderStockDetail();
   }
 
-  stockMaxBtn.addEventListener('click', async () => {
+  // 매수 MAX: 잔액으로 살 수 있는 수량, 종목당 보유 한도(STOCK_QTY_MAX) 남은 만큼으로 클램프
+  stockBuyMaxBtn.addEventListener('click', async () => {
     if (!selectedStock) return;
     const m = marketOf(selectedStock);
     const w = (await window.overlay.getWallet()) as { coins: number };
-    if (m && m.price > 0) stockQty.value = String(Math.max(1, Math.min(9999, Math.floor(w.coins / m.price))));
+    if (!m || m.price <= 0) return;
+    const held = myHoldings[selectedStock]?.qty ?? 0;
+    const room = Math.max(0, STOCK_QTY_MAX - held);
+    stockBuyQty.value = String(Math.max(1, Math.min(room, Math.floor(w.coins / m.price))));
+  });
+  // 매도 MAX: 보유 전량
+  stockSellMaxBtn.addEventListener('click', () => {
+    if (!selectedStock) return;
+    const held = myHoldings[selectedStock]?.qty ?? 0;
+    stockSellQty.value = String(Math.max(1, Math.min(STOCK_QTY_MAX, held)));
   });
   stockBuyBtn.addEventListener('click', () => void doTrade('buy'));
   stockSellBtn.addEventListener('click', () => void doTrade('sell'));

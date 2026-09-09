@@ -184,6 +184,8 @@ const ROD_TIER_COLORS: ([string, string] | null)[] = [
 
 // 가상 주식 종목 — shared/protocol.ts의 STOCKS와 동기화 유지 필요 (시세·판정은 서버)
 const STOCK_DEFS: { id: string; name: string; initial: number }[] = [
+  { id: 'hynix', name: '슥하이닉스', initial: 10000 },
+  { id: 'sambyeol', name: '삼별전자', initial: 5000 },
   { id: 'airpass', name: '(주)에어패스', initial: 1000 },
   { id: 'wolchuk', name: '월척수산', initial: 500 },
   { id: 'forge', name: '대장간중공업', initial: 350 },
@@ -195,6 +197,8 @@ const STOCK_DEFS: { id: string; name: string; initial: number }[] = [
   { id: 'minnow', name: '피라미식품', initial: 10 },
   { id: 'botsoon', name: '봇순이엔터', initial: 5 },
 ];
+// 종목당 보유·1회 거래 수량 상한 — shared/protocol.ts STOCK_QTY_MAX와 동기화
+const STOCK_QTY_MAX = 999_999_999;
 
 // 광물도감 — shared/protocol.ts의 MINERALS와 동기화 유지 필요 (정산·도감은 서버, 롤은 overlay.ts)
 const MINERAL_CATS: { cat: string; label: string; emoji: string }[] = [

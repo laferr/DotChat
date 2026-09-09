@@ -1474,6 +1474,8 @@ export interface StockDef {
 }
 
 export const STOCKS: StockDef[] = [
+  { id: 'hynix', name: '슥하이닉스', initial: 10000, vol: 0.4 },
+  { id: 'sambyeol', name: '삼별전자', initial: 5000, vol: 0.5 },
   { id: 'airpass', name: '(주)에어패스', initial: 1000, vol: 0.6 },
   { id: 'wolchuk', name: '월척수산', initial: 500, vol: 0.6 },
   { id: 'forge', name: '대장간중공업', initial: 350, vol: 1.0 },
@@ -1492,7 +1494,7 @@ export const STOCK_MAX_RATIO = 10; // 시작가 10배부터 평균회귀 압력
 /** 시작가 10% 이하로 추락하면 회복 압력(+%p) — 상폐 확률 완화 */
 export const STOCK_MIN_RATIO = 0.1;
 export const STOCK_REBOUND_PCT = 6;
-export const STOCK_QTY_MAX = 9999; // 종목당 보유 한도
+export const STOCK_QTY_MAX = 999_999_999; // 종목당 보유 한도 (= 1회 거래 수량 상한, 9억9999만9999주)
 export const STOCK_HISTORY_SEND = 48; // 클라 차트 (4시간)
 
 /** 상폐 기준가 — 정수 가격이라 최소 1 (싼 종목도 상폐 가능하게) */
