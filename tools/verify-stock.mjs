@@ -1,4 +1,4 @@
-// 가상 주식 + 전광판 검증 (빠른 틱 서버 전용: DOTCHAT_STOCK_SEC=3 권장)
+// 가상 주식 + 전광판 검증 (빠른 틱 서버 전용: DOTCHAT_STOCK_SEC=3 DOTCHAT_STOCK_PEEK_KEY=peek-test 권장)
 // 사용법: DOTCHAT_SERVER=http://localhost:4024 node tools/verify-stock.mjs
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +62,20 @@ if (st.stocks?.length !== STOCK_COUNT || !Number.isFinite(st.nextTickTs)) fail(`
 if (!(st.nextTickInSec >= 0 && st.nextTickInSec <= st.tickSec)) fail(`nextTickInSec 범위 이상: ${st.nextTickInSec}/${st.tickSec}`);
 if (!/^\d{2}:\d{2}:\d{2}$/.test(st.nextTickAtKst)) fail(`nextTickAtKst 형식 이상: ${st.nextTickAtKst}`);
 console.log(`  GET /stocks OK (다음 틱 ${st.nextTickAtKst} KST, ${st.nextTickInSec}초 후, 주말휴장=${st.weekendClosed})`);
+
+// 1c) 다음 등락 미리보기: 키 없으면 trend/next 비공개, 키(DOTCHAT_STOCK_PEEK_KEY, 기본 peek-test) 있으면
+//     next.price가 실제 다음 틱 가격과 일치해야 함
+if (st.stocks[0].next !== undefined || st.stocks[0].trend !== undefined) fail('키 없이 미리보기 노출됨');
+const peekKey = process.env.DOTCHAT_STOCK_PEEK_KEY ?? 'peek-test';
+const pk = await fetch(`${url}/stocks?key=${encodeURIComponent(peekKey)}`).then((r) => r.json());
+const pkHynix = pk.stocks?.find((s) => s.id === 'hynix');
+if (!pk.peek || !Number.isFinite(pkHynix?.next?.price)) fail(`키 미리보기 이상 (서버 env DOTCHAT_STOCK_PEEK_KEY=${peekKey} 필요): ${JSON.stringify(pkHynix)}`);
+const peekTick = pk.nextTickTs;
+const predicted = pkHynix.next.price;
+if (!(await waitFor(() => a.market.nextTickTs !== peekTick, 20000))) fail('미리보기 검증용 틱 대기 시간 초과');
+const actual = a.market.stocks.find((s) => s.id === 'hynix').price;
+if (actual !== predicted) fail(`다음 등락 미리보기 불일치: 예고 ${predicted} / 실제 ${actual}`);
+console.log(`  다음 등락 미리보기 OK (슥하이닉스 예고 ${predicted} = 실제 ${actual}, 트렌드 ${pkHynix.trend}→${pkHynix.next.trend})`);
 
 // 2) 매수/매도: 차감·보유·평단
 let res = await emitAck(a.socket, 'stock-buy', 'airpass', 3);

@@ -412,7 +412,31 @@ interface StockInternal {
   trendLeft: number;
   delistedUntil?: number;
   history: number[];
+  /** 미리 굴려둔 다음 틱 결과 — 틱 시점엔 이걸 그대로 적용 (상폐 중엔 없음: 다음 틱 = 재상장) */
+  next?: StockNext;
 }
+
+/** 다음 틱에 적용될 결과 (틱 종료 시 미리 롤, stocks.json에 함께 영속) */
+interface StockNext {
+  trend: StockTrend;
+  trendLeft: number;
+  /** 적용 등락률 % (뉴스·압력 포함, 반올림 전) */
+  pct: number;
+  /** 확률적 반올림까지 끝난 최종 가격 */
+  price: number;
+  news?: { good: boolean; mag: number; text: string };
+}
+
+const TREND_RANGES: Record<StockTrend, [number, number]> = {
+  surge: [5, 15],
+  up: [1, 6],
+  flat: [-3, 3],
+  down: [-6, -1],
+  crash: [-15, -5],
+};
+
+/** GET /stocks?key= 로 다음 등락 미리보기를 허용하는 운영자 키 (env 미설정 시 미리보기 비활성) */
+const STOCK_PEEK_KEY = process.env.DOTCHAT_STOCK_PEEK_KEY ?? '';
 
 let stocksState: Record<string, StockInternal> = {};
 let nextTickTs = Date.now() + STOCK_TICK_MS;
@@ -421,8 +445,9 @@ let tickerLog: TickerItem[] = [];
 /** KST HH:MM:SS — 콘솔/HTTP 상태 표시용 */
 const fmtKst = (ts: number) => new Date(ts + 9 * 3600_000).toISOString().slice(11, 19);
 
-/** 주식 상태 요약 (GET /stocks) — 다음 틱 시각·남은 초·종목별 시세. 콘솔 없이도 브라우저/curl로 확인 */
-function stocksStatusJson(): string {
+/** 주식 상태 요약 (GET /stocks) — 다음 틱 시각·남은 초·종목별 시세. 콘솔 없이도 브라우저/curl로 확인.
+ *  peek=true(운영자 키 일치)면 트렌드와 미리 굴려둔 다음 틱 결과(next)까지 포함 */
+function stocksStatusJson(peek: boolean): string {
   const now = Date.now();
   return JSON.stringify(
     {
@@ -433,6 +458,7 @@ function stocksStatusJson(): string {
       nextTickAtKst: fmtKst(nextTickTs),
       nextTickInSec: Math.max(0, Math.round((nextTickTs - now) / 1000)),
       nextTickTs,
+      ...(peek ? { peek: true } : {}),
       stocks: STOCKS.map((def) => {
         const s = stocksState[def.id];
         const diffPct = s.prev > 0 ? Math.round(((s.price - s.prev) / s.prev) * 1000) / 10 : 0;
@@ -443,8 +469,8 @@ function stocksStatusJson(): string {
           prev: s.prev,
           diffPct,
           initial: def.initial,
-          trend: s.trend,
           ...(s.delistedUntil ? { delisted: true, relistAtKst: fmtKst(s.delistedUntil) } : {}),
+          ...(peek ? { trend: s.trend, trendLeft: s.trendLeft, next: nextPreview(def, s) } : {}),
         };
       }),
     },
@@ -456,6 +482,64 @@ function stocksStatusJson(): string {
 function pickTrend(): StockTrend {
   const r = Math.random() * 100;
   return r < 8 ? 'surge' : r < 34 ? 'up' : r < 66 ? 'flat' : r < 92 ? 'down' : 'crash';
+}
+
+// 다음 틱 결과를 지금 굴려둔다 — 트렌드 진행/전환, 등락률, 뉴스(4%), 평균회귀·회복 압력, 확률적 반올림까지.
+// 압력은 현재가 기준인데 틱 사이엔 가격이 안 변하므로 미리 계산해도 틱 시점 계산과 결과가 같다.
+function rollNext(def: (typeof STOCKS)[number], s: StockInternal): StockNext {
+  let trend = s.trend;
+  let trendLeft = s.trendLeft - 1;
+  if (trendLeft <= 0) {
+    trend = pickTrend();
+    trendLeft = 3 + Math.floor(Math.random() * 6);
+  }
+  const [lo, hi] = TREND_RANGES[trend];
+  let pct = (lo + Math.random() * (hi - lo)) * def.vol;
+  let news: StockNext['news'];
+  if (Math.random() < 0.04) {
+    const good = Math.random() < 0.5;
+    const mag = 10 + Math.random() * 20;
+    pct += good ? mag : -mag;
+    const pool = good ? STOCK_NEWS_UP : STOCK_NEWS_DOWN;
+    news = {
+      good,
+      mag,
+      text: `📰 ${pool[Math.floor(Math.random() * pool.length)].replace('{name}', def.name)} (${good ? '+' : '-'}${Math.round(mag)}%)`,
+    };
+  }
+  // 시작가 10배 초과 시 평균회귀 압력 / 시작가 10% 이하로 추락하면 회복 압력 (상폐 확률 완화)
+  if (s.price > def.initial * STOCK_MAX_RATIO) pct -= 8;
+  if (s.price <= def.initial * STOCK_MIN_RATIO) pct += STOCK_REBOUND_PCT;
+  // 확률적 반올림 — 저가주(변동이 ±0.5코인 미만)도 기대값 그대로 움직이게 (정수 고착 방지)
+  const raw = s.price * (1 + pct / 100);
+  const price = Math.max(1, Math.floor(raw) + (Math.random() < raw - Math.floor(raw) ? 1 : 0));
+  return { trend, trendLeft, pct: Math.round(pct * 100) / 100, price, ...(news ? { news } : {}) };
+}
+
+/** 운영자 미리보기용 다음 틱 요약 (상폐 중이면 재상장 예정) */
+function nextPreview(def: (typeof STOCKS)[number], s: StockInternal) {
+  if (s.delistedUntil) return { relist: true, price: def.initial, diffPct: 0 };
+  const n = s.next;
+  if (!n) return null;
+  return {
+    price: n.price,
+    diffPct: s.price > 0 ? Math.round(((n.price - s.price) / s.price) * 1000) / 10 : 0,
+    pct: n.pct,
+    trend: n.trend,
+    trendLeft: n.trendLeft,
+    news: n.news?.text ?? null,
+  };
+}
+
+/** 콘솔용 다음 틱 예정 한 줄 — "이름 현재→다음 ±x%" */
+function nextPreviewLine(): string {
+  return STOCKS.map((def) => {
+    const s = stocksState[def.id];
+    const p = nextPreview(def, s);
+    if (!p) return `${def.name} ?`;
+    if ('relist' in p) return `${def.name} 재상장 ${def.initial.toLocaleString()}`;
+    return `${def.name} ${s.price.toLocaleString()}→${p.price.toLocaleString()} ${p.diffPct >= 0 ? '+' : ''}${p.diffPct}%${p.news ? ' 📰' : ''}`;
+  }).join('  |  ');
 }
 
 function loadStocks(): void {
@@ -477,6 +561,9 @@ function loadStocks(): void {
         history: [def.initial],
       };
     }
+    // 다음 틱 결과가 없으면(신규/구버전 상태 파일) 지금 굴려둔다 — 상폐 중은 제외(다음 틱 = 재상장)
+    const st = stocksState[def.id];
+    if (!st.next && !st.delistedUntil) st.next = rollNext(def, st);
   }
 }
 
@@ -579,43 +666,19 @@ function runStockTick(): void {
         s.trend = 'flat';
         s.trendLeft = 3;
         s.history.push(def.initial);
+        s.next = rollNext(def, s); // 재상장 후 첫 등락 미리 롤
         publishTicker('relist', `🔔 ${def.name} 재상장! 시작가 ${def.initial}코인`);
       }
       continue;
     }
-    // 트렌드 상태 머신
-    s.trendLeft--;
-    if (s.trendLeft <= 0) {
-      s.trend = pickTrend();
-      s.trendLeft = 3 + Math.floor(Math.random() * 6);
-    }
-    const ranges: Record<StockTrend, [number, number]> = {
-      surge: [5, 15],
-      up: [1, 6],
-      flat: [-3, 3],
-      down: [-6, -1],
-      crash: [-15, -5],
-    };
-    const [lo, hi] = ranges[s.trend];
-    let pct = (lo + Math.random() * (hi - lo)) * def.vol;
-    // 뉴스 이벤트 (4%) — 급변 + 전광판
-    if (Math.random() < 0.04) {
-      const good = Math.random() < 0.5;
-      const mag = 10 + Math.random() * 20;
-      pct += good ? mag : -mag;
-      const pool = good ? STOCK_NEWS_UP : STOCK_NEWS_DOWN;
-      newsItems.push(
-        `📰 ${pool[Math.floor(Math.random() * pool.length)].replace('{name}', def.name)} (${good ? '+' : '-'}${Math.round(mag)}%)`,
-      );
-    }
-    // 시작가 10배 초과 시 평균회귀 압력
-    if (s.price > def.initial * STOCK_MAX_RATIO) pct -= 8;
-    // 시작가 10% 이하로 추락하면 회복 압력 (상폐 확률 완화)
-    if (s.price <= def.initial * STOCK_MIN_RATIO) pct += STOCK_REBOUND_PCT;
+    // 미리 굴려둔 다음 틱 결과 적용 (트렌드·등락·뉴스·최종가는 rollNext에서 이미 결정)
+    const nx = s.next ?? rollNext(def, s);
+    delete s.next;
+    s.trend = nx.trend;
+    s.trendLeft = nx.trendLeft;
+    if (nx.news) newsItems.push(nx.news.text);
     s.prev = s.price;
-    // 확률적 반올림 — 저가주(변동이 ±0.5코인 미만)도 기대값 그대로 움직이게 (정수 고착 방지)
-    const raw = s.price * (1 + pct / 100);
-    s.price = Math.max(1, Math.floor(raw) + (Math.random() < raw - Math.floor(raw) ? 1 : 0));
+    s.price = nx.price;
     s.history.push(s.price);
     if (s.history.length > 288) s.history = s.history.slice(-288);
 
@@ -644,6 +707,9 @@ function runStockTick(): void {
         `💥 ${def.name} 상장폐지!! ${victims > 0 ? `주주 ${victims}명의 ${sharesLost}주가 휴지조각이 되었습니다...` : '가까스로 피해자는 없었습니다.'} (5분 뒤 재상장)`,
       );
       console.log(`[stock] ${def.name} 상폐 (피해 ${victims}명/${sharesLost}주)`);
+    } else {
+      // 다음 틱 결과를 지금 굴려둔다 (운영자 미리보기: GET /stocks?key=)
+      s.next = rollNext(def, s);
     }
   }
 
@@ -662,12 +728,14 @@ function runStockTick(): void {
   io.emit('stocks', stocksSnapshot());
   // 콘솔에서 틱 타이밍 확인용 — 다음 틱 KST 시각 + 시세 요약 (GET /stocks 로도 조회 가능)
   console.log(`[stock] 틱 ${fmtKst(now)} → 다음 틱 ${fmtKst(nextTickTs)} KST | ${summary}`);
+  console.log(`[stock] 다음 틱 예정 | ${nextPreviewLine()}`);
 }
 
 loadStocks();
 loadTicker();
 setInterval(runStockTick, STOCK_TICK_MS);
 console.log(`[stock] 틱 간격 ${STOCK_TICK_MS / 1000}초 — 첫 틱 ${fmtKst(nextTickTs)} KST (GET /stocks 로 다음 틱·시세 조회)`);
+console.log(`[stock] 다음 틱 예정 | ${nextPreviewLine()}`);
 
 // 미구매 상점 치장은 외형에서 제거 (조작 방지)
 function stripUnownedCosmetics(appearance: Appearance, key: string): Appearance {
@@ -1007,12 +1075,15 @@ setInterval(cleanupUploads, 60 * 60 * 1000);
 // GET /i/<파일명> 으로 원본 이미지 서빙, GET /stocks 로 주식 다음 틱·시세 상태(JSON)
 const httpServer = http.createServer((req, res) => {
   if (req.method === 'GET' && /^\/stocks(?:\?.*)?$/.test(req.url ?? '')) {
+    // ?key=<DOTCHAT_STOCK_PEEK_KEY> 일치 시에만 트렌드·다음 등락 미리보기 포함 (키 미설정이면 항상 비공개)
+    const key = new URL(req.url ?? '/', 'http://localhost').searchParams.get('key');
+    const peek = STOCK_PEEK_KEY.length > 0 && key === STOCK_PEEK_KEY;
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
       'Access-Control-Allow-Origin': '*',
     });
-    res.end(stocksStatusJson());
+    res.end(stocksStatusJson(peek));
     return;
   }
   const match = /^\/i\/([a-f0-9]{16}\.(?:jpg|png|webp))$/.exec(req.url ?? '');
