@@ -418,6 +418,41 @@ let stocksState: Record<string, StockInternal> = {};
 let nextTickTs = Date.now() + STOCK_TICK_MS;
 let tickerLog: TickerItem[] = [];
 
+/** KST HH:MM:SS — 콘솔/HTTP 상태 표시용 */
+const fmtKst = (ts: number) => new Date(ts + 9 * 3600_000).toISOString().slice(11, 19);
+
+/** 주식 상태 요약 (GET /stocks) — 다음 틱 시각·남은 초·종목별 시세. 콘솔 없이도 브라우저/curl로 확인 */
+function stocksStatusJson(): string {
+  const now = Date.now();
+  return JSON.stringify(
+    {
+      serverVersion: APP_VERSION,
+      serverTimeKst: fmtKst(now),
+      tickSec: STOCK_TICK_MS / 1000,
+      weekendClosed: marketWeekend(now),
+      nextTickAtKst: fmtKst(nextTickTs),
+      nextTickInSec: Math.max(0, Math.round((nextTickTs - now) / 1000)),
+      nextTickTs,
+      stocks: STOCKS.map((def) => {
+        const s = stocksState[def.id];
+        const diffPct = s.prev > 0 ? Math.round(((s.price - s.prev) / s.prev) * 1000) / 10 : 0;
+        return {
+          id: def.id,
+          name: def.name,
+          price: s.price,
+          prev: s.prev,
+          diffPct,
+          initial: def.initial,
+          trend: s.trend,
+          ...(s.delistedUntil ? { delisted: true, relistAtKst: fmtKst(s.delistedUntil) } : {}),
+        };
+      }),
+    },
+    null,
+    2,
+  );
+}
+
 function pickTrend(): StockTrend {
   const r = Math.random() * 100;
   return r < 8 ? 'surge' : r < 34 ? 'up' : r < 66 ? 'flat' : r < 92 ? 'down' : 'crash';
@@ -523,6 +558,7 @@ function runStockTick(): void {
       marketClosedNotice = true;
       publishTicker('news', '💤 주말 휴장 — 주식장은 월요일 아침에 다시 열립니다');
     }
+    console.log(`[stock] 주말 휴장 (시세 동결) — 다음 틱 ${fmtKst(nextTickTs)} KST`);
     io.emit('stocks', stocksSnapshot());
     return;
   }
@@ -624,11 +660,14 @@ function runStockTick(): void {
 
   saveStocks();
   io.emit('stocks', stocksSnapshot());
+  // 콘솔에서 틱 타이밍 확인용 — 다음 틱 KST 시각 + 시세 요약 (GET /stocks 로도 조회 가능)
+  console.log(`[stock] 틱 ${fmtKst(now)} → 다음 틱 ${fmtKst(nextTickTs)} KST | ${summary}`);
 }
 
 loadStocks();
 loadTicker();
 setInterval(runStockTick, STOCK_TICK_MS);
+console.log(`[stock] 틱 간격 ${STOCK_TICK_MS / 1000}초 — 첫 틱 ${fmtKst(nextTickTs)} KST (GET /stocks 로 다음 틱·시세 조회)`);
 
 // 미구매 상점 치장은 외형에서 제거 (조작 방지)
 function stripUnownedCosmetics(appearance: Appearance, key: string): Appearance {
@@ -965,8 +1004,17 @@ function cleanupUploads(): void {
 cleanupUploads();
 setInterval(cleanupUploads, 60 * 60 * 1000);
 
-// GET /i/<파일명> 으로 원본 이미지 서빙
+// GET /i/<파일명> 으로 원본 이미지 서빙, GET /stocks 로 주식 다음 틱·시세 상태(JSON)
 const httpServer = http.createServer((req, res) => {
+  if (req.method === 'GET' && /^\/stocks(?:\?.*)?$/.test(req.url ?? '')) {
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.end(stocksStatusJson());
+    return;
+  }
   const match = /^\/i\/([a-f0-9]{16}\.(?:jpg|png|webp))$/.exec(req.url ?? '');
   if (req.method === 'GET' && match) {
     fs.readFile(path.join(UPLOAD_DIR, match[1]), (err, data) => {

@@ -695,6 +695,7 @@
         color: var(--text-dim);
       }
       #stock-summary b { color: var(--text); }
+      #stock-pl { font-size: 12px; font-weight: 800; }
       #stock-list {
         flex: 1;
         overflow-y: auto;
@@ -708,6 +709,7 @@
       #stock-list::-webkit-scrollbar-thumb { background: var(--header); border-radius: 4px; }
       .stock-row {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 6px;
         background: var(--bg);
@@ -723,17 +725,31 @@
       .stock-name { flex: 1; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .stock-price { font-weight: 700; white-space: nowrap; }
       .stock-diff { width: 56px; text-align: right; font-size: 11px; white-space: nowrap; }
-      .stock-hold {
-        width: 76px;
+      /* 보유 종목: 행 아래 줄에 보유수량 × 현재가(평가금액)와 손익 배지 */
+      .stock-my {
+        flex-basis: 100%;
         display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        font-size: 10px;
-        line-height: 1.2;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+        margin-top: 2px;
+        padding-top: 4px;
+        border-top: 1px dashed var(--header);
+        font-size: 11px;
         color: var(--text-dim);
         white-space: nowrap;
       }
-      .stock-mypl { font-weight: 700; }
+      .stock-my b { color: var(--text); }
+      .stock-my-pl {
+        font-size: 12px;
+        font-weight: 800;
+        padding: 1px 8px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--text);
+      }
+      .stock-my-pl.diff-up { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
+      .stock-my-pl.diff-down { background: rgba(110, 195, 255, 0.2); color: #6ec3ff; }
       .diff-up { color: #ff6b6b; }
       .diff-down { color: #6ec3ff; }
       #stock-detail {
@@ -760,6 +776,22 @@
         flex-wrap: wrap;
         gap: 2px 8px;
       }
+      /* 상세: 평가금액(보유×현재가) · 매입금액 · 손익 배지 (보유 없으면 숨김) */
+      #stock-detail-my {
+        display: none;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--text-dim);
+        background: var(--bg);
+        border: 1px solid var(--header);
+        border-radius: 7px;
+        padding: 5px 9px;
+        white-space: nowrap;
+      }
+      #stock-detail-my.on { display: flex; }
+      #stock-detail-my b { color: var(--text); }
       /* 매수/매도 각각 수량칸 + MAX (매수 MAX=잔액·보유한도 기준, 매도 MAX=보유 전량) */
       .stock-trade-row {
         display: flex;
@@ -2336,6 +2368,7 @@
           <span id="stock-detail-left"></span>
           <span id="stock-detail-right"></span>
         </div>
+        <div id="stock-detail-my"></div>
         <div class="stock-trade-row">
           <input id="stock-buy-qty" class="stock-qty" type="number" min="1" max="999999999" value="1" />
           <button id="stock-buy-max" class="stock-max" title="잔액으로 살 수 있는 최대 수량">MAX</button>

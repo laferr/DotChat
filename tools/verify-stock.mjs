@@ -56,6 +56,13 @@ if (big1.id !== 'hynix' || big2.id !== 'sambyeol') fail(`대형주 순서 이상
 if (!(big1.price > 0 && big2.price > 0)) fail('대형주 가격 이상');
 console.log(`  시세 스냅샷 OK (${STOCK_COUNT}종목, 슥하이닉스 ${big1.price} · 삼별전자 ${big2.price} · 에어패스 ${airpass0.price})`);
 
+// 1b) GET /stocks — 콘솔 없이 다음 틱·시세 확인용 JSON
+const st = await fetch(`${url}/stocks`).then((r) => r.json());
+if (st.stocks?.length !== STOCK_COUNT || !Number.isFinite(st.nextTickTs)) fail(`GET /stocks 이상: ${JSON.stringify(st).slice(0, 200)}`);
+if (!(st.nextTickInSec >= 0 && st.nextTickInSec <= st.tickSec)) fail(`nextTickInSec 범위 이상: ${st.nextTickInSec}/${st.tickSec}`);
+if (!/^\d{2}:\d{2}:\d{2}$/.test(st.nextTickAtKst)) fail(`nextTickAtKst 형식 이상: ${st.nextTickAtKst}`);
+console.log(`  GET /stocks OK (다음 틱 ${st.nextTickAtKst} KST, ${st.nextTickInSec}초 후, 주말휴장=${st.weekendClosed})`);
+
 // 2) 매수/매도: 차감·보유·평단
 let res = await emitAck(a.socket, 'stock-buy', 'airpass', 3);
 if (!res.ok) fail(`매수 실패: ${res.error}`);

@@ -1043,6 +1043,7 @@
   const stockChart = document.getElementById('stock-chart') as HTMLCanvasElement;
   const stockDetailLeft = document.getElementById('stock-detail-left')!;
   const stockDetailRight = document.getElementById('stock-detail-right')!;
+  const stockDetailMy = document.getElementById('stock-detail-my')!;
   // 매수/매도 각각 수량칸 + MAX 버튼 (매수 MAX=잔액·보유한도 기준, 매도 MAX=보유 전량)
   const stockBuyQty = document.getElementById('stock-buy-qty') as HTMLInputElement;
   const stockSellQty = document.getElementById('stock-sell-qty') as HTMLInputElement;
@@ -1076,7 +1077,11 @@
     return { pl, pct };
   }
   const plText = (pl: number) => `${pl >= 0 ? '+' : ''}${pl.toLocaleString()}`;
+  const pctText = (pct: number) => `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
   const plCls = (pl: number) => (pl > 0 ? 'diff-up' : pl < 0 ? 'diff-down' : '');
+  /** 손익 배지 HTML — "+13,800🪙 (+12.5%)" 색 배경 */
+  const plBadge = (pl: number, pct: number) =>
+    `<span class="stock-my-pl ${plCls(pl)}">${plText(pl)}🪙 (${pctText(pct)})</span>`;
 
   function diffText(s: StockStateLike): { text: string; cls: string } {
     if (s.delistedUntil) return { text: '💀상폐', cls: 'delisted' };
@@ -1099,7 +1104,8 @@
     }
     stockEval.textContent = `${evalSum.toLocaleString()}🪙`;
     const pl = Math.round(evalSum - costSum);
-    stockPl.textContent = `${pl >= 0 ? '+' : ''}${pl.toLocaleString()}🪙`;
+    const plPct = costSum > 0 ? (pl / costSum) * 100 : 0;
+    stockPl.textContent = `${plText(pl)}🪙 (${pctText(plPct)})`;
     (stockPl as HTMLElement).style.color = pl > 0 ? '#ff6b6b' : pl < 0 ? '#6ec3ff' : '';
 
     stockList.innerHTML = '';
@@ -1112,16 +1118,19 @@
         'stock-row' + (s.id === selectedStock ? ' selected' : '') + (s.delistedUntil ? ' delisted' : '');
       const h = myHoldings[s.id];
       const p = holdingPl(s.id);
-      const holdHtml =
-        h && h.qty > 0
-          ? `<span>${h.qty.toLocaleString()}주</span>` +
-            (p ? `<span class="stock-mypl ${plCls(p.pl)}">${plText(p.pl)}</span>` : '')
+      // 보유 종목은 아래 줄에 보유수량 × 현재가(평가금액) + 손익 배지
+      const myHtml =
+        h && h.qty > 0 && p
+          ? `<div class="stock-my">` +
+            `<span>보유 ${h.qty.toLocaleString()}주 · 평가 <b>${(s.price * h.qty).toLocaleString()}🪙</b></span>` +
+            plBadge(p.pl, p.pct) +
+            `</div>`
           : '';
       row.innerHTML =
         `<span class="stock-name">${def.name}</span>` +
         `<span class="stock-price">${s.delistedUntil ? '-' : s.price.toLocaleString()}</span>` +
         `<span class="stock-diff ${d.cls}">${d.text}</span>` +
-        `<span class="stock-hold">${holdHtml}</span>`;
+        myHtml;
       row.addEventListener('click', () => {
         selectedStock = s.id;
         renderStockList();
@@ -1150,13 +1159,20 @@
       : `시작가 ${def.initial.toLocaleString()} · 현재 ${((m.price / def.initial) * 100).toFixed(0)}%` +
         (warn ? ' <span class="delist-warn">⚠️상폐위험</span>' : '');
     const p = holdingPl(id!);
-    stockDetailRight.innerHTML =
-      h && h.qty > 0
-        ? `보유 ${h.qty.toLocaleString()}주 · 평단 ${Math.round(h.avg).toLocaleString()}` +
-          (p
-            ? ` · 손익 <b class="${plCls(p.pl)}">${plText(p.pl)}🪙 (${p.pct >= 0 ? '+' : ''}${p.pct.toFixed(1)}%)</b>`
-            : '')
-        : '보유 없음';
+    stockDetailRight.textContent =
+      h && h.qty > 0 ? `보유 ${h.qty.toLocaleString()}주 · 평단 ${Math.round(h.avg).toLocaleString()}` : '보유 없음';
+    // 평가금액(보유 × 현재가) · 매입금액 · 손익 배지 — 보유 없거나 상폐면 숨김
+    if (h && h.qty > 0 && p) {
+      const evalAmt = m.price * h.qty;
+      const costAmt = Math.round(h.avg * h.qty);
+      stockDetailMy.innerHTML =
+        `<span>평가 <b>${evalAmt.toLocaleString()}🪙</b> · 매입 ${costAmt.toLocaleString()}🪙</span>` +
+        plBadge(p.pl, p.pct);
+      stockDetailMy.classList.add('on');
+    } else {
+      stockDetailMy.innerHTML = '';
+      stockDetailMy.classList.remove('on');
+    }
 
     // 미니 차트 (최근 48틱)
     const ctx = stockChart.getContext('2d')!;
