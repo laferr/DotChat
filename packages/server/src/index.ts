@@ -148,6 +148,9 @@ import {
   DigPhase,
   MineralCat,
   BATTLE_MAX_STAGE,
+  BATTLE_STAGE_CAP,
+  battleTierNameFor,
+  battleIsEndless,
   BATTLE_UPGRADE_KEYS,
   BATTLE_LV_MAX,
   BATTLE_MINERAL_WEIGHTS,
@@ -337,10 +340,10 @@ function loadWallets(): void {
               for (const lk of BATTLE_UPGRADE_KEYS) {
                 lv[lk] = Math.max(0, Math.min(BATTLE_LV_MAX[lk], Math.floor(Number(b.lv?.[lk]) || 0)));
               }
-              const maxStage = Math.max(0, Math.min(BATTLE_MAX_STAGE, Math.floor(Number(b.maxStage) || 0)));
+              const maxStage = Math.max(0, Math.min(BATTLE_STAGE_CAP, Math.floor(Number(b.maxStage) || 0)));
               return {
                 active: b.active === true,
-                stage: Math.max(1, Math.min(maxStage + 1, BATTLE_MAX_STAGE, Math.floor(Number(b.stage) || 1))),
+                stage: Math.max(1, Math.min(maxStage + 1, BATTLE_STAGE_CAP, Math.floor(Number(b.stage) || 1))),
                 maxStage,
                 lv,
                 since: Math.max(0, Math.floor(Number(b.since) || Date.now())),
@@ -1227,7 +1230,7 @@ function battleStateFor(key: string, now = Date.now()): BattleStatePayload {
   const pend = battlePending(wallet, now);
   const next = b.maxStage + 1;
   const guardian =
-    next <= BATTLE_MAX_STAGE ? { stage: next, ...battleGuardianFor(next), reward: battleClearReward(next) } : null;
+    next <= BATTLE_STAGE_CAP ? { stage: next, ...battleGuardianFor(next), reward: battleClearReward(next) } : null;
   const costs = {} as Record<BattleUpgradeKey, number | null>;
   for (const k of BATTLE_UPGRADE_KEYS) costs[k] = b.lv[k] >= BATTLE_LV_MAX[k] ? null : battleUpgradeCost(k, b.lv[k]);
   const cpk = battleCoinPerKill(pend.effStage);
@@ -1236,10 +1239,12 @@ function battleStateFor(key: string, now = Date.now()): BattleStatePayload {
     stage: b.stage,
     effStage: pend.effStage,
     maxStage: b.maxStage,
+    stageCap: BATTLE_STAGE_CAP,
+    endless: battleIsEndless(pend.effStage),
     lv: { ...b.lv },
     costs,
     stats: pend.stats,
-    tier: battleTierFor(pend.effStage).name,
+    tier: battleTierNameFor(pend.effStage),
     mob: { ...battleMobFor(pend.effStage), hp: battleMonsterHp(pend.effStage), atk: battleMonsterAtk(pend.effStage) },
     guardian,
     killMs: pend.killMs / BATTLE_SPEED,
@@ -2422,7 +2427,7 @@ io.on('connection', (socket) => {
     const wallet = wallets[key];
     const b = battleOf(wallet);
     const stage = Math.floor(Number(stageRaw));
-    const top = Math.min(BATTLE_MAX_STAGE, b.maxStage + 1);
+    const top = Math.min(BATTLE_STAGE_CAP, b.maxStage + 1);
     if (!Number.isFinite(stage) || stage < 1 || stage > top) {
       reply({ ok: false, error: `1층 ~ ${top}층까지만 갈 수 있어요. (수문장을 처치하면 다음 층이 열려요)` });
       return;
@@ -2480,8 +2485,8 @@ io.on('connection', (socket) => {
     const b = battleOf(wallet);
     const now = Date.now();
     const next = b.maxStage + 1;
-    if (next > BATTLE_MAX_STAGE) {
-      reply({ ok: false, error: '모든 층을 정복했어요! 🏆' });
+    if (next > BATTLE_STAGE_CAP) {
+      reply({ ok: false, error: '무한 원정의 끝에 도달했어요! 🏆' });
       return;
     }
     if (now < (b.challengeAt ?? 0)) {
@@ -2498,11 +2503,17 @@ io.on('connection', (socket) => {
     let settled: BattleClaimResult | null = null;
     if (sim.win) {
       // 최전선(next)에서 사냥 중이었으면 새로 열린 층으로 자동 전진 — 처치 속도가 바뀌므로 먼저 정산
-      if (b.stage === next && next < BATTLE_MAX_STAGE) {
+      if (b.stage === next && next < BATTLE_STAGE_CAP) {
         settled = battleSettle(socket.id, key, now);
         b.stage = next + 1;
       }
       b.maxStage = next;
+      if (next === BATTLE_MAX_STAGE) {
+        // 스토리 완주 → 무한 원정 개방 알림
+        const text = `♾️ ${player.nickname}#${player.tag}님이 봇순이의 탑을 정복하고 무한 원정에 들어섭니다!`;
+        io.emit('battle-news', { id: socket.id, nickname: player.nickname, tag: player.tag, text });
+        publishTicker('news', text);
+      }
       b.challengeAt = now + BATTLE_CHALLENGE_COOLDOWN_MS;
       reward = battleClearReward(next);
       reward.coins = Math.round(reward.coins * fxMul(wallet, 'batBossCoin')); // 🐾
@@ -2523,9 +2534,11 @@ io.on('connection', (socket) => {
       if (reward.gems > 0) socket.emit('gems', wallet.gems);
       if (foe.kind !== 'guardian') {
         const label = foe.kind === 'big' ? '대보스' : '보스';
-        const text = `⚔️ ${player.nickname}#${player.tag}님이 원정 ${next}층 ${label} '${foe.name}'을(를) 격파했습니다!`;
+        const where = battleIsEndless(next) ? `무한 원정 ${next}층` : `원정 ${next}층`;
+        const text = `⚔️ ${player.nickname}#${player.tag}님이 ${where} ${label} '${foe.name}'을(를) 격파했습니다!`;
         io.emit('battle-news', { id: socket.id, nickname: player.nickname, tag: player.tag, text });
-        if (foe.kind === 'big') publishTicker('news', text);
+        // 전광판: 스토리 대보스 + 무한 원정은 100층 단위 대보스만 (스팸 방지)
+        if (foe.kind === 'big' && (!battleIsEndless(next) || next % 100 === 0)) publishTicker('news', text);
       }
       checkAch(key);
       console.log(`[battle] ${key}: ${next}층 수문장 '${foe.name}' 격파 (+${reward.coins}🪙${reward.gems ? ` +${reward.gems}💎` : ''}${reward.item ? ` 아이템 '${reward.item.name}'` : ''})`);

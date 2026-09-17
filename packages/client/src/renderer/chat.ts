@@ -2477,6 +2477,8 @@
     stage: number;
     effStage: number;
     maxStage: number;
+    stageCap?: number;
+    endless?: boolean;
     lv: Record<string, number>;
     costs: Record<string, number | null>;
     stats: BattleStatsView;
@@ -2636,20 +2638,20 @@
     btMeName.textContent = battleMyKey.split('#')[0] || '나';
     btSetHp(btMeHp, btMeHptext, st.stats.hp, st.stats.hp);
     // 층 이동
-    btStageNum.textContent = `${st.stage}층`;
+    btStageNum.textContent = `${st.stage > 100 ? '♾️ ' : ''}${fmtNum(st.stage)}층`;
     btStageTier.textContent = st.tier;
-    const topStage = Math.min(100, st.maxStage + 1);
+    const topStage = Math.min(st.stageCap ?? 100, st.maxStage + 1);
     btStagePrev.disabled = battleBusy || st.stage <= 1;
     btStageNext.disabled = battleBusy || st.stage >= topStage;
     if (st.guardian) {
       const g = st.guardian;
       const label = g.kind === 'big' ? '👑 대보스' : g.kind === 'boss' ? '🔥 보스' : '🛡️ 수문장';
-      btChallenge.textContent = `${label} 도전 (${g.stage}층)`;
+      btChallenge.textContent = `${label} 도전 (${g.stage > 100 ? '♾️ ' : ''}${fmtNum(g.stage)}층)`;
       btChallenge.title = `${g.emoji} ${g.name} · HP ${fmtNum(g.hp)} · 공격 ${g.atk}/초 · 첫 처치 +${g.reward.coins}🪙${g.reward.gems ? ` +${g.reward.gems}💎` : ''}`;
       btChallenge.disabled = battleBusy;
     } else {
-      btChallenge.textContent = '🏆 정복 완료';
-      btChallenge.title = '모든 층을 정복했어요!';
+      btChallenge.textContent = '🏆 끝에 도달';
+      btChallenge.title = '무한 원정의 끝에 도달했어요!';
       btChallenge.disabled = true;
     }
     if (st.effStage < st.stage) {
@@ -2999,7 +3001,9 @@
         `🏆 <b>${stage}층 수문장 ${foe.name}</b> 격파! +<b>${fmtNum(r?.coins ?? 0)}</b> 🪙` +
         (r?.gems ? ` +<b>${r.gems}</b> 💎` : '') +
         (r?.item ? ` · 🎁 상점 아이템 <b>${r.item.name}</b> 획득!` : '') +
-        ` — ${stage + 1 <= 100 ? `${stage + 1}층이 열렸어요` : '모든 층 정복!'}` +
+        (stage === 100
+          ? ' — ♾️ <b>무한 원정</b>이 열렸어요! 101층부터는 층마다 다른 몬스터가 무작위로 나와요'
+          : ` — ${stage + 1 <= (res.state?.stageCap ?? 100) ? `${fmtNum(stage + 1)}층이 열렸어요` : '무한 원정의 끝!'}`) +
         (res.settled?.kills
           ? `<br />자동 수령: 👾 ${fmtNum(res.settled.kills)}마리 → +${fmtNum(res.settled.coins)} 🪙${res.settled.gems ? ` +${res.settled.gems} 💎` : ''}`
           : '');

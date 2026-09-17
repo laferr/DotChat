@@ -10,7 +10,15 @@ import { io } from 'socket.io-client';
 import {
   ACHIEVEMENTS,
   BATTLE_TIERS,
+  BATTLE_ENDLESS_EXTRA,
+  BATTLE_MAX_STAGE,
+  BATTLE_STAGE_CAP,
   BATTLE_UPGRADE_KEYS,
+  battleMonsterHp,
+  battleMonsterAtk,
+  battleCoinPerKill,
+  battleMobFor,
+  battleEndlessPools,
   battleUpgradeCost,
   battleClearReward,
   battleGuardianFor,
@@ -51,16 +59,50 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   if (fs.existsSync(manifestPath)) {
     const monsters = new Set(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).monsters ?? []);
     const missing = [];
+    const used = new Set();
     for (const t of BATTLE_TIERS) {
       for (const [, name, sprite] of [...t.mobs, t.guardian, t.boss, t.bigBoss]) {
         if (!monsters.has(sprite)) missing.push(`${name}(${sprite})`);
+        used.add(sprite);
       }
     }
+    const extra = [...BATTLE_ENDLESS_EXTRA.mobs, ...BATTLE_ENDLESS_EXTRA.guardians, ...BATTLE_ENDLESS_EXTRA.bosses, ...BATTLE_ENDLESS_EXTRA.bigs];
+    for (const [, name, sprite] of extra) {
+      if (!monsters.has(sprite)) missing.push(`${name}(${sprite})`);
+      if (used.has(sprite)) fail(`무한 원정 추가 몬스터가 스토리와 중복: ${sprite}`);
+      used.add(sprite);
+    }
     if (missing.length) fail(`몬스터 스프라이트 누락: ${missing.join(', ')}`);
-    console.log(`  스프라이트 OK: 층 테이블 ${BATTLE_TIERS.length * 6}개 전부 매니페스트(monsters ${monsters.size}종)에 있음`);
+    const unused = [...monsters].filter((m) => !used.has(m));
+    console.log(`  스프라이트 OK: 스토리 ${BATTLE_TIERS.length * 6} + 무한 추가 ${extra.length} = ${used.size}종 (매니페스트 ${monsters.size}종, 미사용 ${unused.length}${unused.length ? ': ' + unused.join(',') : ''})`);
   } else {
     console.log('  스프라이트 스킵: assets/extras/manifest-extras.json 없음');
   }
+}
+
+// 0-0-1) 무한 원정 수식 — 100층에서 연속, 그 뒤 단조 증가·완만한 코인, 층마다 몬스터 랜덤(결정적), 비용 무릎
+{
+  const hp100 = battleMonsterHp(100);
+  if (battleMonsterHp(101) <= hp100 || battleMonsterHp(101) > hp100 * 1.05) fail(`101층 HP 불연속: ${hp100} → ${battleMonsterHp(101)}`);
+  let prev = 0;
+  for (const s of [100, 101, 150, 200, 300, 500, 1000, 2000, 3000, BATTLE_STAGE_CAP]) {
+    const hp = battleMonsterHp(s);
+    if (!(hp > prev) || !Number.isFinite(hp)) fail(`HP 단조 증가 실패 @${s}`);
+    prev = hp;
+  }
+  const cpk = (s) => battleCoinPerKill(s);
+  if (cpk(3000) > cpk(100) * 3) fail(`무한 원정 처치 코인이 너무 가파름: ${cpk(100).toFixed(1)} → ${cpk(3000).toFixed(1)}`);
+  const a = battleMobFor(777);
+  if (JSON.stringify(a) !== JSON.stringify(battleMobFor(777))) fail('무한 원정 몬스터가 같은 층에서 달라짐');
+  const pools = battleEndlessPools();
+  const distinct = new Set(Array.from({ length: 200 }, (_, i) => battleMobFor(101 + i).sprite)).size;
+  if (distinct < 20) fail(`무한 원정 몬스터 다양성 부족: 200층 동안 ${distinct}종`);
+  if (battleUpgradeCost('atk', 99) !== 25 || battleUpgradeCost('atk', 100) !== 26 || battleUpgradeCost('atk', 102) !== 28) {
+    fail(`강화 비용 무릎 이상: 99→${battleUpgradeCost('atk', 99)} 100→${battleUpgradeCost('atk', 100)} 102→${battleUpgradeCost('atk', 102)}`);
+  }
+  console.log(
+    `  무한 원정 OK: HP 100층 ${hp100.toLocaleString()} → 1000층 ${battleMonsterHp(1000).toLocaleString()} → 3000층 ${battleMonsterHp(3000).toLocaleString()} · 코인/마리 ${cpk(100).toFixed(1)}→${cpk(3000).toFixed(1)} · 풀 몹 ${pools.mobs.length}/수문장 ${pools.guardian.length}/보스 ${pools.boss.length}/대보스 ${pools.big.length} · 200층 동안 ${distinct}종`,
+  );
 }
 
 // 0-1) 밸런스 자체 검증 — 기본 능력치로 1층 수문장은 이기고 10층 대보스는 진다
@@ -213,7 +255,13 @@ console.log(`  귀환 OK: 자동 수령 ${res.kills ?? 0}마리 · 이후 수령
 
 // 7) 랭킹 TOP에 내가 있음 (maxStage 1)
 st = await ack('battle-state');
-if (!st.top.some((r) => r.name === `${NICK}#${TAG}`)) fail('원정 랭킹에 내 항목 없음');
+{
+  const mine = st.top.some((r) => r.name === `${NICK}#${TAG}`);
+  const fullAbove = st.top.length >= 5 && st.top.every((r) => r.maxStage >= st.maxStage);
+  const sorted = st.top.every((r, i) => i === 0 || st.top[i - 1].maxStage >= r.maxStage);
+  if (!sorted) fail('원정 랭킹 정렬 이상');
+  if (!mine && !fullAbove) fail('원정 랭킹에 내 항목 없음 (TOP5가 나보다 낮은 층으로 차 있음)');
+}
 console.log(`  랭킹 OK: TOP ${st.top.length}명 중 포함 (최고 ${st.maxStage}층)`);
 
 socket.close();

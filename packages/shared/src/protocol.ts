@@ -757,6 +757,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'b-lv10', cat: '원정', name: '보석 세공 입문', desc: '보석 강화 합계 10레벨', gems: 3, stat: 'battleLv', goal: 10 },
   { id: 'b-lv50', cat: '원정', name: '보석 세공 장인', desc: '보석 강화 합계 50레벨', gems: 10, title: '보석 세공사', stat: 'battleLv', goal: 50 },
   { id: 'b-loot', cat: '원정', name: '전리품 감정', desc: '원정 드랍으로 광물 첫 획득', gems: 2, stat: 'battleMinerals', goal: 1 },
+  { id: 'b-inf200', cat: '원정', name: '끝없는 원정', desc: '무한 원정 200층 돌파', gems: 5, stat: 'battleMax', goal: 200 },
+  { id: 'b-inf500', cat: '원정', name: '오백 층의 벽', desc: '무한 원정 500층 돌파', gems: 10, title: '무한의 개척자', stat: 'battleMax', goal: 500 },
+  { id: 'b-inf1000', cat: '원정', name: '천 층의 전설', desc: '무한 원정 1,000층 돌파', gems: 20, title: '천층왕', stat: 'battleMax', goal: 1000 },
+  { id: 'b-inf2000', cat: '원정', name: '한계 너머', desc: '무한 원정 2,000층 돌파', gems: 30, title: '한계를 넘은 자', stat: 'battleMax', goal: 2000 },
   { id: 'b-lose', cat: '원정', name: '패배의 교훈', desc: '수문장에게 첫 패배', gems: 2, hidden: true },
   { id: 'b-afk', cat: '원정', name: '진정한 방치', desc: '전리품 가방이 가득 찬 채로 수령', gems: 3, hidden: true },
   // 히든
@@ -935,9 +939,26 @@ export type DigAck = (res: {
 
 export type BattleUpgradeKey = 'atk' | 'hp' | 'crit' | 'luck' | 'time';
 export const BATTLE_UPGRADE_KEYS: BattleUpgradeKey[] = ['atk', 'hp', 'crit', 'luck', 'time'];
-export const BATTLE_LV_MAX: Record<BattleUpgradeKey, number> = { atk: 100, hp: 100, crit: 30, luck: 30, time: 3 };
+/** 공격/체력은 무제한(실질 상한은 💎 비용 — 100Lv부터 비용이 선형 증가), 치명타/행운/시간은 고정 상한 */
+export const BATTLE_LV_MAX: Record<BattleUpgradeKey, number> = { atk: 9999, hp: 9999, crit: 30, luck: 30, time: 3 };
+/** 이 레벨부터 공격/체력 강화 비용이 26 × 1.03^(Lv−100) 💎로 지수 증가 — 골드→젬 환전(1,000🪙=1💎)까지 감안해
+ *  2000~3000층대(≈ Lv 197~209, 누적 3~4만💎)가 실질 한계가 되도록 */
+export const BATTLE_LV_SOFT_CAP = 100;
+export const BATTLE_LV_COST_GROWTH = 1.03;
 
+/** 스토리(테마 10개) 마지막 층 — 봇순이의 탑 100층. 그 다음부터 ♾️ 무한 원정 */
 export const BATTLE_MAX_STAGE = 100;
+/** 무한 원정 하드캡 (수치 안전용 — 비용 때문에 실제로는 2000~3000층대가 한계) */
+export const BATTLE_STAGE_CAP = 10000;
+// 무한 원정 성장: 100층 값 × (1 + (층−100)/100)^p — 다항 성장이라 필요 레벨은 층의 로그로 늘어난다
+// (레벨당 공격 ×1.10·체력 ×1.08 지수 성장 대비: 300층 ≈ +30Lv, 1000층 ≈ +64Lv, 3000층 ≈ +95Lv)
+export const BATTLE_ENDLESS_HP_POW = 2.6;
+export const BATTLE_ENDLESS_ATK_POW = 2.2;
+/** 무한 원정 처치 코인: 100층 값 × (1 + 0.5·ln(1 + (층−100)/100)) — 완만 (3000층 ≈ ×2.7) */
+export const BATTLE_ENDLESS_COIN_LOG = 0.5;
+/** 무한 원정 수문장 첫 처치 코인 = 500 + 2 × (층−100) (💎는 5/10층 리듬 그대로) */
+export const BATTLE_ENDLESS_CLEAR_BASE = 500;
+export const BATTLE_ENDLESS_CLEAR_PER_STAGE = 2;
 export const BATTLE_MIN_KILL_MS = 2000; // 아무리 강해도 1마리당 최소 2초
 export const BATTLE_FIGHT_MAX_TICKS = 120; // 수문장전 최대 틱(1틱=1초) — 초과 시 패배
 
@@ -983,16 +1004,31 @@ export const BATTLE_CLAIM_MIN_KILLS = 1;
 
 /** 강화 비용(💎) — lv = 현재 레벨 (lv → lv+1) */
 export function battleUpgradeCost(key: BattleUpgradeKey, lv: number): number {
-  if (key === 'atk' || key === 'hp') return 1 + Math.floor(lv / 4);
+  if (key === 'atk' || key === 'hp') {
+    if (lv < BATTLE_LV_SOFT_CAP) return 1 + Math.floor(lv / 4);
+    const base = 1 + Math.floor(BATTLE_LV_SOFT_CAP / 4); // 26 (100Lv에서 연속)
+    return Math.round(base * Math.pow(BATTLE_LV_COST_GROWTH, lv - BATTLE_LV_SOFT_CAP)); // 26, 27, 28, … Lv200 ≈ 500
+  }
   if (key === 'crit' || key === 'luck') return 2 + Math.floor(lv / 2);
   return 10 * (lv + 1); // time: 10 / 20 / 30
 }
 
+/** 무한 원정 진행도 x = (층 − 100) / 100 (스토리 구간은 0) */
+export function battleEndlessX(stage: number): number {
+  return Math.max(0, stage - BATTLE_MAX_STAGE) / 100;
+}
+export function battleIsEndless(stage: number): boolean {
+  return stage > BATTLE_MAX_STAGE;
+}
 export function battleMonsterHp(stage: number): number {
-  return Math.round(BATTLE_MONSTER_BASE_HP * Math.pow(BATTLE_MONSTER_HP_GROWTH, stage - 1));
+  const s = Math.min(stage, BATTLE_MAX_STAGE);
+  const story = BATTLE_MONSTER_BASE_HP * Math.pow(BATTLE_MONSTER_HP_GROWTH, s - 1);
+  return Math.round(story * Math.pow(1 + battleEndlessX(stage), BATTLE_ENDLESS_HP_POW));
 }
 export function battleMonsterAtk(stage: number): number {
-  return Math.round(BATTLE_MONSTER_BASE_ATK * Math.pow(BATTLE_MONSTER_ATK_GROWTH, stage - 1) * 10) / 10;
+  const s = Math.min(stage, BATTLE_MAX_STAGE);
+  const story = BATTLE_MONSTER_BASE_ATK * Math.pow(BATTLE_MONSTER_ATK_GROWTH, s - 1);
+  return Math.round(story * Math.pow(1 + battleEndlessX(stage), BATTLE_ENDLESS_ATK_POW) * 10) / 10;
 }
 /** 수문장 배율 — 10층 단위 대보스 > 5층 단위 보스 > 일반 수문장 */
 export function battleGuardianMult(stage: number): { hp: number; atk: number } {
@@ -1001,7 +1037,9 @@ export function battleGuardianMult(stage: number): { hp: number; atk: number } {
   return { hp: 3, atk: 1.3 };
 }
 export function battleCoinPerKill(stage: number): number {
-  return BATTLE_COIN_BASE * Math.pow(BATTLE_COIN_GROWTH, stage - 1);
+  const s = Math.min(stage, BATTLE_MAX_STAGE);
+  const story = BATTLE_COIN_BASE * Math.pow(BATTLE_COIN_GROWTH, s - 1);
+  return story * (1 + BATTLE_ENDLESS_COIN_LOG * Math.log(1 + battleEndlessX(stage)));
 }
 
 /** [이모지(폴백), 이름, 스프라이트 id(assets/extras/monsters/<id>.png — tools/import-extras.mjs)] */
@@ -1034,12 +1072,69 @@ export const BATTLE_TIERS: BattleTierDef[] = [
   { from: 91, name: '봇순이의 탑', mobs: [['🤡', '광대', 'clown'], ['🗡️', '도둑', 'thief'], ['💰', '상인', 'merchant']], guardian: ['🔨', '대장장이', 'blacksmith'], boss: ['🪓', '광전사', 'berserker'], bigBoss: ['👑', '봇순이', 'magician'] },
 ];
 
+/** 무한 원정 전용 추가 몬스터 — 스토리에 안 쓰인 43종 (tools/import-extras.mjs monsters와 합쳐 103종 전부 사용) */
+export const BATTLE_ENDLESS_EXTRA: { mobs: BattleMobDef[]; guardians: BattleMobDef[]; bosses: BattleMobDef[]; bigs: BattleMobDef[] } = {
+  mobs: [
+    ['🐜', '병정개미', 'ant-002'], ['🦇', '초록박쥐', 'bat-002'], ['🦇', '잿빛박쥐', 'bat-003'], ['🐈', '들고양이', 'cat'],
+    ['🐎', '야생마', 'horse'], ['🏹', '궁수', 'archer'], ['🎵', '음유시인', 'bard'], ['⛏️', '광부', 'miner'],
+    ['⛓️', '탈옥수', 'prisoner'], ['🔫', '총잡이', 'shooter'], ['🥚', '용의 알', 'dragon-egg'], ['🖼️', '초상화 유령', 'ghost-in-painting'],
+    ['🏹', '고블린 궁수', 'goblin-archer'], ['🔮', '고블린 마법사', 'goblin-magician'], ['💰', '고블린 상인', 'goblin-merchant'],
+    ['🗡️', '고블린 도둑', 'goblin-thief'], ['🍄', '갈색 독버섯', 'mushroom-man-002'], ['🍄', '주황 독버섯', 'mushroom-man-003'],
+    ['🐱', '오오즈 캣', 'ooze-cat'], ['🔵', '파란 슬라임', 'slime-002'], ['⚫', '검은 슬라임', 'slime-004'],
+  ],
+  guardians: [
+    ['🐘', '코끼리', 'elephant'], ['🥊', '격투가', 'fighter'], ['🎩', '조련사', 'tamer'], ['🦎', '갈색 드레이크', 'drake-002'],
+    ['🦎', '녹색 드레이크', 'drake-003'], ['🦎', '푸른 드레이크', 'drake-004'], ['🦎', '흑색 드레이크', 'drake006'],
+    ['🧌', '트롤', 'troll'], ['✨', '빛의 거인', 'light-man'],
+  ],
+  bosses: [['👑', '쥐의 왕', 'ratking'], ['⚔️', '사무라이', 'samurai'], ['🧌', '머리 셋 트롤', 'three-headed-troll']],
+  bigs: [
+    ['🐲', '갑옷 용', 'armored-dragon'], ['🐉', '붉은 용', 'dragon-001'], ['🐉', '황금 용', 'dragon-002'], ['🐉', '녹색 용', 'dragon-003'],
+    ['🐉', '흑룡', 'dragon-006'], ['🐉', '보석룡', 'dragon-007'], ['🐉', '대지룡', 'earth-dragon'], ['🐉', '사룡', 'evil-dragon'],
+    ['🐉', '마법룡', 'magic-dragon'], ['🐉', '유령룡', 'ghost-dragon'],
+  ],
+};
+
+let endlessPoolsCache: { mobs: BattleMobDef[]; guardian: BattleMobDef[]; boss: BattleMobDef[]; big: BattleMobDef[] } | null = null;
+/** 무한 원정 풀 = 스토리 테마 몬스터 전부 + 추가 43종 */
+export function battleEndlessPools(): { mobs: BattleMobDef[]; guardian: BattleMobDef[]; boss: BattleMobDef[]; big: BattleMobDef[] } {
+  if (!endlessPoolsCache) {
+    endlessPoolsCache = {
+      mobs: [...BATTLE_TIERS.flatMap((t) => t.mobs), ...BATTLE_ENDLESS_EXTRA.mobs],
+      guardian: [...BATTLE_TIERS.map((t) => t.guardian), ...BATTLE_ENDLESS_EXTRA.guardians],
+      boss: [...BATTLE_TIERS.map((t) => t.boss), ...BATTLE_ENDLESS_EXTRA.bosses],
+      big: [...BATTLE_TIERS.map((t) => t.bigBoss), ...BATTLE_ENDLESS_EXTRA.bigs],
+    };
+  }
+  return endlessPoolsCache;
+}
+
+/** 층 번호 해시 → [0, 1) — 무한 원정 몬스터를 층마다 다르게, 하지만 모두에게 같게 */
+export function battleHash(stage: number, salt = 0): number {
+  let h = Math.imul(stage + salt * 7919, 2654435761) >>> 0;
+  h ^= h >>> 15;
+  h = Math.imul(h, 2246822519) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489917) >>> 0;
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+export function battleTierNameFor(stage: number): string {
+  return battleIsEndless(stage) ? '♾️ 무한 원정' : battleTierFor(stage).name;
+}
+
 export function battleTierFor(stage: number): BattleTierDef {
   const idx = Math.max(0, Math.min(BATTLE_TIERS.length - 1, Math.floor((stage - 1) / 10)));
   return BATTLE_TIERS[idx];
 }
 /** 층의 대표 일반 몬스터 (층 번호로 결정) */
 export function battleMobFor(stage: number): { emoji: string; name: string; sprite: string } {
+  if (battleIsEndless(stage)) {
+    const pool = battleEndlessPools().mobs;
+    const [emoji, name, sprite] = pool[Math.floor(battleHash(stage, 1) * pool.length)];
+    return { emoji, name, sprite };
+  }
   const tier = battleTierFor(stage);
   const [emoji, name, sprite] = tier.mobs[(stage - 1) % tier.mobs.length];
   return { emoji, name, sprite };
@@ -1047,7 +1142,12 @@ export function battleMobFor(stage: number): { emoji: string; name: string; spri
 export function battleGuardianFor(stage: number): { emoji: string; name: string; sprite: string; hp: number; atk: number; kind: 'guardian' | 'boss' | 'big' } {
   const tier = battleTierFor(stage);
   const kind = stage % 10 === 0 ? 'big' : stage % 5 === 0 ? 'boss' : 'guardian';
-  const [emoji, name, sprite] = kind === 'big' ? tier.bigBoss : kind === 'boss' ? tier.boss : tier.guardian;
+  let def: BattleMobDef = kind === 'big' ? tier.bigBoss : kind === 'boss' ? tier.boss : tier.guardian;
+  if (battleIsEndless(stage)) {
+    const pool = battleEndlessPools()[kind];
+    def = pool[Math.floor(battleHash(stage, 2) * pool.length)];
+  }
+  const [emoji, name, sprite] = def;
   const mult = battleGuardianMult(stage);
   return {
     emoji,
@@ -1061,7 +1161,9 @@ export function battleGuardianFor(stage: number): { emoji: string; name: string;
 /** 수문장 첫 처치 보상 */
 export function battleClearReward(stage: number): { coins: number; gems: number } {
   return {
-    coins: stage * BATTLE_CLEAR_COIN_PER_STAGE,
+    coins: battleIsEndless(stage)
+      ? BATTLE_ENDLESS_CLEAR_BASE + BATTLE_ENDLESS_CLEAR_PER_STAGE * (stage - BATTLE_MAX_STAGE)
+      : stage * BATTLE_CLEAR_COIN_PER_STAGE,
     gems: stage % 10 === 0 ? BATTLE_BIG_BOSS_GEMS : stage % 5 === 0 ? BATTLE_BOSS_GEMS : 0,
   };
 }
@@ -1152,6 +1254,10 @@ export interface BattleStatePayload {
   effStage: number;
   /** 최고 돌파 층 (수문장 처치) — 다음 도전 = maxStage + 1 */
   maxStage: number;
+  /** 층 하드캡 (BATTLE_STAGE_CAP) — 클라 층 이동 상한 */
+  stageCap: number;
+  /** 사냥 중인 층이 무한 원정(101층~)인지 */
+  endless: boolean;
   lv: Record<BattleUpgradeKey, number>;
   /** 다음 강화 비용 (MAX면 null) */
   costs: Record<BattleUpgradeKey, number | null>;
