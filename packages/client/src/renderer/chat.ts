@@ -859,8 +859,12 @@
     foilCtx.font = '11px sans-serif';
     foilCtx.fillText('은박을 80% 이상 긁으면 자동 공개', LOTTO_W / 2, LOTTO_H / 2 + 14);
     foilCtx.globalCompositeOperation = 'destination-out';
+    // 새 은박은 페이드 인 없이 즉시 불투명하게 — 전환 중 아래 결과가 비치지 않도록 (공개 시 페이드 아웃은 유지)
+    lottoFoil.style.transition = 'none';
     lottoFoil.style.display = '';
     lottoFoil.style.opacity = '1';
+    void lottoFoil.offsetWidth; // 강제 리플로우 — transition 복구 전에 불투명 상태를 확정
+    lottoFoil.style.transition = '';
   }
 
   function scratchAt(x: number, y: number, r = 14): void {
@@ -978,11 +982,11 @@
     lottoRevealed = false;
     scratchMoves = 0;
     lottoCard.classList.remove('win', 'big');
+    paintFoil(); // 은박을 먼저 덮은 뒤 결과를 바꾼다 — 새 결과가 한 프레임도 노출되지 않게
     lottoUnder.innerHTML =
       t.rank > 0
         ? `<b>🎉 당첨!</b><span>${t.rank}등 ${t.prize.toLocaleString()}원</span>`
         : '<b>꽝!</b><span>다음 기회에…</span>';
-    paintFoil();
     lottoPct.textContent = '0%';
     lottoResult.textContent = '은박을 긁어 당첨 여부를 확인하세요!';
     paintLottoCtrl();
@@ -993,6 +997,8 @@
     lottoBusy = true;
     paintLottoCtrl();
     lottoResult.textContent = '복권을 사는 중…';
+    lottoCard.classList.remove('win', 'big');
+    paintFoil(); // 응답을 기다리는 동안 이전 결과부터 덮어 둔다
     const res = (await window.overlay.lotteryBuy()) as { ok: boolean; error?: string; ticket?: LottoTicketView; coins?: number };
     lottoBusy = false;
     if (typeof res.coins === 'number') {
@@ -1000,6 +1006,8 @@
       paintLottoBalance(res.coins);
     }
     if (!res.ok || !res.ticket) {
+      lottoFoil.style.display = 'none';
+      lottoUnder.innerHTML = '<b>🎟️</b><span>복권을 사서 긁어보세요</span>';
       lottoResult.textContent = res.error ?? '오류가 발생했어요.';
       paintLottoCtrl();
       return;
