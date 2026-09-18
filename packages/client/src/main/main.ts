@@ -451,6 +451,15 @@ function connect(): void {
     broadcast('net:slot-win', data);
   });
 
+  socket.on('slot-pool', (pool) => {
+    mySlotPool = Number(pool) || 0;
+    broadcast('net:slot-pool', mySlotPool);
+  });
+
+  socket.on('lottery-news', (data) => {
+    broadcast('net:lottery-news', data);
+  });
+
   socket.on('ranking-update', (data) => {
     lastRanking = data;
     broadcast('net:ranking', data);
@@ -711,7 +720,8 @@ ipcMain.on('close-fishdex', () => fishdexWindow?.hide());
 const POPOUT_PANELS: Record<string, { w: number; h: number }> = {
   forge: { w: 340, h: 470 },
   shop: { w: 360, h: 520 },
-  slot: { w: 320, h: 420 },
+  slot: { w: 340, h: 560 },
+  lottery: { w: 340, h: 470 },
   stock: { w: 380, h: 560 },
   note: { w: 340, h: 480 },
   battle: { w: 380, h: 640 },
@@ -1107,6 +1117,7 @@ ipcMain.handle('claim-gift', (): GiftResult => {
 // ---- 슬롯머신 (판정은 서버, 파츠 당첨 시 로컬 지급) ----
 
 let myCoins = 0;
+let mySlotPool = 0; // 🎰 누적 잭팟 (slot-pool 이벤트 + 슬롯 ack로 갱신)
 let myItems: string[] = [];
 let myFish: string[] = [];
 let myTrophies: string[] = [];
@@ -1302,6 +1313,7 @@ function walletSnapshot() {
     title: myTitle,
     petFx: myPetFx,
     pet: myPet,
+    slotPool: mySlotPool,
   };
 }
 
@@ -1366,20 +1378,56 @@ ipcMain.handle('ranking', () => {
   });
 });
 
-ipcMain.handle('slot-play', () => {
+// 5×3 슬롯 — 라인 베팅·라인 수를 서버로, 미보유 파츠 수를 함께 보내 파츠 대신 💎 환산 여부를 서버가 정한다
+ipcMain.handle('slot-play', (_e, opts: { bet?: unknown; lines?: unknown }) => {
   return new Promise((resolve) => {
     if (!socket?.connected) {
       resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
       return;
     }
-    (socket as any).timeout(10000).emit('slot', (err: unknown, res: any) => {
+    const partsLeft = giftPool().filter((id) => !inventory.owned.includes(id)).length;
+    const payload = { bet: Number(opts?.bet) || 1, lines: Number(opts?.lines) || 1, partsLeft };
+    (socket as any).timeout(10000).emit('slot', payload, (err: unknown, res: any) => {
       if (err || !res) {
         resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
         return;
       }
-      if (res.ok && (res.kind === 'part' || res.kind === 'mega')) {
-        const grant = grantRandomPart();
-        res.partLabel = grant?.label ?? null;
+      if (res.ok && typeof res.parts === 'number' && res.parts > 0) {
+        const labels: string[] = [];
+        for (let i = 0; i < res.parts; i++) {
+          const grant = grantRandomPart();
+          if (grant) labels.push(grant.label);
+        }
+        res.partLabels = labels;
+      }
+      if (typeof res.coins === 'number') {
+        myCoins = res.coins;
+        broadcast('self:coins', myCoins);
+      }
+      if (typeof res.gems === 'number') {
+        myGems = res.gems;
+        broadcast('self:gems', myGems);
+      }
+      if (typeof res.pool === 'number') {
+        mySlotPool = res.pool;
+        broadcast('net:slot-pool', mySlotPool);
+      }
+      resolve(res);
+    });
+  });
+});
+
+// ---- 🎟️ 즉석복권 (판정·정산 서버, 긁기 연출은 렌더러) ----
+function lotteryCall(ev: string, ...args: unknown[]): Promise<unknown> {
+  return new Promise((resolve) => {
+    if (!socket?.connected) {
+      resolve({ ok: false, error: '서버에 연결되어 있지 않아요.' });
+      return;
+    }
+    (socket as any).timeout(10000).emit(ev, ...args, (err: unknown, res: any) => {
+      if (err || !res) {
+        resolve({ ok: false, error: '응답 시간이 초과됐어요.' });
+        return;
       }
       if (typeof res.coins === 'number') {
         myCoins = res.coins;
@@ -1388,7 +1436,10 @@ ipcMain.handle('slot-play', () => {
       resolve(res);
     });
   });
-});
+}
+ipcMain.handle('lottery-state', () => lotteryCall('lottery-state'));
+ipcMain.handle('lottery-buy', () => lotteryCall('lottery-buy', {}));
+ipcMain.handle('lottery-claim', (_e, ticketId: unknown) => lotteryCall('lottery-claim', String(ticketId ?? '')));
 
 function pushAppearance(): void {
   saveInventory();

@@ -133,24 +133,238 @@ export interface ChatMessage {
 export const CHAT_RETENTION_DAYS = 3;
 export const CHAT_HISTORY_MAX = 300;
 
-// ---- 코인 경제 / 슬롯머신 ----
+// ---- 코인 경제 ----
 export const COIN_STARTER = 10; // 첫 로그인(신규 지갑) 지급
 export const COIN_PER_MINUTE = 1; // 접속 1분당 적립
-export const SLOT_COST = 3;
 
-export type SlotKind = 'miss' | 'small' | 'back' | 'double' | 'triple' | 'part' | 'jackpot' | 'mega';
+// ---- 🎰 슬롯머신 (5릴 × 3행, 페이라인 20개, 서버 전체 누적 잭팟) ----
+// 총 베팅 = 라인 베팅 × 활성 라인 수. 각 활성 라인은 1릴부터 연속으로 같은 심볼이 3개 이상이면 배당(× 라인 베팅).
+// 🃏 와일드(2~4릴)는 7️⃣·🎁를 제외한 심볼을 대체. 🎁 스캐터는 라인과 무관하게 화면 어디든 3개 이상이면 파츠 지급.
+// 7️⃣ 5개 라인 = 누적 잭팟. 서버 전체 골드 소비(슬롯 판돈·상점·강화·먹이·쪽지·광고 등)의 일부가 잭팟에 쌓인다.
+export const SLOT_REELS = 5;
+export const SLOT_ROWS = 3;
+/** 라인당 베팅 단계 (🪙) */
+export const SLOT_BET_TIERS = [1, 5, 10, 50, 100, 500, 1000, 5000, 10000];
+export const SLOT_LINES_MAX = 20;
+/** 페이라인 — 릴(1~5)별 행 인덱스 (0=위, 1=가운데, 2=아래). 활성 라인은 앞에서부터 N개 */
+export const SLOT_PAYLINES: number[][] = [
+  [1, 1, 1, 1, 1],
+  [0, 0, 0, 0, 0],
+  [2, 2, 2, 2, 2],
+  [0, 1, 2, 1, 0],
+  [2, 1, 0, 1, 2],
+  [0, 0, 1, 0, 0],
+  [2, 2, 1, 2, 2],
+  [1, 0, 0, 0, 1],
+  [1, 2, 2, 2, 1],
+  [0, 1, 1, 1, 0],
+  [2, 1, 1, 1, 2],
+  [1, 0, 1, 0, 1],
+  [1, 2, 1, 2, 1],
+  [0, 1, 0, 1, 0],
+  [2, 1, 2, 1, 2],
+  [1, 1, 0, 1, 1],
+  [1, 1, 2, 1, 1],
+  [0, 0, 2, 0, 0],
+  [2, 2, 0, 2, 2],
+  [0, 2, 0, 2, 0],
+];
+export const SLOT_WILD = '🃏';
+export const SLOT_SCATTER = '🎁';
+export const SLOT_SEVEN = '7️⃣';
+export const SLOT_GEM = '💎';
+export const SLOT_SYMBOLS = ['🍒', '🍋', '🍇', '🔔', '⭐', SLOT_GEM, SLOT_SEVEN, SLOT_WILD, SLOT_SCATTER];
+/** 라인 배당 (× 라인 베팅) — [3개, 4개, 5개]. 7️⃣ 5개는 배당 대신 누적 잭팟 */
+export const SLOT_PAYTABLE: Record<string, [number, number, number]> = {
+  '🍒': [5, 20, 100],
+  '🍋': [5, 20, 100],
+  '🍇': [8, 40, 200],
+  '🔔': [15, 75, 400],
+  '⭐': [30, 200, 1000],
+  [SLOT_GEM]: [50, 500, 3000],
+  [SLOT_SEVEN]: [80, 800, 0],
+};
+/** 릴별 심볼 가중치 (릴 1~5) — 서버 롤·시뮬레이션 공용. 7️⃣ 5개 라인 확률 ≈ 라인당 1/93만 (20라인 ≈ 1/4.6만 스핀) */
+export const SLOT_REEL_WEIGHTS: Record<string, [number, number, number, number, number]> = {
+  '🍒': [22, 22, 22, 22, 22],
+  '🍋': [22, 22, 22, 22, 22],
+  '🍇': [16, 16, 16, 16, 16],
+  '🔔': [11, 11, 11, 11, 11],
+  '⭐': [7, 7, 7, 7, 7],
+  [SLOT_GEM]: [4, 4, 4, 4, 4],
+  [SLOT_SEVEN]: [7, 7, 7, 5, 5],
+  [SLOT_WILD]: [0, 4, 4, 4, 0],
+  [SLOT_SCATTER]: [5, 5, 5, 5, 5],
+};
+/** 🎁 스캐터 3/4/5개 → 파츠 개수. 파츠를 다 모았으면 대신 총 베팅 × SLOT_SCATTER_PAY 를 💎 환산 지급 */
+export const SLOT_SCATTER_PARTS = [1, 2, 3];
+export const SLOT_SCATTER_PAY = [1, 5, 25];
+/** 💎 라인 배당·파츠 대체 보상은 이 금액당 💎 1개로 환산 (나머지는 🪙) */
+export const SLOT_GEM_RATE = 1000;
+/** 누적 잭팟 기본 적립금 — 당첨 후에도 이 아래로 내려가지 않는다 */
+export const SLOT_JACKPOT_BASE = 5_000_000;
+/** 서버 전체 골드 소비액 중 잭팟에 쌓이는 비율(%) — 전액 */
+export const SLOT_JACKPOT_FEED_PCT = 100;
+/** 💎 소비도 🪙 환산 뒤 같은 비율로 적립 — 펫 뽑기 1회(5💎) = 5,000🪙 환산, 원정 강화 💎 1개 = 500🪙 환산 */
+export const SLOT_JACKPOT_PET_PULL_GOLD = 5000;
+export const SLOT_JACKPOT_BATTLE_GEM_GOLD = 500;
+/** 잭팟 전액 지급 기준 라인 베팅 — 그 아래는 비례 지급 (예: 10🪙 → 10%) */
+export const SLOT_JACKPOT_FULL_BET = 100;
+/** 총 베팅 대비 이 배수 이상이면 대박(전체 알림) */
+export const SLOT_BIG_WIN_MULT = 30;
+export const SLOT_MIN_INTERVAL_MS = 1000;
+
+export type SlotKind = 'miss' | 'win' | 'part' | 'gem' | 'big' | 'jackpot';
+
+export interface SlotLineWin {
+  /** 페이라인 번호 (0부터) */
+  line: number;
+  symbol: string;
+  count: number;
+  /** 배당 (🪙 환산치, 라인 베팅 곱한 값) */
+  pay: number;
+}
 
 export interface SlotResult {
   ok: boolean;
   error?: string;
   kind?: SlotKind;
-  /** 코인 증감(비용 제외한 당첨금) */
-  delta?: number;
-  reels?: string[];
+  /** 결과 그리드 grid[릴][행] */
+  grid?: string[][];
+  bet?: number;
+  lines?: number;
+  /** 실제 차감된 판돈 (무료 스핀이면 0) */
+  cost?: number;
+  wins?: SlotLineWin[];
+  /** 🎁 스캐터 개수 */
+  scatter?: number;
+  /** 지급할 파츠 개수 (지급 자체는 클라이언트 로컬) */
+  parts?: number;
+  /** 🪙 총 당첨금 (잭팟 포함) */
+  coinsWon?: number;
+  /** 💎 총 당첨 */
+  gemsWon?: number;
+  /** 누적 잭팟 당첨금 (coinsWon에 포함) */
+  jackpot?: number;
+  /** 5개 일치 라인이 있었는지 */
+  five?: boolean;
   /** 정산 후 잔액 */
   coins?: number;
+  gems?: number;
   /** 🐾 펫 효과로 무료 스핀이었는지 */
   free?: boolean;
+  /** 정산 후 누적 잭팟 */
+  pool?: number;
+}
+
+/** 라인 평가 — grid[릴][행], 활성 라인 lines개. 잭팟(7️⃣×5) 라인은 pay 0 + jackpotLines에 기록 */
+export function evalSlotLines(
+  grid: string[][],
+  lines: number,
+  bet: number,
+): { wins: SlotLineWin[]; jackpotLines: number[]; scatter: number } {
+  const wins: SlotLineWin[] = [];
+  const jackpotLines: number[] = [];
+  for (let li = 0; li < Math.min(lines, SLOT_PAYLINES.length); li++) {
+    const path = SLOT_PAYLINES[li];
+    const first = grid[0][path[0]];
+    if (first === SLOT_SCATTER || first === SLOT_WILD) continue;
+    let count = 1;
+    for (let r = 1; r < SLOT_REELS; r++) {
+      const s = grid[r][path[r]];
+      if (s === first || (s === SLOT_WILD && first !== SLOT_SEVEN)) count++;
+      else break;
+    }
+    if (count < 3) continue;
+    if (first === SLOT_SEVEN && count === 5) {
+      jackpotLines.push(li);
+      wins.push({ line: li, symbol: first, count, pay: 0 });
+      continue;
+    }
+    const mult = SLOT_PAYTABLE[first]?.[count - 3] ?? 0;
+    if (mult > 0) wins.push({ line: li, symbol: first, count, pay: mult * bet });
+  }
+  let scatter = 0;
+  for (const reel of grid) for (const s of reel) if (s === SLOT_SCATTER) scatter++;
+  return { wins, jackpotLines, scatter };
+}
+
+/** 가중치 릴 롤 — rnd는 [0,1) 난수 소스 (시뮬레이션에서 교체 가능) */
+export function rollSlotGrid(rnd: () => number = Math.random): string[][] {
+  const grid: string[][] = [];
+  for (let r = 0; r < SLOT_REELS; r++) {
+    const col: string[] = [];
+    let total = 0;
+    for (const s of SLOT_SYMBOLS) total += SLOT_REEL_WEIGHTS[s][r];
+    for (let row = 0; row < SLOT_ROWS; row++) {
+      let x = rnd() * total;
+      let pick = SLOT_SYMBOLS[0];
+      for (const s of SLOT_SYMBOLS) {
+        x -= SLOT_REEL_WEIGHTS[s][r];
+        if (x < 0) {
+          pick = s;
+          break;
+        }
+      }
+      col.push(pick);
+    }
+    grid.push(col);
+  }
+  return grid;
+}
+
+/** 🪙 환산 금액을 💎(SLOT_GEM_RATE당 1개) + 나머지 🪙로 분할 */
+export function splitGemValue(value: number): { gems: number; coins: number } {
+  const v = Math.max(0, Math.floor(value));
+  return { gems: Math.floor(v / SLOT_GEM_RATE), coins: v % SLOT_GEM_RATE };
+}
+
+// ---- 🎟️ 즉석복권 (긁는 복권 — 판정·정산 서버, 긁기 연출 클라이언트) ----
+// 구매 시 판돈 차감 + 판정해 미공개 티켓으로 보관, 은박을 80% 이상 긁거나 자동긁기로 공개하면 claim → 당첨금 지급.
+// 확률은 표시하지 않는다(문구는 LOTTO_MAX_PRIZE_LABEL만). 1원 = 1🪙.
+export const LOTTO_PRICE = 2000;
+/** 당첨 확률 분모 — 등수별 weight/LOTTO_POOL (1등 1/5,000,000 · 2등 1/1,666,667 · 3등 1/200,000 · 4등 1/363.6 · 5등 1/14.3 · 6등 1/3.6) */
+export const LOTTO_POOL = 30_000_000;
+export const LOTTO_TIERS: { rank: number; prize: number; weight: number }[] = [
+  { rank: 1, prize: 1_000_000_000, weight: 6 },
+  { rank: 2, prize: 100_000_000, weight: 18 },
+  { rank: 3, prize: 10_000_000, weight: 150 },
+  { rank: 4, prize: 20_000, weight: 82_500 },
+  { rank: 5, prize: 4_000, weight: 2_100_000 },
+  { rank: 6, prize: 2_000, weight: 8_400_000 },
+];
+export const LOTTO_MAX_PRIZE_LABEL = '최대당첨금 10억원!';
+/** 이 등수 이상은 전체 알림 (전광판은 2등 이상) */
+export const LOTTO_NEWS_RANK = 3;
+export const LOTTO_MIN_INTERVAL_MS = 500;
+
+/** 미공개 티켓 — rank 0 = 꽝 */
+export interface LottoTicket {
+  id: string;
+  rank: number;
+  prize: number;
+  ts: number;
+}
+
+export interface LottoResult {
+  ok: boolean;
+  error?: string;
+  /** 구매 응답: 새 티켓(판정 포함 — 긁기 연출은 클라) */
+  ticket?: LottoTicket;
+  /** claim 응답: 지급 결과 */
+  rank?: number;
+  prize?: number;
+  coins?: number;
+}
+
+/** 즉석복권 판정 — rnd는 [0,1) 난수 소스 */
+export function rollLotto(rnd: () => number = Math.random): { rank: number; prize: number } {
+  let x = Math.floor(rnd() * LOTTO_POOL);
+  for (const t of LOTTO_TIERS) {
+    if (x < t.weight) return { rank: t.rank, prize: t.prize };
+    x -= t.weight;
+  }
+  return { rank: 0, prize: 0 };
 }
 
 /** fish 이벤트 정산 응답 */
@@ -691,10 +905,12 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'c-coin100', cat: '경제', name: '티끌 모아', desc: '보유 코인 100 달성', gems: 2, stat: 'coinsNow', goal: 100 },
   { id: 'c-coin1000', cat: '경제', name: '자산가', desc: '보유 코인 1,000 달성', gems: 10, title: '부자', stat: 'coinsNow', goal: 1000 },
   { id: 'c-earn5000', cat: '경제', name: '돈이 도는 삶', desc: '누적 획득 코인 5,000', gems: 10, stat: 'coinsEarned', goal: 5000 },
-  { id: 'c-jackpot', cat: '경제', name: '잭팟!', desc: '슬롯 잭팟 당첨', gems: 5 },
-  { id: 'c-mega', cat: '경제', name: '머신을 이기다', desc: '슬롯 메가 잭팟 당첨', gems: 15, title: '도박왕' },
+  { id: 'c-jackpot', cat: '경제', name: '잭팟!', desc: '슬롯 5개 일치 라인 당첨', gems: 5 },
+  { id: 'c-mega', cat: '경제', name: '머신을 이기다', desc: '슬롯 누적 잭팟(7️⃣×5) 당첨', gems: 15, title: '도박왕' },
   { id: 'c-slot100', cat: '경제', name: '단골손님', desc: '슬롯 누적 100회', gems: 5, stat: 'slotSpins', goal: 100 },
   { id: 'c-missrun', cat: '경제', name: '오늘은 아닌가 봐', desc: '슬롯 10연속 꽝', gems: 3, hidden: true, stat: 'slotMissRun', goal: 10 },
+  { id: 'c-lotto50', cat: '경제', name: '복권방 단골', desc: '즉석복권 50장 긁기', gems: 5, stat: 'lottoTickets', goal: 50 },
+  { id: 'c-lotto-big', cat: '경제', name: '인생 역전', desc: '즉석복권 3등 이상 당첨', gems: 15, title: '벼락부자' },
   { id: 'c-shopall', cat: '경제', name: '쇼핑 마스터', desc: '상점 코스메틱 전부 구매', gems: 20, title: '컬렉터', stat: 'cosmetics', goal: 23 },
   { id: 'c-random10', cat: '경제', name: '뽑기의 맛', desc: '랜덤뽑기 10회', gems: 3, stat: 'randomPulls', goal: 10 },
   { id: 'c-actions', cat: '경제', name: '만능 연기자', desc: '액션 9종 전부 구매', gems: 10, title: '액션 스타', stat: 'actionsOwned', goal: 9 },
@@ -1325,8 +1541,14 @@ export interface ClientToServerEvents {
   action: (data: { action: ActionId; text: string }) => void;
   /** 이 시각까지 읽었음을 보고 (채팅창이 보이는 동안) */
   read: (ts: number) => void;
-  /** 슬롯머신 1회 (비용 SLOT_COST, 판정은 서버) */
-  slot: (ack: (res: SlotResult) => void) => void;
+  /** 🎰 슬롯머신 1회 — 라인 베팅(SLOT_BET_TIERS)·활성 라인 수·미보유 파츠 수 (판정·정산 서버, 파츠 지급은 클라) */
+  slot: (opts: { bet: number; lines: number; partsLeft: number }, ack: (res: SlotResult) => void) => void;
+  /** 🎟️ 즉석복권 — 미공개 티켓·잔액 조회 */
+  'lottery-state': (ack: (res: { ticket: LottoTicket | null; coins: number }) => void) => void;
+  /** 🎟️ 즉석복권 구매 (LOTTO_PRICE 차감·판정·미공개 보관 — 이전 미공개 티켓은 먼저 정산) */
+  'lottery-buy': (opts: { rig?: number }, ack: (res: LottoResult) => void) => void;
+  /** 🎟️ 긁어서 공개한 티켓 정산 (당첨금 지급) */
+  'lottery-claim': (ticketId: string, ack: (res: LottoResult) => void) => void;
   /** 상점 구매 */
   buy: (itemId: string, ack: (res: { ok: boolean; error?: string; coins?: number; items?: string[] }) => void) => void;
   /** 액션 구매 (💎 전용) */
@@ -1518,8 +1740,21 @@ export interface ServerToClientEvents {
     trophy?: boolean;
     rod?: number;
   }) => void;
-  /** 슬롯 대박 전체 알림 */
-  'slot-win': (data: { id: string; nickname: string; tag: string; kind: SlotKind; delta: number }) => void;
+  /** 🎰 슬롯 대박 전체 알림 (파츠·💎·대박·잭팟) — delta = 🪙 당첨금, gems = 💎 당첨, parts = 파츠 개수 */
+  'slot-win': (data: {
+    id: string;
+    nickname: string;
+    tag: string;
+    kind: SlotKind;
+    delta: number;
+    gems?: number;
+    parts?: number;
+    bet?: number;
+  }) => void;
+  /** 🎰 누적 잭팟 현재 금액 (접속 시 + 변동 시 전체) */
+  'slot-pool': (pool: number) => void;
+  /** 🎟️ 즉석복권 고액 당첨(LOTTO_NEWS_RANK 이상) 전체 알림 */
+  'lottery-news': (data: { id: string; nickname: string; tag: string; rank: number; prize: number }) => void;
   /** 코인 랭킹 TOP5 + 내 순위 (접속 직후 1회 + 분당 코인 틱마다 개인화 전송) */
   'ranking-update': (data: {
     rows: { name: string; coins: number }[];

@@ -154,7 +154,10 @@ interface OverlayApi {
   openImage(url: string): void;
   claimGift(): Promise<GiftClaimResult>;
   getCoins(): Promise<number>;
-  playSlot(): Promise<unknown>;
+  playSlot(opts: { bet: number; lines: number }): Promise<unknown>;
+  lotteryState(): Promise<unknown>;
+  lotteryBuy(): Promise<unknown>;
+  lotteryClaim(ticketId: string): Promise<unknown>;
   getWallet(): Promise<{
     coins: number;
     items: string[];
@@ -2457,12 +2460,26 @@ function wireNet(): void {
   });
 
   window.overlay.on('net:slot-win', (data) => {
-    const d = data as { id: string; kind: string };
+    const d = data as { id: string; kind: string; gems?: number; parts?: number };
     const actor = d.id === selfId ? me : remotes.get(d.id);
     if (!actor) return;
-    const text = d.kind === 'mega' ? '7️⃣ 메가 잭팟!!!' : d.kind === 'jackpot' ? '💎 잭팟!!' : '🎰 파츠 당첨!';
+    const text =
+      d.kind === 'jackpot' ? '🎰 잭팟!!! 7️⃣7️⃣7️⃣7️⃣7️⃣'
+      : d.kind === 'big' ? '🎰 대박!!'
+      : d.kind === 'gem' ? `💎 다이아 +${d.gems ?? 1}!`
+      : `🎁 파츠 ${d.parts ?? 1}개 당첨!`;
     showBubble(actor, text);
     spawnHearts(actor.x, actorBox(actor).y);
+    if (d.kind === 'jackpot') for (let i = 1; i <= 4; i++) setTimeout(() => spawnHearts(actor.x, actorBox(actor).y), i * 350);
+  });
+
+  window.overlay.on('net:lottery-news', (data) => {
+    const d = data as { id: string; rank: number; prize: number };
+    const actor = d.id === selfId ? me : remotes.get(d.id);
+    if (!actor) return;
+    showBubble(actor, d.rank === 1 ? '🎟️ 복권 1등!!! 10억 당첨!!!' : `🎟️ 복권 ${d.rank}등 당첨! ${d.prize.toLocaleString()}원`);
+    spawnHearts(actor.x, actorBox(actor).y);
+    if (d.rank <= 2) for (let i = 1; i <= 4; i++) setTimeout(() => spawnHearts(actor.x, actorBox(actor).y), i * 350);
   });
 
   window.overlay.on('net:brag-news', (data) => {

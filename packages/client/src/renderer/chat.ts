@@ -539,108 +539,507 @@
     if (panel.classList.contains('open')) void renderPanel();
   });
 
-  // ---- 슬롯머신 ----
+  // ---- 🎰 슬롯머신 (5×3, 20 페이라인 — 판정·정산 서버, 파츠 지급은 메인 프로세스 로컬) ----
 
   const slotPanel = document.getElementById('slot-panel')!;
   const slotClose = document.getElementById('slot-close') as HTMLButtonElement;
   const slotBalance = document.getElementById('slot-balance')!;
   const coinBalanceEl = document.getElementById('coin-balance')!;
-  const reelEls = [...document.querySelectorAll('#slot-reels span')] as HTMLElement[];
+  const slotGrid = document.getElementById('slot-grid')!;
+  const slotLinesSvg = document.getElementById('slot-lines')!;
+  const slotPoolEl = document.getElementById('slot-pool')!;
   const slotResult = document.getElementById('slot-result')!;
   const slotSpin = document.getElementById('slot-spin') as HTMLButtonElement;
+  const slotBetEl = document.getElementById('slot-bet')!;
+  const slotLinesEl = document.getElementById('slot-lines-n')!;
+  const slotBetDn = document.getElementById('slot-bet-dn') as HTMLButtonElement;
+  const slotBetUp = document.getElementById('slot-bet-up') as HTMLButtonElement;
+  const slotLinesDn = document.getElementById('slot-lines-dn') as HTMLButtonElement;
+  const slotLinesUp = document.getElementById('slot-lines-up') as HTMLButtonElement;
+  const slotMax = document.getElementById('slot-max') as HTMLButtonElement;
 
-  const SLOT_SYMBOLS = ['🍒', '🍋', '⭐', '🎁', '💎', '7️⃣'];
+  const SLOT_UI_SYMBOLS = ['🍒', '🍋', '🍇', '🔔', '⭐', '💎', '7️⃣', '🃏', '🎁'];
+  const SLOT_LINE_COLORS = ['#ffd54f', '#4fc3f7', '#f06292', '#81c784', '#ff8a65', '#ba68c8', '#4dd0e1', '#fff176', '#a1887f', '#90caf9'];
   let coins = 0;
+  let slotGems = 0;
   let spinning = false;
+  let slotBetIdx = 2; // 10 🪙
+  let slotLineN = SLOT_LINES_MAX;
+  const slotCells: HTMLElement[][] = []; // [릴][행]
+
+  for (let row = 0; row < 3; row++) {
+    for (let reel = 0; reel < 5; reel++) {
+      const cell = document.createElement('span');
+      cell.className = 'slot-cell';
+      cell.textContent = '❔';
+      slotGrid.appendChild(cell);
+      (slotCells[reel] ??= [])[row] = cell;
+    }
+  }
+  try {
+    const rawB = localStorage.getItem('slot.betIdx');
+    const b = rawB === null ? NaN : Number(rawB);
+    if (Number.isInteger(b) && b >= 0 && b < SLOT_BET_TIERS.length) slotBetIdx = b;
+    const rawL = localStorage.getItem('slot.lines');
+    const l = rawL === null ? NaN : Number(rawL);
+    if (Number.isInteger(l) && l >= 1 && l <= SLOT_LINES_MAX) slotLineN = l;
+  } catch {
+    // localStorage 불가 — 기본값
+  }
 
   interface SlotPlayResult {
     ok: boolean;
     error?: string;
     kind?: string;
-    delta?: number;
-    reels?: string[];
+    grid?: string[][];
+    bet?: number;
+    lines?: number;
+    cost?: number;
+    wins?: { line: number; symbol: string; count: number; pay: number }[];
+    scatter?: number;
+    parts?: number;
+    coinsWon?: number;
+    gemsWon?: number;
+    jackpot?: number;
     coins?: number;
-    partLabel?: string | null;
+    gems?: number;
+    free?: boolean;
+    pool?: number;
+    /** 메인 프로세스가 로컬 지급한 파츠 라벨 */
+    partLabels?: string[];
+  }
+
+  const slotTotal = (): number => SLOT_BET_TIERS[slotBetIdx] * slotLineN;
+
+  function paintSlotBalance(): void {
+    slotBalance.textContent = `🪙 ${coins.toLocaleString()} · 💎 ${slotGems.toLocaleString()}`;
+  }
+
+  function paintSlotCtrl(): void {
+    slotBetEl.textContent = SLOT_BET_TIERS[slotBetIdx].toLocaleString();
+    slotLinesEl.textContent = String(slotLineN);
+    slotBetDn.disabled = spinning || slotBetIdx === 0;
+    slotBetUp.disabled = spinning || slotBetIdx === SLOT_BET_TIERS.length - 1;
+    slotLinesDn.disabled = spinning || slotLineN === 1;
+    slotLinesUp.disabled = spinning || slotLineN === SLOT_LINES_MAX;
+    slotMax.disabled = spinning || slotLineN === SLOT_LINES_MAX;
+    slotSpin.textContent = `돌리기 (${slotTotal().toLocaleString()} 🪙)`;
+    slotSpin.disabled = spinning || coins < slotTotal();
+    try {
+      localStorage.setItem('slot.betIdx', String(slotBetIdx));
+      localStorage.setItem('slot.lines', String(slotLineN));
+    } catch {
+      // 무시
+    }
   }
 
   function updateCoins(value: number): void {
     coins = value;
     coinBalanceEl.textContent = `🪙 ${value}`;
-    slotBalance.textContent = `🪙 ${value}`;
-    if (!spinning) slotSpin.disabled = value < 3;
+    paintSlotBalance();
+    if (!spinning) slotSpin.disabled = value < slotTotal();
+  }
+
+  function updateSlotPool(pool: number): void {
+    slotPoolEl.textContent = `${Math.floor(pool).toLocaleString()} 🪙`;
+  }
+
+  function clearSlotMarks(): void {
+    for (const col of slotCells) for (const c of col) c.classList.remove('win', 'scatter');
+    slotLinesSvg.innerHTML = '';
+  }
+
+  /** 당첨 라인 셀 강조 + 라인 경로(SVG) 그리기, 🎁 스캐터 강조 */
+  function markSlotWins(res: SlotPlayResult): void {
+    clearSlotMarks();
+    const wins = res.wins ?? [];
+    wins.forEach((w, i) => {
+      const path = SLOT_PAYLINES[w.line];
+      if (!path) return;
+      for (let reel = 0; reel < Math.min(w.count, 5); reel++) slotCells[reel][path[reel]].classList.add('win');
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      el.setAttribute('points', path.map((row, reel) => `${reel * 100 + 50},${row * 100 + 50}`).join(' '));
+      el.setAttribute('stroke', SLOT_LINE_COLORS[w.line % SLOT_LINE_COLORS.length]);
+      el.style.animationDelay = `${Math.min(i, 8) * 0.12}s`;
+      slotLinesSvg.appendChild(el);
+    });
+    if ((res.scatter ?? 0) >= 3 && res.grid) {
+      for (let reel = 0; reel < 5; reel++) {
+        for (let row = 0; row < 3; row++) if (res.grid[reel][row] === '🎁') slotCells[reel][row].classList.add('scatter');
+      }
+    }
   }
 
   function slotResultText(res: SlotPlayResult): string {
-    switch (res.kind) {
-      case 'small':
-        return '🍒 +1 코인';
-      case 'back':
-        return '🍒🍒🍒 본전! +3 코인';
-      case 'double':
-        return '🍋 더블! +6 코인';
-      case 'triple':
-        return '⭐ 트리플! +9 코인';
-      case 'part':
-        return res.partLabel ? `🎁 파츠 당첨! '${res.partLabel}' 획득!` : '🎁 이미 모든 파츠 보유!';
-      case 'jackpot':
-        return '💎 잭팟!! +20 코인!';
-      case 'mega':
-        return res.partLabel
-          ? `7️⃣ 메가 잭팟!!! +60 코인 + '${res.partLabel}'!`
-          : '7️⃣ 메가 잭팟!!! +60 코인!';
-      default:
-        return '꽝... 다음 기회에!';
+    const out: string[] = [];
+    if (res.free) out.push('🐾 펫 효과로 무료 스핀!');
+    if (res.jackpot) out.push(`🎰🎰🎰 잭팟!!! 7️⃣×5 누적 잭팟 +${res.jackpot.toLocaleString()} 🪙`);
+    const lineWins = (res.wins ?? []).filter((w) => w.pay > 0 && !(w.symbol === '7️⃣' && w.count === 5));
+    if (lineWins.length > 0) {
+      const top = [...lineWins]
+        .sort((a, b) => b.pay - a.pay)
+        .slice(0, 4)
+        .map((w) => `${w.symbol}×${w.count} ${w.pay.toLocaleString()}`);
+      out.push(`${lineWins.length}라인 당첨 — ${top.join(' · ')}${lineWins.length > 4 ? ' …' : ''}`);
     }
+    const scatter = res.scatter ?? 0;
+    if (scatter >= 3) {
+      if ((res.parts ?? 0) > 0) {
+        out.push(
+          res.partLabels?.length
+            ? `🎁×${scatter} 파츠 획득: ${res.partLabels.map((l) => `'${l}'`).join(', ')}`
+            : `🎁×${scatter} 파츠 당첨 (이미 모두 보유)`,
+        );
+      } else out.push(`🎁×${scatter} 파츠를 다 모아서 💎 환산 지급!`);
+    }
+    const sum: string[] = [];
+    if (res.coinsWon) sum.push(`+${res.coinsWon.toLocaleString()} 🪙`);
+    if (res.gemsWon) sum.push(`+${res.gemsWon.toLocaleString()} 💎`);
+    if (sum.length > 0) out.push(`${res.kind === 'big' ? '🔥 대박! ' : ''}합계 ${sum.join(' · ')}`);
+    return out.length > 0 ? out.join('\n') : '꽝... 다음 기회에!';
   }
 
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   async function spinSlot(): Promise<void> {
-    if (spinning) return;
+    if (spinning || coins < slotTotal()) return;
     spinning = true;
-    slotSpin.disabled = true;
+    paintSlotCtrl();
+    clearSlotMarks();
+    slotPanel.classList.remove('jackpot');
     slotResult.textContent = '두구두구...';
+    const stopped = new Set<number>();
     const shuffle = setInterval(() => {
-      for (const reel of reelEls) {
-        reel.textContent = SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
+      for (let reel = 0; reel < 5; reel++) {
+        if (stopped.has(reel)) continue;
+        for (let row = 0; row < 3; row++) {
+          slotCells[reel][row].textContent = SLOT_UI_SYMBOLS[Math.floor(Math.random() * SLOT_UI_SYMBOLS.length)];
+        }
       }
-    }, 80);
+    }, 70);
     const [res] = await Promise.all([
-      window.overlay.playSlot() as Promise<SlotPlayResult>,
-      delay(1000),
+      window.overlay.playSlot({ bet: SLOT_BET_TIERS[slotBetIdx], lines: slotLineN }) as Promise<SlotPlayResult>,
+      delay(900),
     ]);
-    clearInterval(shuffle);
-    if (!res.ok || !res.reels) {
-      for (const reel of reelEls) reel.textContent = '❔';
+    if (!res.ok || !res.grid) {
+      clearInterval(shuffle);
+      for (const col of slotCells) for (const c of col) c.textContent = '❔';
       slotResult.textContent = res.error ?? '오류가 발생했어요.';
-    } else {
-      for (let i = 0; i < reelEls.length; i++) {
-        reelEls[i].textContent = res.reels[i];
-        await delay(280);
-      }
-      slotResult.textContent = slotResultText(res);
       if (typeof res.coins === 'number') updateCoins(res.coins);
+    } else {
+      // 릴이 왼쪽부터 차례로 멈춘다
+      for (let reel = 0; reel < 5; reel++) {
+        stopped.add(reel);
+        for (let row = 0; row < 3; row++) slotCells[reel][row].textContent = res.grid[reel][row];
+        await delay(180);
+      }
+      clearInterval(shuffle);
+      markSlotWins(res);
+      slotResult.textContent = slotResultText(res);
+      if (res.kind === 'jackpot') slotPanel.classList.add('jackpot');
+      if (typeof res.coins === 'number') updateCoins(res.coins);
+      if (typeof res.gems === 'number') updateGems(res.gems);
+      if (typeof res.pool === 'number') updateSlotPool(res.pool);
     }
     spinning = false;
-    slotSpin.disabled = coins < 3;
+    paintSlotCtrl();
   }
 
+  slotBetDn.addEventListener('click', () => {
+    if (slotBetIdx > 0) slotBetIdx--;
+    paintSlotCtrl();
+  });
+  slotBetUp.addEventListener('click', () => {
+    if (slotBetIdx < SLOT_BET_TIERS.length - 1) slotBetIdx++;
+    paintSlotCtrl();
+  });
+  slotLinesDn.addEventListener('click', () => {
+    if (slotLineN > 1) slotLineN--;
+    paintSlotCtrl();
+  });
+  slotLinesUp.addEventListener('click', () => {
+    if (slotLineN < SLOT_LINES_MAX) slotLineN++;
+    paintSlotCtrl();
+  });
+  slotMax.addEventListener('click', () => {
+    slotLineN = SLOT_LINES_MAX;
+    paintSlotCtrl();
+  });
   slotSpin.addEventListener('click', () => void spinSlot());
   slotClose.addEventListener('click', () => slotPanel.classList.remove('open'));
 
+  /** 팝아웃으로 열릴 때 지갑·잭팟 스냅샷 반영 */
+  async function renderSlot(): Promise<void> {
+    const w = (await window.overlay.getWallet()) as { coins: number; gems?: number; slotPool?: number };
+    updateCoins(w.coins);
+    updateGems(w.gems ?? 0);
+    updateSlotPool(w.slotPool ?? 0);
+    paintSlotCtrl();
+  }
+
   window.overlay.on('self:coins', (data) => updateCoins(Number(data) || 0));
+  window.overlay.on('net:slot-pool', (data) => updateSlotPool(Number(data) || 0));
 
   const gemBalanceEl = document.getElementById('gem-balance')!;
   function updateGems(value: number): void {
+    slotGems = value;
     gemBalanceEl.textContent = `💎 ${value}`;
+    paintSlotBalance();
   }
   window.overlay.on('self:gems', (data) => updateGems(Number(data) || 0));
   window.overlay.on('net:slot-win', (data) => {
-    const d = data as { id: string; nickname: string; tag: string; kind: string; delta: number };
-    if (d.id === chatSelfId) return; // 본인은 슬롯 결과창으로 충분
-    const label =
-      d.kind === 'mega' ? '메가 잭팟(7️⃣7️⃣7️⃣)을' : d.kind === 'jackpot' ? '잭팟(💎💎💎)을' : '파츠(🎁🎁🎁)를';
-    addSystemMessage(`🎰 ${d.nickname}#${d.tag}님이 ${label} 터뜨렸어요!`);
+    const d = data as { id: string; nickname: string; tag: string; kind: string; delta: number; gems?: number; parts?: number; bet?: number };
+    if (d.id === chatSelfId && d.kind !== 'jackpot') return; // 본인은 슬롯 결과창으로 충분 (잭팟은 채팅에도 남긴다)
+    const who = `${d.nickname}#${d.tag}님이`;
+    const text =
+      d.kind === 'jackpot' ? `🎰🎰🎰 ${who} 누적 잭팟 ${d.delta.toLocaleString()} 🪙를 터뜨렸어요!!!`
+      : d.kind === 'big' ? `🎰 ${who} 대박! ${d.delta.toLocaleString()} 🪙를 땄어요! (베팅 ${(d.bet ?? 0).toLocaleString()})`
+      : d.kind === 'gem' ? `🎰 ${who} 슬롯에서 💎 ${d.gems ?? 1}개를 땄어요!`
+      : `🎰 ${who} 슬롯에서 파츠 ${d.parts ?? 1}개를 뽑았어요!`;
+    addSystemMessage(text);
+  });
+
+  // ---- 🎟️ 즉석복권 (판정·정산 서버 — 은박(캔버스)을 80% 이상 긁거나 자동긁기로 공개하면 claim) ----
+
+  const lotteryPanel = document.getElementById('lottery-panel')!;
+  const lotteryClose = document.getElementById('lottery-close') as HTMLButtonElement;
+  const lotteryBalance = document.getElementById('lottery-balance')!;
+  const lottoCard = document.getElementById('lotto-card')!;
+  const lottoUnder = document.getElementById('lotto-under')!;
+  const lottoFoil = document.getElementById('lotto-foil') as HTMLCanvasElement;
+  const lottoResult = document.getElementById('lotto-result')!;
+  const lottoBuy = document.getElementById('lotto-buy') as HTMLButtonElement;
+  const lottoAuto = document.getElementById('lotto-auto') as HTMLButtonElement;
+  const lottoPct = document.getElementById('lotto-pct')!;
+
+  interface LottoTicketView {
+    id: string;
+    rank: number;
+    prize: number;
+    ts: number;
+  }
+  const LOTTO_W = 280;
+  const LOTTO_H = 150;
+  const LOTTO_REVEAL_RATIO = 0.8;
+  let lottoTicket: LottoTicketView | null = null;
+  let lottoRevealed = true; // 현재 카드가 공개(정산)됐는지 — 공개 전엔 새로 살 수 없다
+  let lottoBusy = false;
+  const foilCtx = lottoFoil.getContext('2d')!;
+  const foilDpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  lottoFoil.width = LOTTO_W * foilDpr;
+  lottoFoil.height = LOTTO_H * foilDpr;
+
+  function paintLottoBalance(value: number): void {
+    lotteryBalance.textContent = `🪙 ${value.toLocaleString()}`;
+  }
+
+  function paintLottoCtrl(): void {
+    lottoBuy.textContent = `복권 사기 (${LOTTO_PRICE.toLocaleString()} 🪙)`;
+    lottoBuy.disabled = lottoBusy || !lottoRevealed || coins < LOTTO_PRICE;
+    lottoAuto.disabled = lottoBusy || lottoRevealed || !lottoTicket;
+  }
+
+  /** 은박 그리기 — 이후 붓질은 destination-out으로 지운다 */
+  function paintFoil(): void {
+    foilCtx.setTransform(foilDpr, 0, 0, foilDpr, 0, 0);
+    foilCtx.globalCompositeOperation = 'source-over';
+    const g = foilCtx.createLinearGradient(0, 0, LOTTO_W, LOTTO_H);
+    g.addColorStop(0, '#dcdcdc');
+    g.addColorStop(0.5, '#a6a6a6');
+    g.addColorStop(1, '#e8e8e8');
+    foilCtx.fillStyle = g;
+    foilCtx.fillRect(0, 0, LOTTO_W, LOTTO_H);
+    foilCtx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    for (let i = 0; i < 400; i++) foilCtx.fillRect(Math.random() * LOTTO_W, Math.random() * LOTTO_H, 1.5, 1.5);
+    foilCtx.fillStyle = '#5f5f5f';
+    foilCtx.textAlign = 'center';
+    foilCtx.textBaseline = 'middle';
+    foilCtx.font = 'bold 16px sans-serif';
+    foilCtx.fillText('여기를 긁어보세요', LOTTO_W / 2, LOTTO_H / 2 - 10);
+    foilCtx.font = '11px sans-serif';
+    foilCtx.fillText('은박을 80% 이상 긁으면 자동 공개', LOTTO_W / 2, LOTTO_H / 2 + 14);
+    foilCtx.globalCompositeOperation = 'destination-out';
+    lottoFoil.style.display = '';
+    lottoFoil.style.opacity = '1';
+  }
+
+  function scratchAt(x: number, y: number, r = 14): void {
+    foilCtx.beginPath();
+    foilCtx.arc(x, y, r, 0, Math.PI * 2);
+    foilCtx.fill();
+  }
+
+  function scratchLine(a: [number, number], b: [number, number]): void {
+    const dist = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const steps = Math.max(1, Math.ceil(dist / 5));
+    for (let i = 0; i <= steps; i++) scratchAt(a[0] + ((b[0] - a[0]) * i) / steps, a[1] + ((b[1] - a[1]) * i) / steps);
+  }
+
+  /** 지워진 비율 (알파 샘플링 — 5픽셀 간격) */
+  function scratchedRatio(): number {
+    const { data } = foilCtx.getImageData(0, 0, lottoFoil.width, lottoFoil.height);
+    let clear = 0;
+    let total = 0;
+    for (let i = 3; i < data.length; i += 20) {
+      total++;
+      if (data[i] < 64) clear++;
+    }
+    return total > 0 ? clear / total : 0;
+  }
+
+  function foilPos(e: PointerEvent): [number, number] {
+    const r = lottoFoil.getBoundingClientRect();
+    return [((e.clientX - r.left) / r.width) * LOTTO_W, ((e.clientY - r.top) / r.height) * LOTTO_H];
+  }
+
+  let scratching = false;
+  let lastScratch: [number, number] | null = null;
+  let scratchMoves = 0;
+
+  function checkScratched(): void {
+    if (!lottoTicket || lottoRevealed) return;
+    const ratio = scratchedRatio();
+    lottoPct.textContent = `${Math.round(ratio * 100)}%`;
+    if (ratio >= LOTTO_REVEAL_RATIO) void revealLotto();
+  }
+
+  lottoFoil.addEventListener('pointerdown', (e) => {
+    if (!lottoTicket || lottoRevealed || lottoBusy) return;
+    scratching = true;
+    lottoFoil.setPointerCapture(e.pointerId);
+    const p = foilPos(e);
+    scratchAt(p[0], p[1]);
+    lastScratch = p;
+  });
+  lottoFoil.addEventListener('pointermove', (e) => {
+    if (!scratching) return;
+    const p = foilPos(e);
+    if (lastScratch) scratchLine(lastScratch, p);
+    else scratchAt(p[0], p[1]);
+    lastScratch = p;
+    if (++scratchMoves % 6 === 0) checkScratched();
+  });
+  const endScratch = (): void => {
+    if (!scratching) return;
+    scratching = false;
+    lastScratch = null;
+    checkScratched();
+  };
+  lottoFoil.addEventListener('pointerup', endScratch);
+  lottoFoil.addEventListener('pointercancel', endScratch);
+
+  /** 공개 — 남은 은박을 위에서 아래로 붓질해 지운 뒤 서버 정산(claim) */
+  async function revealLotto(): Promise<void> {
+    if (!lottoTicket || lottoRevealed || lottoBusy) return;
+    lottoBusy = true;
+    scratching = false;
+    paintLottoCtrl();
+    // 시간 기반 붓질 — rAF 대신 setTimeout: 창이 가려지거나 최소화돼도(프레임 정지) 정산까지 끝나도록
+    const t0 = performance.now();
+    const dur = 700;
+    let lastY = -12;
+    await new Promise<void>((resolve) => {
+      const step = (): void => {
+        const k = Math.min(1, (performance.now() - t0) / dur);
+        const y = k * (LOTTO_H + 24) - 12;
+        // 지난 프레임 이후 건너뛴 구간까지 채워서 지운다 (프레임이 드문드문 와도 틈이 없게)
+        for (let yy = lastY; yy <= y; yy += 9) {
+          for (let x = -10; x <= LOTTO_W + 10; x += 10) scratchAt(x + (Math.random() * 6 - 3), yy + (Math.random() * 8 - 4), 13);
+        }
+        lastY = y;
+        lottoPct.textContent = `${Math.round(Math.max(LOTTO_REVEAL_RATIO, k) * 100)}%`;
+        if (k < 1) setTimeout(step, 16);
+        else resolve();
+      };
+      step();
+    });
+    lottoFoil.style.opacity = '0';
+    lottoRevealed = true;
+    const t = lottoTicket;
+    const res = (await window.overlay.lotteryClaim(t.id)) as { ok: boolean; error?: string; rank?: number; prize?: number; coins?: number };
+    if (!res.ok) {
+      lottoResult.textContent = res.error ?? '정산에 실패했어요.';
+    } else {
+      lottoResult.textContent =
+        t.rank > 0 ? `🎉 ${t.rank}등 당첨! +${t.prize.toLocaleString()}원` : '꽝! 다음 기회에…';
+      lottoCard.classList.toggle('win', t.rank > 0);
+      lottoCard.classList.toggle('big', t.rank > 0 && t.rank <= 3);
+      if (typeof res.coins === 'number') {
+        updateCoins(res.coins);
+        paintLottoBalance(res.coins);
+      }
+    }
+    lottoBusy = false;
+    paintLottoCtrl();
+  }
+
+  function showLottoTicket(t: LottoTicketView): void {
+    lottoTicket = t;
+    lottoRevealed = false;
+    scratchMoves = 0;
+    lottoCard.classList.remove('win', 'big');
+    lottoUnder.innerHTML =
+      t.rank > 0
+        ? `<b>🎉 당첨!</b><span>${t.rank}등 ${t.prize.toLocaleString()}원</span>`
+        : '<b>꽝!</b><span>다음 기회에…</span>';
+    paintFoil();
+    lottoPct.textContent = '0%';
+    lottoResult.textContent = '은박을 긁어 당첨 여부를 확인하세요!';
+    paintLottoCtrl();
+  }
+
+  async function buyLotto(): Promise<void> {
+    if (lottoBusy || !lottoRevealed || coins < LOTTO_PRICE) return;
+    lottoBusy = true;
+    paintLottoCtrl();
+    lottoResult.textContent = '복권을 사는 중…';
+    const res = (await window.overlay.lotteryBuy()) as { ok: boolean; error?: string; ticket?: LottoTicketView; coins?: number };
+    lottoBusy = false;
+    if (typeof res.coins === 'number') {
+      updateCoins(res.coins);
+      paintLottoBalance(res.coins);
+    }
+    if (!res.ok || !res.ticket) {
+      lottoResult.textContent = res.error ?? '오류가 발생했어요.';
+      paintLottoCtrl();
+      return;
+    }
+    showLottoTicket(res.ticket);
+  }
+
+  /** 팝아웃으로 열릴 때 — 미공개 티켓이 남아 있으면 그대로 다시 긁을 수 있게 */
+  async function renderLottery(): Promise<void> {
+    const st = (await window.overlay.lotteryState()) as { ticket?: LottoTicketView | null; coins?: number } | null;
+    if (st && typeof st.coins === 'number') {
+      updateCoins(st.coins);
+      paintLottoBalance(st.coins);
+    }
+    if (st?.ticket) showLottoTicket(st.ticket);
+    else {
+      lottoTicket = null;
+      lottoRevealed = true;
+      lottoFoil.style.display = 'none';
+      lottoCard.classList.remove('win', 'big');
+      lottoUnder.innerHTML = '<b>🎟️</b><span>복권을 사서 긁어보세요</span>';
+    }
+    paintLottoCtrl();
+  }
+
+  lottoBuy.addEventListener('click', () => void buyLotto());
+  lottoAuto.addEventListener('click', () => void revealLotto());
+  lotteryClose.addEventListener('click', () => lotteryPanel.classList.remove('open'));
+  window.overlay.on('self:coins', (data) => {
+    paintLottoBalance(Number(data) || 0);
+    if (!lottoBusy) paintLottoCtrl();
+  });
+  window.overlay.on('net:lottery-news', (data) => {
+    const d = data as { id: string; nickname: string; tag: string; rank: number; prize: number };
+    const who = `${d.nickname}#${d.tag}님이`;
+    addSystemMessage(
+      d.rank === 1
+        ? `🎟️🎉 ${who} 즉석복권 1등 10억원에 당첨됐어요!!! 인생 역전!`
+        : `🎟️ ${who} 즉석복권 ${d.rank}등 ${d.prize.toLocaleString()}원에 당첨됐어요!`,
+    );
   });
 
   // ---- 대장간 (낚싯대 강화, 스타포스식 연출) ----
@@ -3660,6 +4059,7 @@
     optionsPanel.classList.remove('open');
     pinnedPanel.classList.remove('open');
     slotPanel.classList.remove('open');
+    lotteryPanel.classList.remove('open');
     shopPanel.classList.remove('open');
     minigamePanel.classList.remove('open');
     forgePanel.classList.remove('open');
@@ -3707,6 +4107,9 @@
         break;
       case 'slot':
         window.overlay.togglePopout('slot');
+        break;
+      case 'lottery':
+        window.overlay.togglePopout('lottery');
         break;
       case 'forge':
         window.overlay.togglePopout('forge');
@@ -3878,6 +4281,12 @@
           break;
         case 'pet':
           void openPetPanel();
+          break;
+        case 'slot':
+          void renderSlot();
+          break;
+        case 'lottery':
+          void renderLottery();
           break;
       }
       // 패널 ✕(open 해제) → 창 닫기

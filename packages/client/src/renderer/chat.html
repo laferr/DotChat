@@ -271,34 +271,147 @@
         white-space: nowrap;
         flex-shrink: 0;
       }
+      /* ---- 🎰 슬롯머신 (5×3, 20 페이라인, 누적 잭팟) ---- */
       #slot-panel .slot-body {
         flex: 1;
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
-        gap: 12px;
-        padding: 0 14px 14px;
+        gap: 8px;
+        padding: 6px 12px 12px;
       }
-      #slot-reels {
+      #slot-jackpot {
+        width: 100%;
+        box-sizing: border-box;
         display: flex;
-        gap: 10px;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #3a2a00, #6b4d00 50%, #3a2a00);
+        border: 1px solid #b8860b;
+        color: #ffd66e;
+        font-weight: 700;
+        font-size: 12px;
+        box-shadow: inset 0 0 8px rgba(255, 214, 110, 0.25);
       }
-      #slot-reels span {
-        width: 58px;
-        height: 68px;
+      #slot-pool {
+        font-size: 15px;
+        letter-spacing: 0.5px;
+      }
+      #slot-panel.jackpot #slot-jackpot {
+        animation: slot-jp 0.35s linear infinite alternate;
+      }
+      @keyframes slot-jp {
+        from { background: #6b4d00; }
+        to { background: #ffb300; color: #3a2a00; }
+      }
+      #slot-stage {
+        position: relative;
+      }
+      #slot-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 46px);
+        grid-auto-rows: 46px;
+        gap: 4px;
+      }
+      .slot-cell {
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 32px;
+        font-size: 24px;
         background: var(--bg);
         border: 2px solid var(--header);
-        border-radius: 10px;
+        border-radius: 8px;
+        transition: box-shadow 0.15s, border-color 0.15s;
+      }
+      .slot-cell.win {
+        border-color: #ffd54f;
+        box-shadow: 0 0 10px rgba(255, 213, 79, 0.75);
+        animation: slot-pop 0.5s ease-in-out infinite alternate;
+      }
+      .slot-cell.scatter {
+        border-color: #f06292;
+        box-shadow: 0 0 10px rgba(240, 98, 146, 0.75);
+        animation: slot-pop 0.5s ease-in-out infinite alternate;
+      }
+      @keyframes slot-pop {
+        from { transform: scale(1); }
+        to { transform: scale(1.1); }
+      }
+      #slot-lines {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        overflow: visible;
+      }
+      #slot-lines polyline {
+        fill: none;
+        stroke-width: 4;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+        opacity: 0;
+        vector-effect: non-scaling-stroke;
+        animation: slot-line 0.4s ease-out forwards;
+      }
+      @keyframes slot-line {
+        to { opacity: 0.85; }
       }
       #slot-result {
         min-height: 18px;
         font-weight: 700;
+        font-size: 11px;
+        line-height: 1.5;
         text-align: center;
+        white-space: pre-line;
+      }
+      .slot-ctrl {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+      }
+      .slot-field {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        font-size: 10px;
+        color: var(--text-dim);
+      }
+      .stepper {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .stepper button,
+      #slot-max {
+        width: 24px;
+        height: 24px;
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: inherit;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 700;
+        font-size: 13px;
+        line-height: 1;
+      }
+      #slot-max {
+        width: auto;
+        padding: 0 8px;
+        font-size: 10px;
+      }
+      .stepper button:disabled,
+      #slot-max:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .stepper b {
+        min-width: 54px;
+        text-align: center;
+        font-size: 13px;
       }
       #slot-spin {
         border: 0;
@@ -318,6 +431,128 @@
         cursor: default;
       }
       .slot-body .hint {
+        font-size: 10px;
+        color: var(--text-dim);
+        line-height: 1.6;
+        text-align: center;
+        margin: 0;
+      }
+      /* ---- 🎟️ 즉석복권 (긁는 복권 — 캔버스 은박) ---- */
+      #lottery-panel .lotto-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px 12px;
+      }
+      #lotto-banner {
+        width: 100%;
+        box-sizing: border-box;
+        text-align: center;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #7a1f1f, #c62828 50%, #7a1f1f);
+        border: 1px solid #ff8a80;
+        color: #fff3e0;
+        font-weight: 800;
+        font-size: 16px;
+        letter-spacing: 0.5px;
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+      }
+      #lotto-card {
+        position: relative;
+        width: 280px;
+        height: 150px;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 3px solid #ffb300;
+        background: radial-gradient(circle at 30% 30%, #fff8e1, #ffe082);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+      }
+      #lotto-card.win {
+        border-color: #ffd54f;
+        box-shadow: 0 0 16px rgba(255, 213, 79, 0.8);
+      }
+      #lotto-card.big {
+        animation: lotto-big 0.5s linear infinite alternate;
+      }
+      @keyframes lotto-big {
+        from { box-shadow: 0 0 10px rgba(255, 213, 79, 0.6); }
+        to { box-shadow: 0 0 26px rgba(255, 64, 129, 0.9); }
+      }
+      #lotto-under {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        color: #4e342e;
+      }
+      #lotto-under b {
+        font-size: 24px;
+      }
+      #lotto-under span {
+        font-size: 14px;
+        font-weight: 700;
+      }
+      #lotto-foil {
+        position: absolute;
+        inset: 0;
+        width: 280px;
+        height: 150px;
+        cursor: crosshair;
+        touch-action: none;
+        transition: opacity 0.4s;
+      }
+      #lotto-result {
+        min-height: 18px;
+        font-weight: 700;
+        font-size: 12px;
+        text-align: center;
+      }
+      .lotto-ctrl {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #lotto-buy {
+        border: 0;
+        background: var(--accent);
+        color: #fffdf7;
+        font-weight: 700;
+        font-size: 14px;
+        border-radius: 8px;
+        padding: 10px 18px;
+        cursor: pointer;
+      }
+      #lotto-buy:hover:enabled {
+        background: var(--accent-hover);
+      }
+      #lotto-auto {
+        border: 1px solid var(--header);
+        background: var(--bg);
+        color: inherit;
+        font-weight: 700;
+        font-size: 12px;
+        border-radius: 8px;
+        padding: 9px 12px;
+        cursor: pointer;
+      }
+      #lotto-buy:disabled,
+      #lotto-auto:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #lotto-pct {
+        font-size: 10px;
+        color: var(--text-dim);
+        min-width: 30px;
+        text-align: right;
+      }
+      .lotto-body .hint {
         font-size: 10px;
         color: var(--text-dim);
         line-height: 1.6;
@@ -1146,7 +1381,8 @@
       #mineraldex-panel,
       #battle-panel,
       #pet-panel,
-      #slot-panel {
+      #slot-panel,
+      #lottery-panel {
         position: absolute;
         left: 0;
         right: 0;
@@ -1173,7 +1409,8 @@
       #mineraldex-panel.open,
       #battle-panel.open,
       #pet-panel.open,
-      #slot-panel.open {
+      #slot-panel.open,
+      #lottery-panel.open {
         display: flex;
       }
       .options-body {
@@ -2090,6 +2327,7 @@
       <button data-menu="daily">📋 일일퀘스트</button>
       <button data-menu="ach">🎖️ 도전과제</button>
       <button data-menu="slot">🎰 슬롯머신</button>
+      <button data-menu="lottery">🎟️ 복권</button>
       <button data-menu="forge">🔨 대장간</button>
       <button data-menu="battle">⚔️ 원정</button>
       <button data-menu="pet">🐾 펫</button>
@@ -2171,12 +2409,51 @@
         <button id="slot-close">✕</button>
       </div>
       <div class="slot-body">
-        <div id="slot-reels"><span>❔</span><span>❔</span><span>❔</span></div>
-        <div id="slot-result">코인 3개로 한 판 돌려보세요!</div>
-        <button id="slot-spin">돌리기 (3 🪙)</button>
+        <div id="slot-jackpot"><span>🏆 누적 잭팟</span><span id="slot-pool">-</span></div>
+        <div id="slot-stage">
+          <div id="slot-grid"></div>
+          <svg id="slot-lines" viewBox="0 0 500 300" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="slot-result">라인 베팅과 라인 수를 정하고 돌려보세요!</div>
+        <div class="slot-ctrl">
+          <div class="slot-field">
+            <span>라인 베팅 🪙</span>
+            <div class="stepper"><button id="slot-bet-dn">−</button><b id="slot-bet">10</b><button id="slot-bet-up">+</button></div>
+          </div>
+          <div class="slot-field">
+            <span>라인 (1~20)</span>
+            <div class="stepper"><button id="slot-lines-dn">−</button><b id="slot-lines-n">20</b><button id="slot-lines-up">+</button></div>
+          </div>
+          <button id="slot-max" title="라인 20개">MAX</button>
+        </div>
+        <button id="slot-spin">돌리기</button>
         <p class="hint">
-          🍒🍒 +1 · 🍒🍒🍒 +3 · 🍋🍋🍋 +6 · ⭐⭐⭐ +9<br />
-          🎁🎁🎁 파츠 당첨 · 💎💎💎 +20 · 7️⃣7️⃣7️⃣ 메가 잭팟 (+60 & 파츠)
+          라인 배당(×라인 베팅) 3·4·5개 — 🍒🍋 5·20·100 / 🍇 8·40·200 / 🔔 15·75·400 / ⭐ 30·200·1,000 / 💎 50·500·3,000 / 7️⃣ 80·800·<b>잭팟</b><br />
+          🃏 와일드(2~4릴, 7️⃣·🎁 제외) · 🎁 3·4·5개 → 파츠 1·2·3개 (다 모으면 총베팅 ×1·×5·×25 💎환산)<br />
+          💎 당첨금은 1,000🪙당 💎1 · 잭팟은 라인 베팅 100🪙↑ 전액(그 아래 비례) · 서버의 골드·💎 소비 전액이 잭팟에 적립
+        </p>
+      </div>
+    </div>
+    <div id="lottery-panel">
+      <div class="panel-head">
+        <span>🎟️ 즉석복권 <span id="lottery-balance"></span></span>
+        <button id="lottery-close">✕</button>
+      </div>
+      <div class="lotto-body">
+        <div id="lotto-banner">최대당첨금 10억원!</div>
+        <div id="lotto-card">
+          <div id="lotto-under"><b>🎟️</b><span>복권을 사서 긁어보세요</span></div>
+          <canvas id="lotto-foil" width="280" height="150" style="display: none"></canvas>
+        </div>
+        <div id="lotto-result">한 장에 2,000 🪙 — 은박을 긁으면 당첨 여부가 나와요.</div>
+        <div class="lotto-ctrl">
+          <button id="lotto-buy">복권 사기 (2,000 🪙)</button>
+          <button id="lotto-auto">자동긁기</button>
+          <span id="lotto-pct">0%</span>
+        </div>
+        <p class="hint">
+          은박을 80% 이상 긁거나 자동긁기를 누르면 자동으로 공개됩니다.<br />
+          당첨금은 바로 🪙로 들어옵니다 (1원 = 1🪙).
         </p>
       </div>
     </div>

@@ -61,8 +61,33 @@ import {
   TICKER_RETENTION_DAYS,
   TickerItem,
   TickerKind,
-  SLOT_COST,
+  SLOT_BET_TIERS,
+  SLOT_LINES_MAX,
+  SLOT_REELS,
+  SLOT_ROWS,
+  SLOT_SYMBOLS,
+  SLOT_GEM,
+  SLOT_SCATTER_PARTS,
+  SLOT_SCATTER_PAY,
+  SLOT_JACKPOT_BASE,
+  SLOT_JACKPOT_FEED_PCT,
+  SLOT_JACKPOT_PET_PULL_GOLD,
+  SLOT_JACKPOT_BATTLE_GEM_GOLD,
+  SLOT_JACKPOT_FULL_BET,
+  LOTTO_PRICE,
+  LOTTO_TIERS,
+  LOTTO_NEWS_RANK,
+  LOTTO_MIN_INTERVAL_MS,
+  LottoTicket,
+  LottoResult,
+  rollLotto,
+  SLOT_BIG_WIN_MULT,
+  SLOT_MIN_INTERVAL_MS,
+  evalSlotLines,
+  rollSlotGrid,
+  splitGemValue,
   SlotKind,
+  SlotResult,
   ClientToServerEvents,
   DEFAULT_PORT,
   IMAGE_MAX_BYTES,
@@ -278,6 +303,8 @@ interface Wallet {
     /** 시간당 💎 누적기 */
     gemAcc: number;
   };
+  /** 🎟️ 즉석복권 — 구매했지만 아직 긁지 않은(미정산) 티켓 */
+  lottery?: LottoTicket;
   /** 원정 (방치형 전투) — 층/최고층/💎 강화/정산 기준 시각/도전 쿨타임 */
   battle?: {
     /** 출발~귀환 사이 true — 이때만 가방이 찬다 */
@@ -1025,35 +1052,101 @@ setInterval(() => {
   saveWallets();
 }, 60 * 1000);
 
-// 슬롯 확률 테이블 (누적 %) — 기대환급 ~2.9코인 + 6% 파츠
-const SLOT_TABLE: { upto: number; kind: SlotKind; delta: number; reels: string[] | null }[] = [
-  { upto: 41, kind: 'miss', delta: 0, reels: null },
-  { upto: 61, kind: 'small', delta: 1, reels: null },
-  { upto: 76, kind: 'back', delta: 3, reels: ['🍒', '🍒', '🍒'] },
-  { upto: 86, kind: 'double', delta: 6, reels: ['🍋', '🍋', '🍋'] },
-  { upto: 91, kind: 'triple', delta: 9, reels: ['⭐', '⭐', '⭐'] },
-  { upto: 96, kind: 'part', delta: 0, reels: ['🎁', '🎁', '🎁'] },
-  { upto: 99, kind: 'jackpot', delta: 20, reels: ['💎', '💎', '💎'] },
-  { upto: 100, kind: 'mega', delta: 60, reels: ['7️⃣', '7️⃣', '7️⃣'] },
-];
-const SLOT_SYMBOLS = ['🍒', '🍋', '⭐', '🎁', '💎', '7️⃣'];
+// ---- 🎰 슬롯머신 (5×3, 20 페이라인 — 규칙·배당·릴 가중치는 shared) ----
+// 누적 잭팟은 서버 전체 공용: 기본 적립금 SLOT_JACKPOT_BASE + 서버 전체 골드 소비의 SLOT_JACKPOT_FEED_PCT %.
+// slot.json(볼륨)에 영속 — 당첨 뒤에도 기본 적립금 아래로는 내려가지 않는다.
+const SLOT_PATH = path.join(UPLOAD_DIR, 'slot.json');
+
+interface SlotState {
+  /** 누적 잭팟 (소수 누적 — 표시·지급은 내림) */
+  pool: number;
+  /** 최근 잭팟 당첨 기록 */
+  hits: { key: string; amount: number; ts: number }[];
+}
+
+let slotState: SlotState = { pool: SLOT_JACKPOT_BASE, hits: [] };
+
+function loadSlotState(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(SLOT_PATH, 'utf8'));
+    if (raw && typeof raw === 'object') {
+      const pool = Number(raw.pool);
+      slotState = {
+        pool: Number.isFinite(pool) ? Math.max(SLOT_JACKPOT_BASE, pool) : SLOT_JACKPOT_BASE,
+        hits: Array.isArray(raw.hits) ? raw.hits.slice(-20) : [],
+      };
+    }
+  } catch {
+    // 파일 없음(첫 기동) — 기본 적립금으로 시작
+  }
+  console.log(`[slot] 누적 잭팟 ${Math.floor(slotState.pool)} 🪙`);
+}
+
+function saveSlotState(): void {
+  try {
+    fs.writeFileSync(SLOT_PATH, JSON.stringify(slotState), 'utf8');
+  } catch (err) {
+    console.log('[slot] 저장 실패:', String(err));
+  }
+}
+
+const slotPool = (): number => Math.floor(slotState.pool);
+let slotPoolTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 잭팟 변동 — 저장 + 전체 통지 (0.5초 묶음) */
+function slotPoolChanged(): void {
+  saveSlotState();
+  if (slotPoolTimer) return;
+  slotPoolTimer = setTimeout(() => {
+    slotPoolTimer = null;
+    io.emit('slot-pool', slotPool());
+  }, 500);
+}
+
+/** 골드 소비 → 잭팟 적립 (소비액의 SLOT_JACKPOT_FEED_PCT %) — 상점/강화/먹이/쪽지/광고/슬롯 판돈 공용 */
+function feedJackpot(amount: number): void {
+  if (!(amount > 0)) return;
+  slotState.pool += (amount * SLOT_JACKPOT_FEED_PCT) / 100;
+  slotPoolChanged();
+}
+
+loadSlotState();
 const lastSlotAt = new Map<string, number>();
 
-function slotReels(kind: SlotKind): string[] {
-  const fixed = SLOT_TABLE.find((r) => r.kind === kind)?.reels;
-  if (fixed) return fixed;
-  if (kind === 'small') {
-    // 체리 2개 + 다른 심볼
-    const other = SLOT_SYMBOLS[1 + Math.floor(Math.random() * (SLOT_SYMBOLS.length - 1))];
-    return ['🍒', '🍒', other];
+// ---- 🎟️ 즉석복권 — 구매 시 판정·미공개 보관, 긁어서 공개(claim)하면 당첨금 지급 ----
+const lastLottoAt = new Map<string, number>();
+
+/** 미공개 티켓 정산 — 당첨금 지급 + 고액 당첨 통지/업적. 지급 후 티켓 제거. 반환: 정산한 티켓(없으면 null) */
+function settleLotto(key: string, player: PlayerState, socketId: string): LottoTicket | null {
+  const wallet = wallets[key];
+  const t = wallet?.lottery;
+  if (!wallet || !t) return null;
+  delete wallet.lottery;
+  if (t.prize > 0) {
+    wallet.coins += t.prize;
+    earnCoins(key, t.prize);
+    bumpStat(key, 'lottoWon', t.prize);
   }
-  // 꽝: 트리플/체리2가 안 나오게 셔플
-  for (;;) {
-    const reels = Array.from({ length: 3 }, () => SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]);
-    const triple = reels[0] === reels[1] && reels[1] === reels[2];
-    const cherryPair = reels.filter((s) => s === '🍒').length >= 2;
-    if (!triple && !cherryPair) return reels;
+  if (t.rank > 0 && t.rank <= LOTTO_NEWS_RANK) {
+    grantAch(key, 'c-lotto-big');
+    io.emit('lottery-news', { id: socketId, nickname: player.nickname, tag: player.tag, rank: t.rank, prize: t.prize });
+    if (t.rank <= 2) {
+      publishTicker('news', `🎟️ ${player.nickname}#${player.tag}님이 즉석복권 ${t.rank}등 ${t.prize.toLocaleString()}원에 당첨됐어요!`);
+    }
+    console.log(`[lotto] ${key}: ${t.rank}등 ${t.prize.toLocaleString()} 당첨 (잔액 ${wallet.coins})`);
   }
+  return t;
+}
+/** 검증 전용: DOTCHAT_SLOT_RIG=1 로 띄운 서버는 slot 요청의 rig(5×3 심볼 그리드)를 그대로 쓴다 (tools/verify-slot.mjs) */
+const SLOT_RIG = process.env.DOTCHAT_SLOT_RIG === '1';
+function slotRigGrid(raw: unknown): string[][] | null {
+  if (!SLOT_RIG || !Array.isArray(raw) || raw.length !== SLOT_REELS) return null;
+  const grid: string[][] = [];
+  for (const col of raw) {
+    if (!Array.isArray(col) || col.length !== SLOT_ROWS || col.some((s) => !SLOT_SYMBOLS.includes(String(s)))) return null;
+    grid.push(col.map(String));
+  }
+  return grid;
 }
 
 function cleanupUploads(): void {
@@ -1558,6 +1651,7 @@ io.on('connection', (socket) => {
       pet: wallets[key].pet?.equip[0] ?? null,
     });
     socket.emit('stocks', stocksSnapshot());
+    socket.emit('slot-pool', slotPool());
     if (attendNews) {
       // 출석 정산 직후 잔액 개별 통지 (지갑 스냅샷과 중복이지만 기존 계약 유지 — verify-daily 등)
       socket.emit('coins', wallets[key].coins);
@@ -1623,64 +1717,223 @@ io.on('connection', (socket) => {
     console.log(`[action] ${player.nickname}#${player.tag}: ${action} "${text}"`);
   });
 
-  socket.on('slot', (ack) => {
-    const reply = typeof ack === 'function' ? ack : () => undefined;
+  socket.on('slot', (optsRaw, ackRaw) => {
+    // 구버전 클라이언트(v0.2.16 이하)는 (ack) 1인자로 호출 — 업데이트 안내만
+    const legacy = optsRaw as unknown;
+    if (typeof legacy === 'function') {
+      (legacy as (res: SlotResult) => void)({ ok: false, error: `슬롯머신이 5×3으로 새로워졌어요! v${APP_VERSION}으로 업데이트해 주세요.` });
+      return;
+    }
+    const reply: (res: SlotResult) => void = typeof ackRaw === 'function' ? ackRaw : () => undefined;
     const player = players.get(socket.id);
     if (!player) {
       reply({ ok: false, error: '접속 상태가 아니에요.' });
       return;
     }
+    const bet = Number(optsRaw?.bet);
+    const lines = Math.floor(Number(optsRaw?.lines));
+    const partsLeft = Math.max(0, Math.floor(Number(optsRaw?.partsLeft) || 0));
+    if (!SLOT_BET_TIERS.includes(bet)) {
+      reply({ ok: false, error: '라인 베팅 단위가 올바르지 않아요.' });
+      return;
+    }
+    if (!Number.isFinite(lines) || lines < 1 || lines > SLOT_LINES_MAX) {
+      reply({ ok: false, error: `라인 수는 1~${SLOT_LINES_MAX} 사이여야 해요.` });
+      return;
+    }
     const now = Date.now();
-    if (now - (lastSlotAt.get(socket.id) ?? 0) < 1000) {
+    if (now - (lastSlotAt.get(socket.id) ?? 0) < SLOT_MIN_INTERVAL_MS) {
       reply({ ok: false, error: '너무 빨라요!' });
       return;
     }
     const key = walletKey(player);
     const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
-    if (wallet.coins < SLOT_COST) {
+    const total = bet * lines;
+    if (wallet.coins < total) {
       if (wallet.coins === 0) grantAch(key, 'h-broke'); // 히든: 빈털터리
-      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${SLOT_COST})` });
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${total})`, coins: wallet.coins });
       return;
     }
     lastSlotAt.set(socket.id, now);
     // 🐾 펫: 무료 스핀 확률, 꽝 재굴림 1회, 당첨금 +%
     const pfx = petFxOf(wallet);
     const free = (pfx.slotFree ?? 0) > 0 && Math.random() * 100 < pfx.slotFree!;
-    let roll = Math.random() * 100;
-    let row = SLOT_TABLE.find((r) => roll < r.upto)!;
-    if (row.kind === 'miss' && (pfx.slotRetry ?? 0) > 0 && Math.random() * 100 < pfx.slotRetry!) {
-      roll = Math.random() * 100;
-      row = SLOT_TABLE.find((r) => roll < r.upto)!;
+    const rig = slotRigGrid((optsRaw as { rig?: unknown })?.rig);
+    let grid = rig ?? rollSlotGrid();
+    let ev = evalSlotLines(grid, lines, bet);
+    if (!rig && ev.wins.length === 0 && ev.scatter < 3 && (pfx.slotRetry ?? 0) > 0 && Math.random() * 100 < pfx.slotRetry!) {
+      grid = rollSlotGrid();
+      ev = evalSlotLines(grid, lines, bet);
     }
-    const win = row.kind === 'part' ? row.delta : probRound(row.delta * (1 + (pfx.slotWin ?? 0) / 100));
-    wallet.coins = wallet.coins - (free ? 0 : SLOT_COST) + win;
+    const winMult = 1 + (pfx.slotWin ?? 0) / 100;
+    let coinsWon = 0;
+    let gemsWon = 0;
+    let five = false;
+    for (const w of ev.wins) {
+      if (w.count === 5) five = true;
+      if (w.pay <= 0) continue;
+      w.pay = probRound(w.pay * winMult);
+      if (w.symbol === SLOT_GEM) {
+        // 💎 라인은 SLOT_GEM_RATE당 💎 1개로 환산, 나머지는 🪙
+        const split = splitGemValue(w.pay);
+        gemsWon += split.gems;
+        coinsWon += split.coins;
+      } else coinsWon += w.pay;
+    }
+    // 7️⃣×5 = 누적 잭팟 — 라인 베팅 SLOT_JACKPOT_FULL_BET 이상이면 전액, 그 아래는 비례. 지급 뒤 기본 적립금 보장
+    let jackpot = 0;
+    for (const li of ev.jackpotLines) {
+      const share = Math.floor(slotPool() * Math.min(1, bet / SLOT_JACKPOT_FULL_BET));
+      if (share <= 0) continue;
+      jackpot += share;
+      slotState.pool = Math.max(SLOT_JACKPOT_BASE, slotState.pool - share);
+      const w = ev.wins.find((x) => x.line === li);
+      if (w) w.pay = share;
+    }
+    coinsWon += jackpot;
+    // 🎁 스캐터 3개+ — 파츠 (미보유가 없으면 총 베팅 × 배수를 💎 환산 지급)
+    let parts = 0;
+    if (ev.scatter >= 3) {
+      const idx = Math.min(ev.scatter, 5) - 3;
+      if (partsLeft > 0) parts = Math.min(SLOT_SCATTER_PARTS[idx], partsLeft);
+      else {
+        const split = splitGemValue(total * SLOT_SCATTER_PAY[idx] * winMult);
+        gemsWon += split.gems;
+        coinsWon += split.coins;
+      }
+    }
+    const cost = free ? 0 : total;
+    wallet.coins = wallet.coins - cost + coinsWon;
+    if (gemsWon > 0) wallet.gems = (wallet.gems ?? 0) + gemsWon;
+    if (cost > 0) feedJackpot(cost); // 판돈도 서버 골드 소비 → 잭팟 적립
+    if (jackpot > 0) {
+      slotState.hits = [...slotState.hits, { key, amount: jackpot, ts: now }].slice(-20);
+      slotPoolChanged();
+    }
     bumpStat(key, 'slotSpins');
-    if (row.kind === 'miss') bumpStat(key, 'slotMissRun');
+    const miss = coinsWon === 0 && gemsWon === 0 && parts === 0;
+    if (miss) bumpStat(key, 'slotMissRun');
     else setStat(key, 'slotMissRun', 0);
-    earnCoins(key, win);
-    if (row.kind === 'jackpot') grantAch(key, 'c-jackpot');
-    if (row.kind === 'mega') grantAch(key, 'c-mega');
+    earnCoins(key, coinsWon);
+    if (five) grantAch(key, 'c-jackpot');
+    if (jackpot > 0) grantAch(key, 'c-mega');
     questProgress(socket.id, 'slot');
     checkAch(key);
     saveWallets();
+    const kind: SlotKind =
+      jackpot > 0 ? 'jackpot'
+      : coinsWon >= total * SLOT_BIG_WIN_MULT ? 'big'
+      : gemsWon > 0 ? 'gem'
+      : parts > 0 ? 'part'
+      : miss ? 'miss'
+      : 'win';
     reply({
       ok: true,
-      kind: row.kind,
-      delta: win,
-      reels: slotReels(row.kind),
+      kind,
+      grid,
+      bet,
+      lines,
+      cost,
+      wins: ev.wins,
+      scatter: ev.scatter,
+      parts,
+      coinsWon,
+      gemsWon,
+      jackpot,
+      five,
       coins: wallet.coins,
+      gems: wallet.gems ?? 0,
+      pool: slotPool(),
       ...(free ? { free: true } : {}),
     });
-    if (row.kind === 'part' || row.kind === 'jackpot' || row.kind === 'mega') {
+    if (gemsWon > 0) socket.emit('gems', wallet.gems ?? 0);
+    if (kind !== 'miss' && kind !== 'win') {
       io.emit('slot-win', {
         id: socket.id,
         nickname: player.nickname,
         tag: player.tag,
-        kind: row.kind,
-        delta: win,
+        kind,
+        delta: coinsWon,
+        gems: gemsWon,
+        parts,
+        bet: total,
       });
-      console.log(`[slot] ${key}: ${row.kind} (+${win}${free ? ', 무료' : ''}) 잔액 ${wallet.coins}`);
+      console.log(
+        `[slot] ${key}: ${kind} 베팅 ${bet}×${lines} → +${coinsWon}🪙 +${gemsWon}💎 파츠 ${parts}` +
+          `${jackpot > 0 ? ` 잭팟 ${jackpot}` : ''}${free ? ' (무료)' : ''} 잔액 ${wallet.coins} · 잭팟 적립 ${slotPool()}`,
+      );
     }
+    if (jackpot > 0) {
+      publishTicker('news', `🎰 ${player.nickname}#${player.tag}님이 누적 잭팟 ${jackpot.toLocaleString()} 🪙를 터뜨렸어요!`);
+    }
+  });
+
+  // ---- 🎟️ 즉석복권 ----
+
+  socket.on('lottery-state', (ack) => {
+    if (typeof ack !== 'function') return;
+    const player = players.get(socket.id);
+    const wallet = player ? wallets[walletKey(player)] : undefined;
+    ack({ ticket: wallet?.lottery ? { ...wallet.lottery } : null, coins: wallet?.coins ?? 0 });
+  });
+
+  socket.on('lottery-buy', (optsRaw, ackRaw) => {
+    const reply: (res: LottoResult) => void = typeof ackRaw === 'function' ? ackRaw : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const now = Date.now();
+    if (now - (lastLottoAt.get(socket.id) ?? 0) < LOTTO_MIN_INTERVAL_MS) {
+      reply({ ok: false, error: '너무 빨라요!' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = (wallets[key] = wallets[key] ?? { coins: 0, items: [], fish: [], parts: [], trophies: [] });
+    // 긁지 않고 둔 티켓이 있으면 먼저 정산 (당첨금 유실 방지)
+    settleLotto(key, player, socket.id);
+    if (wallet.coins < LOTTO_PRICE) {
+      if (wallet.coins === 0) grantAch(key, 'h-broke'); // 히든: 빈털터리
+      reply({ ok: false, error: `코인이 부족해요. (${wallet.coins}/${LOTTO_PRICE})`, coins: wallet.coins });
+      return;
+    }
+    lastLottoAt.set(socket.id, now);
+    wallet.coins -= LOTTO_PRICE;
+    feedJackpot(LOTTO_PRICE); // 복권 판돈도 서버 골드 소비 → 잭팟 적립
+    bumpStat(key, 'lottoTickets');
+    // 검증 전용(DOTCHAT_SLOT_RIG=1): rig = 강제 등수 (0 = 꽝)
+    const rigRank = SLOT_RIG ? Number((optsRaw as { rig?: unknown })?.rig) : NaN;
+    const rolled = Number.isInteger(rigRank) && rigRank >= 0 && rigRank <= LOTTO_TIERS.length
+      ? { rank: rigRank, prize: LOTTO_TIERS.find((t) => t.rank === rigRank)?.prize ?? 0 }
+      : rollLotto();
+    const ticket: LottoTicket = { id: randomBytes(6).toString('hex'), rank: rolled.rank, prize: rolled.prize, ts: now };
+    wallet.lottery = ticket;
+    checkAch(key);
+    saveWallets();
+    reply({ ok: true, ticket: { ...ticket }, coins: wallet.coins });
+    console.log(`[lotto] ${key}: 구매 (-${LOTTO_PRICE}) → ${ticket.rank > 0 ? `${ticket.rank}등 ${ticket.prize.toLocaleString()}` : '꽝'} (미공개) 잔액 ${wallet.coins}`);
+  });
+
+  socket.on('lottery-claim', (ticketId, ack) => {
+    const reply: (res: LottoResult) => void = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = wallets[key];
+    const t = wallet?.lottery;
+    if (!wallet || !t || t.id !== String(ticketId)) {
+      reply({ ok: false, error: '공개할 복권이 없어요.', coins: wallet?.coins ?? 0 });
+      return;
+    }
+    settleLotto(key, player, socket.id);
+    checkAch(key);
+    saveWallets();
+    socket.emit('coins', wallet.coins);
+    reply({ ok: true, rank: t.rank, prize: t.prize, coins: wallet.coins });
   });
 
   socket.on('buy', (itemId, ack) => {
@@ -1706,6 +1959,7 @@ io.on('connection', (socket) => {
       return;
     }
     wallet.coins -= item.price;
+    feedJackpot(item.price);
     wallet.items.push(item.id);
     saveWallets();
     checkAch(key);
@@ -1849,6 +2103,7 @@ io.on('connection', (socket) => {
     }
     lastEnhanceAt.set(socket.id, now);
     wallet.coins -= cost;
+    feedJackpot(cost);
 
     let result: 'success' | 'keep' | 'drop';
     let guaranteed = false;
@@ -1974,6 +2229,7 @@ io.on('connection', (socket) => {
       return;
     }
     wallet.coins -= noteCost;
+    feedJackpot(noteCost);
     bumpStat(key, 'notesSent');
     if (wallets[to]) bumpStat(to, 'notesGot');
     saveWallets();
@@ -2135,6 +2391,7 @@ io.on('connection', (socket) => {
       return;
     }
     wallet.coins -= adCost;
+    feedJackpot(adCost);
     bumpStat(key, 'ads');
     saveWallets();
     lastTickerAdAt.set(key, now);
@@ -2177,6 +2434,7 @@ io.on('connection', (socket) => {
     }
     lastRandomBuyAt.set(socket.id, now);
     wallet.coins -= price;
+    feedJackpot(price);
     bumpStat(key, 'randomPulls');
     saveWallets();
     checkAch(key);
@@ -2408,6 +2666,7 @@ io.on('connection', (socket) => {
     // 능력치가 바뀌면 처치 속도가 달라지므로 쌓인 전리품은 먼저 정산
     const settled = battleSettle(socket.id, key, Date.now());
     wallet.gems = (wallet.gems ?? 0) - cost;
+    feedJackpot(cost * SLOT_JACKPOT_BATTLE_GEM_GOLD); // 💎 소비도 잭팟 적립 — 💎 1개 = 500🪙 환산
     b.lv[stat] += 1;
     saveWallets();
     socket.emit('gems', wallet.gems);
@@ -2710,6 +2969,7 @@ io.on('connection', (socket) => {
     lastPetGachaAt.set(socket.id, now);
     petSettle(wallet, now);
     wallet.gems = (wallet.gems ?? 0) - cost;
+    feedJackpot(n * SLOT_JACKPOT_PET_PULL_GOLD); // 💎 소비도 잭팟 적립 — 1회 뽑기 = 5,000🪙 환산
     if (friday) p.fridayKey = dailyDateKey(now);
     const results: PetPull[] = [];
     const news: string[] = [];
@@ -2880,6 +3140,7 @@ io.on('connection', (socket) => {
         return;
       }
       wallet.coins -= cost;
+      feedJackpot(cost);
       p.food += qty;
       socket.emit('coins', wallet.coins);
     } else {

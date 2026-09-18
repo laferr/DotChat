@@ -560,10 +560,12 @@ const ACH_DEFS: {
   { id: 'c-coin100', cat: '경제', name: '티끌 모아', desc: '보유 코인 100 달성', gems: 2, stat: 'coinsNow', goal: 100 },
   { id: 'c-coin1000', cat: '경제', name: '자산가', desc: '보유 코인 1,000 달성', gems: 10, title: '부자', stat: 'coinsNow', goal: 1000 },
   { id: 'c-earn5000', cat: '경제', name: '돈이 도는 삶', desc: '누적 획득 코인 5,000', gems: 10, stat: 'coinsEarned', goal: 5000 },
-  { id: 'c-jackpot', cat: '경제', name: '잭팟!', desc: '슬롯 잭팟 당첨', gems: 5 },
-  { id: 'c-mega', cat: '경제', name: '머신을 이기다', desc: '슬롯 메가 잭팟 당첨', gems: 15, title: '도박왕' },
+  { id: 'c-jackpot', cat: '경제', name: '잭팟!', desc: '슬롯 5개 일치 라인 당첨', gems: 5 },
+  { id: 'c-mega', cat: '경제', name: '머신을 이기다', desc: '슬롯 누적 잭팟(7️⃣×5) 당첨', gems: 15, title: '도박왕' },
   { id: 'c-slot100', cat: '경제', name: '단골손님', desc: '슬롯 누적 100회', gems: 5, stat: 'slotSpins', goal: 100 },
   { id: 'c-missrun', cat: '경제', name: '오늘은 아닌가 봐', desc: '슬롯 10연속 꽝', gems: 3, hidden: true, stat: 'slotMissRun', goal: 10 },
+  { id: 'c-lotto50', cat: '경제', name: '복권방 단골', desc: '즉석복권 50장 긁기', gems: 5, stat: 'lottoTickets', goal: 50 },
+  { id: 'c-lotto-big', cat: '경제', name: '인생 역전', desc: '즉석복권 3등 이상 당첨', gems: 15, title: '벼락부자' },
   { id: 'c-shopall', cat: '경제', name: '쇼핑 마스터', desc: '상점 코스메틱 전부 구매', gems: 20, title: '컬렉터', stat: 'cosmetics', goal: 23 },
   { id: 'c-random10', cat: '경제', name: '뽑기의 맛', desc: '랜덤뽑기 10회', gems: 3, stat: 'randomPulls', goal: 10 },
   { id: 'c-actions', cat: '경제', name: '만능 연기자', desc: '액션 9종 전부 구매', gems: 10, title: '액션 스타', stat: 'actionsOwned', goal: 9 },
@@ -929,3 +931,31 @@ class PartComposer {
     };
   }
 }
+
+// ---- 🎰 슬롯머신 (protocol.ts 복사본 — tools/verify-slot.mjs가 동기화 검사) ----
+const SLOT_BET_TIERS = [1, 5, 10, 50, 100, 500, 1000, 5000, 10000];
+const SLOT_LINES_MAX = 20;
+const SLOT_PAYLINES: number[][] = [
+  [1, 1, 1, 1, 1],
+  [0, 0, 0, 0, 0],
+  [2, 2, 2, 2, 2],
+  [0, 1, 2, 1, 0],
+  [2, 1, 0, 1, 2],
+  [0, 0, 1, 0, 0],
+  [2, 2, 1, 2, 2],
+  [1, 0, 0, 0, 1],
+  [1, 2, 2, 2, 1],
+  [0, 1, 1, 1, 0],
+  [2, 1, 1, 1, 2],
+  [1, 0, 1, 0, 1],
+  [1, 2, 1, 2, 1],
+  [0, 1, 0, 1, 0],
+  [2, 1, 2, 1, 2],
+  [1, 1, 0, 1, 1],
+  [1, 1, 2, 1, 1],
+  [0, 0, 2, 0, 0],
+  [2, 2, 0, 2, 2],
+  [0, 2, 0, 2, 0],
+];
+/** 🎟️ 즉석복권 (protocol.ts 복사본 — tools/verify-lottery.mjs가 동기화 검사) */
+const LOTTO_PRICE = 2000;
