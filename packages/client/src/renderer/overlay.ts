@@ -211,6 +211,7 @@ interface OverlayApi {
   battleUpgrade(key: string): Promise<unknown>;
   battleStage(stage: number): Promise<unknown>;
   battleChallenge(): Promise<unknown>;
+  battleAuto(): Promise<unknown>;
   battleActive(active: boolean): Promise<unknown>;
   setTitle(title: string): Promise<{ ok: boolean; error?: string; title?: string }>;
   reportFish(fishId: string, trophy?: boolean): Promise<{

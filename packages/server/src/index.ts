@@ -174,6 +174,8 @@ import {
   MineralCat,
   BATTLE_MAX_STAGE,
   BATTLE_STAGE_CAP,
+  BATTLE_AUTO_MAX,
+  BattleAutoResult,
   battleTierNameFor,
   battleIsEndless,
   BATTLE_UPGRADE_KEYS,
@@ -1449,6 +1451,74 @@ function battleSettle(socketId: string, key: string, now: number): BattleClaimRe
     gemsNow: wallet.gems,
     mineralsAll: [...wallet.minerals],
   };
+}
+
+// ---- 수문장전 공통 (🛡️ 단발 도전 / ⚡ 자동 도전) ----
+
+type BattleFoe = ReturnType<typeof battleGuardianFor>;
+interface BattleFightOutcome {
+  win: boolean;
+  stage: number;
+  foe: BattleFoe;
+  log: [number, number, number, number][];
+  reward?: { coins: number; gems: number; item?: { id: string; name: string } };
+}
+
+/** 도전 불가 사유 (층 캡 / 회복 쿨타임) — 없으면 null */
+function battleChallengeBlocked(b: BattleData, now: number): string | null {
+  if (b.maxStage + 1 > BATTLE_STAGE_CAP) return '무한 원정의 끝에 도달했어요! 🏆';
+  if (now < (b.challengeAt ?? 0)) return `아직 회복 중이에요. (${Math.ceil((b.challengeAt - now) / 1000)}초)`;
+  return null;
+}
+
+function battleFoePayload(foe: BattleFoe): { emoji: string; name: string; sprite: string; hp: number; atk: number } {
+  return { emoji: foe.emoji, name: foe.name, sprite: foe.sprite, hp: foe.hp, atk: foe.atk };
+}
+
+/** 다음 층(maxStage+1) 수문장과 1회 전투 — 승리 시 maxStage·보상·아이템을 지갑에 반영. 저장/알림/쿨타임/업적은 호출부 몫 */
+function battleFightNext(wallet: Wallet, key: string): BattleFightOutcome {
+  const b = battleOf(wallet);
+  const stats0 = battleStatsOf(wallet);
+  // 🐾 펫: 보스전 공격 +%, 제한 시간 +틱
+  const bossPct = fxv(wallet, 'batBoss');
+  const stats = bossPct > 0 ? { ...stats0, atk: Math.round(stats0.atk * (1 + bossPct / 100)) } : stats0;
+  const next = b.maxStage + 1;
+  const foe = battleGuardianFor(next);
+  const sim = battleSimulate(stats, foe, Math.random, BATTLE_FIGHT_MAX_TICKS + Math.floor(fxv(wallet, 'batTicks')));
+  if (!sim.win) return { win: false, stage: next, foe, log: sim.log };
+  b.maxStage = next;
+  const reward: NonNullable<BattleFightOutcome['reward']> = battleClearReward(next);
+  reward.coins = Math.round(reward.coins * fxMul(wallet, 'batBossCoin')); // 🐾
+  if (foe.kind !== 'guardian') reward.gems += Math.floor(fxv(wallet, 'batBossGem'));
+  if (foe.kind === 'big' && Math.random() < BATTLE_BIG_BOSS_ITEM_RATE) {
+    const unowned = SHOP_ITEMS.filter((i) => !wallet.items.includes(i.id));
+    if (unowned.length > 0) {
+      const won = unowned[Math.floor(Math.random() * unowned.length)];
+      wallet.items.push(won.id);
+      reward.item = { id: won.id, name: won.name };
+    }
+  }
+  wallet.coins += reward.coins;
+  wallet.gems = (wallet.gems ?? 0) + reward.gems;
+  earnCoins(key, reward.coins);
+  return { win: true, stage: next, foe, log: sim.log, reward };
+}
+
+/** 보스/대보스 격파 소식 — 채팅 전체 + 전광판(스토리 대보스 / 무한 원정은 100층 단위 대보스만) */
+function battleAnnounceClear(socketId: string, player: PlayerState, stage: number, foe: BattleFoe, extra = ''): void {
+  if (foe.kind === 'guardian') return;
+  const label = foe.kind === 'big' ? '대보스' : '보스';
+  const where = battleIsEndless(stage) ? `무한 원정 ${stage}층` : `원정 ${stage}층`;
+  const text = `⚔️ ${player.nickname}#${player.tag}님이 ${where} ${label} '${foe.name}'을(를) 격파했습니다!${extra}`;
+  io.emit('battle-news', { id: socketId, nickname: player.nickname, tag: player.tag, text });
+  if (foe.kind === 'big' && (!battleIsEndless(stage) || stage % 100 === 0)) publishTicker('news', text);
+}
+
+/** 100층 봇순이 격파 → 무한 원정 개방 알림 */
+function battleAnnounceEndless(socketId: string, player: PlayerState): void {
+  const text = `♾️ ${player.nickname}#${player.tag}님이 봇순이의 탑을 정복하고 무한 원정에 들어섭니다!`;
+  io.emit('battle-news', { id: socketId, nickname: player.nickname, tag: player.tag, text });
+  publishTicker('news', text);
 }
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
@@ -2744,78 +2814,134 @@ io.on('connection', (socket) => {
     const b = battleOf(wallet);
     const now = Date.now();
     const next = b.maxStage + 1;
-    if (next > BATTLE_STAGE_CAP) {
-      reply({ ok: false, error: '무한 원정의 끝에 도달했어요! 🏆' });
+    const blocked = battleChallengeBlocked(b, now);
+    if (blocked) {
+      reply({ ok: false, error: blocked });
       return;
     }
-    if (now < (b.challengeAt ?? 0)) {
-      reply({ ok: false, error: `아직 회복 중이에요. (${Math.ceil((b.challengeAt - now) / 1000)}초)` });
-      return;
-    }
-    const stats0 = battleStatsOf(wallet);
-    // 🐾 펫: 보스전 공격 +%, 제한 시간 +틱
-    const bossPct = fxv(wallet, 'batBoss');
-    const stats = bossPct > 0 ? { ...stats0, atk: Math.round(stats0.atk * (1 + bossPct / 100)) } : stats0;
-    const foe = battleGuardianFor(next);
-    const sim = battleSimulate(stats, foe, Math.random, BATTLE_FIGHT_MAX_TICKS + Math.floor(fxv(wallet, 'batTicks')));
-    let reward: { coins: number; gems: number; item?: { id: string; name: string } } | undefined;
+    // 최전선(next)에서 사냥 중이면 승리 시 새로 열린 층으로 자동 전진 — 처치 속도가 바뀌므로 먼저 정산
+    const frontline = b.stage === next && next < BATTLE_STAGE_CAP;
+    const out = battleFightNext(wallet, key);
     let settled: BattleClaimResult | null = null;
-    if (sim.win) {
-      // 최전선(next)에서 사냥 중이었으면 새로 열린 층으로 자동 전진 — 처치 속도가 바뀌므로 먼저 정산
-      if (b.stage === next && next < BATTLE_STAGE_CAP) {
+    if (out.win) {
+      if (frontline) {
         settled = battleSettle(socket.id, key, now);
         b.stage = next + 1;
       }
-      b.maxStage = next;
-      if (next === BATTLE_MAX_STAGE) {
-        // 스토리 완주 → 무한 원정 개방 알림
-        const text = `♾️ ${player.nickname}#${player.tag}님이 봇순이의 탑을 정복하고 무한 원정에 들어섭니다!`;
-        io.emit('battle-news', { id: socket.id, nickname: player.nickname, tag: player.tag, text });
-        publishTicker('news', text);
-      }
       b.challengeAt = now + BATTLE_CHALLENGE_COOLDOWN_MS;
-      reward = battleClearReward(next);
-      reward.coins = Math.round(reward.coins * fxMul(wallet, 'batBossCoin')); // 🐾
-      if (foe.kind !== 'guardian') reward.gems += Math.floor(fxv(wallet, 'batBossGem'));
-      if (foe.kind === 'big' && Math.random() < BATTLE_BIG_BOSS_ITEM_RATE) {
-        const unowned = SHOP_ITEMS.filter((i) => !wallet.items.includes(i.id));
-        if (unowned.length > 0) {
-          const won = unowned[Math.floor(Math.random() * unowned.length)];
-          wallet.items.push(won.id);
-          reward.item = { id: won.id, name: won.name };
-        }
-      }
-      wallet.coins += reward.coins;
-      wallet.gems = (wallet.gems ?? 0) + reward.gems;
-      earnCoins(key, reward.coins);
       saveWallets();
       socket.emit('coins', wallet.coins);
-      if (reward.gems > 0) socket.emit('gems', wallet.gems);
-      if (foe.kind !== 'guardian') {
-        const label = foe.kind === 'big' ? '대보스' : '보스';
-        const where = battleIsEndless(next) ? `무한 원정 ${next}층` : `원정 ${next}층`;
-        const text = `⚔️ ${player.nickname}#${player.tag}님이 ${where} ${label} '${foe.name}'을(를) 격파했습니다!`;
-        io.emit('battle-news', { id: socket.id, nickname: player.nickname, tag: player.tag, text });
-        // 전광판: 스토리 대보스 + 무한 원정은 100층 단위 대보스만 (스팸 방지)
-        if (foe.kind === 'big' && (!battleIsEndless(next) || next % 100 === 0)) publishTicker('news', text);
-      }
+      if ((out.reward?.gems ?? 0) > 0) socket.emit('gems', wallet.gems ?? 0);
+      battleAnnounceClear(socket.id, player, next, out.foe);
+      if (next === BATTLE_MAX_STAGE) battleAnnounceEndless(socket.id, player);
       checkAch(key);
-      console.log(`[battle] ${key}: ${next}층 수문장 '${foe.name}' 격파 (+${reward.coins}🪙${reward.gems ? ` +${reward.gems}💎` : ''}${reward.item ? ` 아이템 '${reward.item.name}'` : ''})`);
+      console.log(
+        `[battle] ${key}: ${next}층 수문장 '${out.foe.name}' 격파 (+${out.reward?.coins ?? 0}🪙${out.reward?.gems ? ` +${out.reward.gems}💎` : ''}${out.reward?.item ? ` 아이템 '${out.reward.item.name}'` : ''})`,
+      );
     } else {
       b.challengeAt = now + Math.round(BATTLE_LOSE_COOLDOWN_MS * fxCut(wallet, 'batLoseCd')); // 🐾 실패 쿨타임 감소
       saveWallets();
       grantAch(key, 'b-lose');
-      console.log(`[battle] ${key}: ${next}층 수문장 '${foe.name}'에게 패배 (${sim.log.length}틱)`);
+      console.log(`[battle] ${key}: ${next}층 수문장 '${out.foe.name}'에게 패배 (${out.log.length}틱)`);
     }
     reply({
       ok: true,
-      win: sim.win,
+      win: out.win,
       stage: next,
-      foe: { emoji: foe.emoji, name: foe.name, sprite: foe.sprite, hp: foe.hp, atk: foe.atk },
-      log: sim.log,
-      ...(reward ? { reward } : {}),
+      foe: battleFoePayload(out.foe),
+      log: out.log,
+      ...(out.reward ? { reward: out.reward } : {}),
       ...(settled ? { settled: { kills: settled.kills ?? 0, coins: settled.coins ?? 0, gems: settled.gems ?? 0 } } : {}),
-      ...(reward?.item ? { items: [...wallet.items] } : {}),
+      ...(settled?.mineralsAll ? { mineralsAll: settled.mineralsAll } : {}),
+      ...(out.reward?.item ? { items: [...wallet.items] } : {}),
+      coinsNow: wallet.coins,
+      gemsNow: wallet.gems ?? 0,
+      state: battleStateFor(key),
+    });
+  });
+
+  // ⚡ 자동 도전 — 실패할 때까지(최대 BATTLE_AUTO_MAX층) 연속 판정. 보상은 층마다 반영, 소식은 한 건만
+  socket.on('battle-auto', (ack) => {
+    const reply = typeof ack === 'function' ? ack : () => undefined;
+    const player = players.get(socket.id);
+    if (!player) {
+      reply({ ok: false, error: '접속 상태가 아니에요.' });
+      return;
+    }
+    const key = walletKey(player);
+    const wallet = wallets[key];
+    const b = battleOf(wallet);
+    const now = Date.now();
+    const first = b.maxStage + 1;
+    const blocked = battleChallengeBlocked(b, now);
+    if (blocked) {
+      reply({ ok: false, error: blocked });
+      return;
+    }
+    // 최전선에서 사냥 중이면 층이 바뀔 예정이므로 쌓인 전리품을 먼저 정산
+    const frontline = b.stage === first;
+    const settled = frontline ? battleSettle(socket.id, key, now) : null;
+    const results: NonNullable<BattleAutoResult['results']> = [];
+    const total = { coins: 0, gems: 0, items: [] as { id: string; name: string }[] };
+    let loss: BattleAutoResult['loss'];
+    let capped = false;
+    let topBoss: { stage: number; foe: BattleFoe } | null = null;
+    for (let i = 0; ; i++) {
+      if (i >= BATTLE_AUTO_MAX) {
+        capped = true;
+        break;
+      }
+      if (b.maxStage + 1 > BATTLE_STAGE_CAP) break;
+      const out = battleFightNext(wallet, key);
+      const f = out.foe;
+      results.push({
+        stage: out.stage,
+        emoji: f.emoji,
+        name: f.name,
+        sprite: f.sprite,
+        kind: f.kind,
+        hp: f.hp,
+        atk: f.atk,
+        win: out.win,
+        ...(out.reward ? { coins: out.reward.coins, gems: out.reward.gems, ...(out.reward.item ? { item: out.reward.item } : {}) } : {}),
+      });
+      if (!out.win || !out.reward) {
+        loss = { stage: out.stage, foe: battleFoePayload(f), log: out.log };
+        break;
+      }
+      total.coins += out.reward.coins;
+      total.gems += out.reward.gems;
+      if (out.reward.item) total.items.push(out.reward.item);
+      if (f.kind !== 'guardian') topBoss = { stage: out.stage, foe: f };
+      if (out.stage === BATTLE_MAX_STAGE) battleAnnounceEndless(socket.id, player);
+    }
+    const wins = results.filter((r) => r.win).length;
+    if (frontline) b.stage = Math.min(b.maxStage + 1, BATTLE_STAGE_CAP);
+    b.challengeAt = now + (loss ? Math.round(BATTLE_LOSE_COOLDOWN_MS * fxCut(wallet, 'batLoseCd')) : BATTLE_CHALLENGE_COOLDOWN_MS);
+    saveWallets();
+    socket.emit('coins', wallet.coins);
+    if (total.gems > 0) socket.emit('gems', wallet.gems ?? 0);
+    if (loss) grantAch(key, 'b-lose');
+    // 소식은 가장 높은 보스 격파 한 건만 (연승 정보 첨부) — 층마다 도배 방지
+    if (topBoss) {
+      battleAnnounceClear(socket.id, player, topBoss.stage, topBoss.foe, wins >= 2 ? ` (⚡ 자동 도전 ${wins}연승 · 최고 ${b.maxStage}층)` : '');
+    }
+    checkAch(key);
+    console.log(
+      `[battle] ${key}: ⚡ 자동 도전 ${first}층→${b.maxStage}층 (${wins}연승${loss ? `, ${loss.stage}층 '${loss.foe.name}'에게 패배` : capped ? ', 상한' : ''}) +${total.coins}🪙 +${total.gems}💎`,
+    );
+    reply({
+      ok: true,
+      from: first,
+      to: b.maxStage,
+      wins,
+      results,
+      ...(loss ? { loss } : {}),
+      capped,
+      total,
+      ...(settled ? { settled: { kills: settled.kills ?? 0, coins: settled.coins ?? 0, gems: settled.gems ?? 0 } } : {}),
+      ...(settled?.mineralsAll ? { mineralsAll: settled.mineralsAll } : {}),
+      ...(total.items.length ? { items: [...wallet.items] } : {}),
       coinsNow: wallet.coins,
       gemsNow: wallet.gems ?? 0,
       state: battleStateFor(key),

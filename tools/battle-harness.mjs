@@ -78,6 +78,22 @@ const stub = `
     },
     battleUpgrade: async (key) => { if (gems < 2) return { ok: false, error: '젬이 부족해요. (' + gems + '/2 💎)' }; gems -= 2; lv[key]++; if (key === 'atk') stats.atk += 3; return { ok: true, gemsNow: gems, coinsNow: coins, state: state() }; },
     battleStage: async (s) => { if (s < 1 || s > maxStage + 1) return { ok: false, error: '1층 ~ ' + (maxStage + 1) + '층까지만 갈 수 있어요.' }; stage = s; return { ok: true, state: state() }; },
+    battleAuto: async () => {
+      const results = []; let loss = null; const total = { coins: 0, gems: 0, items: [] }; const from = maxStage + 1;
+      const pool = [['🐗', '멧돼지 대장', 'pig', 'guardian'], ['🐕', '들개 두목', 'dog', 'boss'], ['👑', '슬라임 킹', 'slimeking', 'big'], ['🦇', '동굴박쥐', 'bat-001', 'guardian']];
+      for (let i = 0; i < 200; i++) {
+        const s = maxStage + 1; const [emoji, name, sprite, kind] = pool[i % pool.length]; const hp = 249 + s * 20; const atk = 9.9 + s;
+        if (Math.random() >= 0.85) {
+          const log = []; let me = stats.hp, foe = hp;
+          while (foe > 0 && me > 0) { const dmg = Math.round(stats.atk); foe = Math.max(0, foe - dmg); if (foe <= 0) { log.push([me, 0, dmg, 0]); break; } me = Math.max(0, Math.round((me - atk) * 10) / 10); log.push([me, foe, dmg, 0]); }
+          results.push({ stage: s, emoji, name, sprite, kind, hp, atk, win: false }); loss = { stage: s, foe: { emoji, name, sprite, hp, atk }, log }; break;
+        }
+        maxStage = s; const c = 5 * s, g = kind === 'big' ? 6 : kind === 'boss' ? 3 : 0; coins += c; gems += g; total.coins += c; total.gems += g;
+        results.push({ stage: s, emoji, name, sprite, kind, hp, atk, win: true, coins: c, gems: g });
+      }
+      if (stage === from) stage = maxStage + 1;
+      return { ok: true, from, to: maxStage, wins: results.filter((r) => r.win).length, results, loss, capped: !loss, total, coinsNow: coins, gemsNow: gems, state: state() };
+    },
     battleChallenge: async () => {
       const log = []; let me = stats.hp, foe = 249;
       while (foe > 0 && me > 0) { const crit = Math.random() < 0.065; const dmg = Math.round(stats.atk * (crit ? 1.5 : 1)); foe = Math.max(0, foe - dmg); if (foe <= 0) { log.push([me, 0, dmg, crit ? 1 : 0]); break; } me = Math.max(0, Math.round((me - 9.9) * 10) / 10); log.push([me, foe, dmg, crit ? 1 : 0]); }

@@ -129,6 +129,7 @@ contextBridge.exposeInMainWorld('overlay', {
   battleUpgrade: (key: string): Promise<unknown> => ipcRenderer.invoke('battle-upgrade', key),
   battleStage: (stage: number): Promise<unknown> => ipcRenderer.invoke('battle-stage', stage),
   battleChallenge: (): Promise<unknown> => ipcRenderer.invoke('battle-challenge'),
+  battleAuto: (): Promise<unknown> => ipcRenderer.invoke('battle-auto'),
   battleActive: (active: boolean): Promise<unknown> => ipcRenderer.invoke('battle-active', active),
   setTitle: (title: string): Promise<unknown> => ipcRenderer.invoke('set-title', title),
   buyRandom: (itemId: string): Promise<unknown> => ipcRenderer.invoke('shop-buy-random', itemId),

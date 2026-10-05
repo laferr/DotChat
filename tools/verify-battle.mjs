@@ -244,6 +244,32 @@ if (speedy) {
   console.log(`  실시간 수령 OK: ${res.kills}마리 +${res.coins}🪙`);
 }
 
+// 5-3) ⚡ 자동 도전 — 다음 층부터 실패할 때까지 (Lv0~1은 2~4층 승리 후 5층 보스에서 패배가 보통): 결과/보상 정합, 쿨타임
+{
+  await sleep(3200); // 직전 도전 쿨타임(3초)
+  const before = coins;
+  const auto = await ack('battle-auto');
+  if (!auto?.ok) fail(`자동 도전 실패: ${auto?.error}`);
+  const wins = auto.results.filter((r) => r.win).length;
+  if (wins !== auto.wins) fail(`wins 불일치 ${wins} ≠ ${auto.wins}`);
+  if (auto.to !== auto.from + wins - 1) fail(`to=${auto.to} from=${auto.from} wins=${wins}`);
+  if (auto.state.maxStage !== auto.to) fail(`state.maxStage=${auto.state.maxStage} ≠ to=${auto.to}`);
+  if (auto.loss) {
+    if (auto.loss.stage !== auto.to + 1) fail(`패배 층 ${auto.loss.stage} ≠ ${auto.to + 1}`);
+    if (auto.results[auto.results.length - 1].win) fail('마지막 결과가 승리인데 loss가 있음');
+    if (!Array.isArray(auto.loss.log) || auto.loss.log.length === 0) fail('패배 전투 로그 없음');
+  } else if (!auto.capped) fail('패배도 상한도 아닌데 종료');
+  const sum = auto.results.filter((r) => r.win).reduce((s, r) => s + (r.coins ?? 0), 0);
+  if (sum !== auto.total.coins) fail(`코인 합계 ${sum} ≠ total ${auto.total.coins}`);
+  if (auto.state.stage !== Math.min(auto.to + 1, BATTLE_STAGE_CAP)) fail(`최전선 자동 전진 실패: stage=${auto.state.stage} (기대 ${auto.to + 1})`);
+  await sleep(300);
+  const expect = before + auto.total.coins + (auto.settled?.coins ?? 0);
+  if (coins !== expect) fail(`자동 도전 후 잔액 ${coins} (기대 ${expect})`);
+  const again = await ack('battle-challenge');
+  if (again?.ok) fail('자동 도전 직후 쿨타임 없이 도전됨');
+  console.log(`  자동 도전 OK: ${auto.from}층→${auto.to}층 ${wins}연승${auto.loss ? ` · ${auto.loss.stage}층 ${auto.loss.foe.name}에게 패배` : ' · 상한'} +${auto.total.coins}🪙${auto.total.gems ? ` +${auto.total.gems}💎` : ''} · 쿨타임 거부`);
+}
+
 // 6) 귀환 — 쌓인 전리품 자동 수령 + active false + 이후 수령은 거부
 await sleep(speedy ? 600 : 0);
 res = await ack('battle-active', false);

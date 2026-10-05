@@ -1217,6 +1217,8 @@ export const BATTLE_BIG_BOSS_ITEM_RATE = 0.3; // 10층 단위 보스: 미보유 
 export const BATTLE_CHALLENGE_COOLDOWN_MS = 3000;
 export const BATTLE_LOSE_COOLDOWN_MS = 20_000;
 export const BATTLE_CLAIM_MIN_KILLS = 1;
+/** ⚡ 자동 도전 — 한 번에 최대 이만큼 연속 도전 (실패하면 그 자리에서 중단, 상한이면 다시 눌러 이어서) */
+export const BATTLE_AUTO_MAX = 200;
 
 /** 강화 비용(💎) — lv = 현재 레벨 (lv → lv+1) */
 export function battleUpgradeCost(key: BattleUpgradeKey, lv: number): number {
@@ -1524,6 +1526,46 @@ export interface BattleChallengeResult {
   /** 최전선 자동 전진 시 먼저 정산된 전리품 */
   settled?: { kills: number; coins: number; gems: number };
   items?: string[];
+  /** 자동 정산에 광물 드랍이 있었으면 갱신된 광물도감 */
+  mineralsAll?: string[];
+  coinsNow?: number;
+  gemsNow?: number;
+  state?: BattleStatePayload;
+}
+
+/** ⚡ 자동 도전 결과 — 실패(또는 BATTLE_AUTO_MAX 상한/층 캡)까지 연속 도전한 층별 결과 */
+export interface BattleAutoResult {
+  ok: boolean;
+  error?: string;
+  /** 첫 도전 층 / 끝난 뒤 최고층 */
+  from?: number;
+  to?: number;
+  wins?: number;
+  results?: {
+    stage: number;
+    emoji: string;
+    name: string;
+    sprite: string;
+    kind: 'guardian' | 'boss' | 'big';
+    hp: number;
+    atk: number;
+    win: boolean;
+    coins?: number;
+    gems?: number;
+    item?: { id: string; name: string };
+  }[];
+  /** 패배 전투 (없으면 상한 또는 층 캡으로 종료) */
+  loss?: {
+    stage: number;
+    foe: { emoji: string; name: string; sprite: string; hp: number; atk: number };
+    log: [number, number, number, number][];
+  };
+  /** BATTLE_AUTO_MAX에 걸려 멈춤 — 다시 누르면 이어서 */
+  capped?: boolean;
+  total?: { coins: number; gems: number; items: { id: string; name: string }[] };
+  settled?: { kills: number; coins: number; gems: number };
+  items?: string[];
+  mineralsAll?: string[];
   coinsNow?: number;
   gemsNow?: number;
   state?: BattleStatePayload;
@@ -1666,6 +1708,8 @@ export interface ClientToServerEvents {
   'battle-stage': (stage: number, ack: (res: BattleClaimResult) => void) => void;
   /** 다음 층 수문장 도전 (판정 서버, 승리 시 maxStage+1 · 첫 처치 보상) */
   'battle-challenge': (ack: (res: BattleChallengeResult) => void) => void;
+  /** ⚡ 자동 도전 — 실패할 때까지(최대 BATTLE_AUTO_MAX층) 서버가 연속 판정, 보상 합산·알림 1회 */
+  'battle-auto': (ack: (res: BattleAutoResult) => void) => void;
   /** 원정 출발(true)/귀환(false) — 귀환 시 쌓인 전리품 자동 수령. 전체에 player-battle 브로드캐스트 */
   'battle-active': (active: boolean, ack: (res: BattleClaimResult) => void) => void;
   /** 이미지 업로드 (리사이즈된 바이너리 + 썸네일). 서버가 저장 후 chat으로 브로드캐스트 */

@@ -2936,6 +2936,36 @@
     state?: BattleView;
   }
 
+  interface BattleAutoView {
+    ok: boolean;
+    error?: string;
+    from?: number;
+    to?: number;
+    wins?: number;
+    results?: {
+      stage: number;
+      emoji: string;
+      name: string;
+      sprite?: string;
+      kind: string;
+      hp: number;
+      atk: number;
+      win: boolean;
+      coins?: number;
+      gems?: number;
+      item?: { id: string; name: string };
+    }[];
+    loss?: {
+      stage: number;
+      foe: { emoji: string; name: string; sprite?: string; hp: number; atk: number };
+      log: [number, number, number, number][];
+    };
+    capped?: boolean;
+    total?: { coins: number; gems: number; items: { id: string; name: string }[] };
+    settled?: { kills: number; coins: number; gems: number };
+    state?: BattleView;
+  }
+
   const battlePanel = document.getElementById('battle-panel')!;
   const battleClose = document.getElementById('battle-close') as HTMLButtonElement;
   const btHeadInfo = document.getElementById('battle-head-info')!;
@@ -2955,6 +2985,7 @@
   const btStageTier = document.getElementById('bt-stage-tier')!;
   const btStageNext = document.getElementById('bt-stage-next') as HTMLButtonElement;
   const btChallenge = document.getElementById('bt-challenge') as HTMLButtonElement;
+  const btAuto = document.getElementById('bt-auto') as HTMLButtonElement;
   const btRetreat = document.getElementById('bt-retreat')!;
   const btStats = document.getElementById('bt-stats')!;
   const btLoot = document.getElementById('bt-loot')!;
@@ -3056,10 +3087,12 @@
       btChallenge.textContent = `${label} 도전 (${g.stage > 100 ? '♾️ ' : ''}${fmtNum(g.stage)}층)`;
       btChallenge.title = `${g.emoji} ${g.name} · HP ${fmtNum(g.hp)} · 공격 ${g.atk}/초 · 첫 처치 +${g.reward.coins}🪙${g.reward.gems ? ` +${g.reward.gems}💎` : ''}`;
       btChallenge.disabled = battleBusy;
+      btAuto.disabled = battleBusy;
     } else {
       btChallenge.textContent = '🏆 끝에 도달';
       btChallenge.title = '무한 원정의 끝에 도달했어요!';
       btChallenge.disabled = true;
+      btAuto.disabled = true;
     }
     if (st.effStage < st.stage) {
       btRetreat.hidden = false;
@@ -3366,29 +3399,21 @@
     applyBattleState(res.state);
   }
 
-  async function battleChallenge(): Promise<void> {
-    if (battleBusy || !battleState?.guardian) return;
-    battleBusy = true;
-    paintBattle();
-    const res = (await window.overlay.battleChallenge()) as BattleChallengeView;
-    if (!res.ok || !res.foe || !res.log) {
-      battleBusy = false;
-      btResult.textContent = res.error ?? '도전에 실패했어요.';
-      paintBattle();
-      return;
-    }
-    // 수문장전 연출 — 서버 로그를 틱 단위로 재생 (긴 전투는 빠르게)
-    const foe = res.foe;
-    const stage = res.stage ?? 0;
-    const myMax = battleState.stats.hp;
+  /** 수문장전 연출 — 서버 로그를 틱 단위로 재생 (긴 전투는 빠르게) */
+  async function playFight(
+    foe: { emoji: string; name: string; sprite?: string; hp: number; atk: number },
+    log: [number, number, number, number][],
+    label: string,
+  ): Promise<void> {
+    const myMax = battleState?.stats.hp ?? 1;
     setFoeSprite(foe.sprite, foe.emoji);
     btFoeAvatar.classList.remove('dead');
-    btFoeName.textContent = `${foe.name} (${stage}층 수문장)`;
+    btFoeName.textContent = label;
     btSetHp(btFoeHp, btFoeHptext, foe.hp, foe.hp);
     btSetHp(btMeHp, btMeHptext, myMax, myMax);
     btResult.textContent = `${foe.emoji} ${foe.name}과(와) 전투 중…`;
-    const stepMs = Math.max(70, Math.min(220, 6000 / res.log.length));
-    for (const [me, foeHp, dmg, crit] of res.log) {
+    const stepMs = Math.max(70, Math.min(220, 6000 / Math.max(1, log.length)));
+    for (const [me, foeHp, dmg, crit] of log) {
       btPulse(btVs, 'swing');
       btPulse(btFoeAvatar, 'hit');
       btFloat(`-${fmtNum(dmg)}${crit ? '!' : ''}`, crit ? 'crit' : '', 'foe');
@@ -3400,6 +3425,22 @@
       }
       await new Promise((r) => setTimeout(r, stepMs * 0.5));
     }
+  }
+
+  async function battleChallenge(): Promise<void> {
+    if (battleBusy || !battleState?.guardian) return;
+    battleBusy = true;
+    paintBattle();
+    const res = (await window.overlay.battleChallenge()) as BattleChallengeView;
+    if (!res.ok || !res.foe || !res.log) {
+      battleBusy = false;
+      btResult.textContent = res.error ?? '도전에 실패했어요.';
+      paintBattle();
+      return;
+    }
+    const foe = res.foe;
+    const stage = res.stage ?? 0;
+    await playFight(foe, res.log, `${foe.name} (${fmtNum(stage)}층 수문장)`);
     if (res.win) {
       btFoeAvatar.classList.add('dead');
       btShowBanner('🏆 승리!', '#ffd66e');
@@ -3423,6 +3464,69 @@
     applyBattleState(res.state);
   }
 
+  // ⚡ 자동 도전 — 서버가 실패할 때까지 한 번에 판정, 승리 층은 빠른 몽타주 · 패배 전투만 정상 재생
+  async function battleAuto(): Promise<void> {
+    if (battleBusy || !battleState?.guardian) return;
+    battleBusy = true;
+    paintBattle();
+    btResult.textContent = '⚡ 자동 도전 중…';
+    const res = (await window.overlay.battleAuto()) as BattleAutoView;
+    if (!res.ok) {
+      battleBusy = false;
+      btResult.textContent = res.error ?? '자동 도전에 실패했어요.';
+      paintBattle();
+      return;
+    }
+    const wins = (res.results ?? []).filter((r) => r.win);
+    const step = wins.length ? Math.max(90, Math.min(320, 9000 / wins.length)) : 0;
+    let streak = 0;
+    let coinsSoFar = 0;
+    for (const r of wins) {
+      streak++;
+      coinsSoFar += r.coins ?? 0;
+      const kindLabel = r.kind === 'big' ? ' 대보스' : r.kind === 'boss' ? ' 보스' : '';
+      setFoeSprite(r.sprite, r.emoji);
+      btFoeAvatar.classList.remove('dead');
+      btFoeName.textContent = `${r.name} (${fmtNum(r.stage)}층${kindLabel})`;
+      btSetHp(btFoeHp, btFoeHptext, r.hp, r.hp);
+      btStageNum.textContent = `${r.stage > 100 ? '♾️ ' : ''}${fmtNum(r.stage)}층`;
+      btResult.innerHTML = `⚡ 자동 도전 중… <b>${fmtNum(r.stage)}층</b> ${r.emoji} ${r.name} 격파 (${streak}연승) · 누적 +${fmtNum(coinsSoFar)} 🪙`;
+      await new Promise((rr) => setTimeout(rr, step * 0.45));
+      btPulse(btVs, 'swing');
+      btPulse(btFoeAvatar, 'hit');
+      btFloat(`-${fmtNum(r.hp)}`, r.kind === 'guardian' ? '' : 'crit', 'foe');
+      btSetHp(btFoeHp, btFoeHptext, 0, r.hp);
+      btFoeAvatar.classList.add('dead');
+      if (r.coins) btFloat(`+${fmtNum(r.coins)} 🪙`, 'loot', 'me');
+      if (r.gems) btFloat(`+${r.gems} 💎`, 'loot', 'me');
+      if (r.stage === 100) btShowBanner('♾️ 무한 원정 개방!', '#ff9a9a');
+      await new Promise((rr) => setTimeout(rr, step * 0.55));
+    }
+    if (res.loss) {
+      const foe = res.loss.foe;
+      await playFight(foe, res.loss.log, `${foe.name} (${fmtNum(res.loss.stage)}층 수문장)`);
+      btShowBanner(wins.length ? `💀 ${wins.length}연승 후 패배` : '💀 패배…', '#ff7a7a');
+    } else {
+      btShowBanner(`🏆 ${wins.length}연승!`, '#ffd66e');
+    }
+    const t = res.total ?? { coins: 0, gems: 0, items: [] };
+    const parts = [
+      `⚡ 자동 도전: <b>${fmtNum(res.from ?? 0)}층 → ${fmtNum(res.to ?? 0)}층</b> (${wins.length}연승)`,
+      `+<b>${fmtNum(t.coins)}</b> 🪙` + (t.gems ? ` +<b>${t.gems}</b> 💎` : ''),
+    ];
+    if (t.items.length) parts.push(`🎁 ${t.items.map((i) => i.name).join(', ')}`);
+    if (res.loss) parts.push(`💀 <b>${fmtNum(res.loss.stage)}층 ${res.loss.foe.name}</b>에게 패배 — 강화하고 다시 도전! (20초 후)`);
+    else if (res.capped) parts.push('⏸️ 한 번에 200층까지 — 다시 누르면 이어서 도전해요');
+    else parts.push('🏆 무한 원정의 끝!');
+    if (res.settled?.kills) {
+      parts.push(`자동 수령: 👾 ${fmtNum(res.settled.kills)}마리 → +${fmtNum(res.settled.coins)} 🪙${res.settled.gems ? ` +${res.settled.gems} 💎` : ''}`);
+    }
+    btResult.innerHTML = parts.join(' · ');
+    await new Promise((rr) => setTimeout(rr, 1200));
+    battleBusy = false;
+    applyBattleState(res.state);
+  }
+
   btClaim.addEventListener('click', () => void battleClaim());
   btToggle.addEventListener('click', () => void battleToggle());
   window.overlay.on('self:battle', () => {
@@ -3430,6 +3534,7 @@
     if (battlePanel.classList.contains('open') && !battleBusy) void refreshBattle();
   });
   btChallenge.addEventListener('click', () => void battleChallenge());
+  btAuto.addEventListener('click', () => void battleAuto());
   btStagePrev.addEventListener('click', () => battleState && void battleSetStage(battleState.stage - 1));
   btStageNext.addEventListener('click', () => battleState && void battleSetStage(battleState.stage + 1));
 

@@ -1706,6 +1706,7 @@ ipcMain.handle('battle-claim', battleIpc('battle-claim'));
 ipcMain.handle('battle-upgrade', battleIpc('battle-upgrade', (key) => [String(key ?? '')]));
 ipcMain.handle('battle-stage', battleIpc('battle-stage', (stage) => [Math.floor(Number(stage) || 0)]));
 ipcMain.handle('battle-challenge', battleIpc('battle-challenge'));
+ipcMain.handle('battle-auto', battleIpc('battle-auto'));
 ipcMain.handle('battle-active', battleIpc('battle-active', (active) => [active === true]));
 
 // ---- 도전과제 / 칭호 ----
